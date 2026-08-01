@@ -187,7 +187,7 @@ function App() {
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
           <div className="global-search">
-            <Search/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="현재 목록에서 종목 검색"/><kbd>⌘ K</kbd>
+            <Search/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="현재 목록에서 종목 검색"/>
             {search && rankingList.length > 0 && <div className="search-results">{visibleStocks.map((stock) => <button key={stock.code} onClick={() => chooseStock(stock)}><span><strong>{stock.name}</strong><small>{stock.code}</small></span><b>{won(stock.price)}원</b></button>)}</div>}
           </div>
           <div className="header-actions"><span className="market-open"><i/>시장 조회</span><button title="알림"><Bell/></button><button className="login-button" title="로그인"><LogIn/></button></div>
