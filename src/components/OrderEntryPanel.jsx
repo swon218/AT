@@ -1,0 +1,219 @@
+import { Info, LogIn, Minus, Plus, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { INDICATOR_CATALOG } from '../utils/indicators'
+
+const onlyNumber = (value) => value.replace(/[^0-9]/g, '')
+
+function FieldRow({ label, children }) {
+  return <div className="trade-field"><label>{label}</label><div>{children}</div></div>
+}
+
+function StepInput({ value, onChange, placeholder, unit }) {
+  const step = (amount) => onChange(String(Math.max(0, Number(value || 0) + amount)))
+  return (
+    <div className="step-input-wrap">
+      <div className="trade-input unit-input"><input inputMode="numeric" value={value} onChange={(event) => onChange(onlyNumber(event.target.value))} placeholder={placeholder}/><b>{unit}</b></div>
+      <button type="button" aria-label={`${unit} 감소`} onClick={() => step(-1)}><Minus/></button>
+      <button type="button" aria-label={`${unit} 증가`} onClick={() => step(1)}><Plus/></button>
+    </div>
+  )
+}
+
+function LoginWarning() {
+  return <p className="order-login-warning"><LogIn/>로그인하지 않은 상태에서는 화면 구성만 확인할 수 있습니다. 주문, 자동매매, 지표 저장은 로그인 후 이용해주세요.</p>
+}
+
+function GeneralOrder() {
+  const [side, setSide] = useState('buy')
+  const [priceType, setPriceType] = useState('limit')
+  const [price, setPrice] = useState('')
+  const [quantity, setQuantity] = useState('')
+  const total = useMemo(() => Number(price || 0) * Number(quantity || 0), [price, quantity])
+
+  if (side === 'open') return (
+    <>
+      <div className="side-tabs"><button onClick={() => setSide('buy')}>매수</button><button onClick={() => setSide('sell')}>매도</button><button className="active open" onClick={() => setSide('open')}>미체결</button></div>
+      <div className="unfilled-empty"><LogIn/><span>로그인 후 미체결 주문을 조회할 수 있습니다.</span></div>
+      <LoginWarning/>
+    </>
+  )
+
+  return (
+    <>
+      <div className="side-tabs"><button className={side === 'buy' ? 'active buy' : ''} onClick={() => setSide('buy')}>매수</button><button className={side === 'sell' ? 'active sell' : ''} onClick={() => setSide('sell')}>매도</button><button onClick={() => setSide('open')}>미체결</button></div>
+      <div className="trade-form">
+        <FieldRow label="주문 유형"><select className="trade-input"><option>정규장 주문</option><option>장전 시간외</option><option>장후 시간외</option></select></FieldRow>
+        <FieldRow label="주문 가격">
+          <div className="price-type-tabs"><button className={priceType === 'limit' ? 'active' : ''} onClick={() => setPriceType('limit')}>지정가</button><button className={priceType === 'market' ? 'active' : ''} onClick={() => { setPriceType('market'); setPrice('') }}>시장가</button></div>
+          {priceType === 'limit' && <StepInput value={price} onChange={setPrice} placeholder="가격 입력" unit="원"/>}
+        </FieldRow>
+        <FieldRow label="주문수량"><StepInput value={quantity} onChange={setQuantity} placeholder="수량 입력" unit="주"/></FieldRow>
+        <FieldRow label="총 주문 금액"><div className="trade-input readonly"><span>{total ? `${total.toLocaleString('ko-KR')}원` : '자동 계산'}</span></div></FieldRow>
+        {side === 'buy' ? <FieldRow label="주문 가능 금액"><div className="trade-input readonly"><span>로그인 필요</span></div></FieldRow> : <SellAccountPreview/>}
+      </div>
+      <button className={`order-execute ${side}`} disabled>{side === 'buy' ? '매수 주문하기' : '매도 주문하기'}</button>
+      <LoginWarning/>
+    </>
+  )
+}
+
+function SellAccountPreview() {
+  return (
+    <div className="sell-account-preview">
+      {['평균 매입단가', '보유수량', '총 매입금액', '평가손익'].map((label) => <div key={label}><small>{label}</small><span>로그인 후 조회</span></div>)}
+    </div>
+  )
+}
+
+function AutoTrade() {
+  const [quantity, setQuantity] = useState('')
+  return (
+    <>
+      <div className="trade-form auto-trade-form">
+        <FieldRow label="저장 전략"><select className="trade-input"><option>전략 선택</option></select></FieldRow>
+        <FieldRow label="주문가능금액"><div className="trade-input readonly"><span>로그인 필요</span></div></FieldRow>
+        <FieldRow label="주문수량"><StepInput value={quantity} onChange={setQuantity} placeholder="수량 입력" unit="주"/></FieldRow>
+        <FieldRow label="매수 상한가"><div className="trade-input"><input inputMode="numeric" placeholder="상한가 입력"/></div></FieldRow>
+        <FieldRow label="매수 하한가"><div className="trade-input"><input inputMode="numeric" placeholder="하한가 입력"/></div></FieldRow>
+      </div>
+      <p className="telegram-hint"><i/><span>로그인 후 텔레그램 연동을 사용할 수 있습니다.</span><Info/></p>
+      <label className="trade-check"><input type="checkbox"/>매수 상한가와 매수 하한가 둘 다 입력하거나 하나만 입력해도 됩니다.</label>
+      <label className="trade-check"><input type="checkbox"/>주문가능금액이 매수 상한가와 매수 하한가 사이에 있고 전략에 도달해야 자동매수가 시작됩니다.</label>
+      <button className="order-execute auto" disabled>자동매매 감시 시작</button>
+      <LoginWarning/>
+    </>
+  )
+}
+
+function NumberSetting({ label, value, onChange, min = 1, max = 500, step = 1 }) {
+  return <label className="indicator-config-field"><span>{label}</span><input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))}/></label>
+}
+
+function ColorSetting({ label, value, onChange }) {
+  return <label className="indicator-config-field color"><span>{label}</span><input type="color" value={value} onChange={(event) => onChange(event.target.value)}/></label>
+}
+
+function SelectSetting({ label, value, onChange, options }) {
+  return <label className="indicator-config-field indicator-select-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+}
+
+function IndicatorHelpModal({ item, onClose }) {
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  if (!item) return null
+  const titleId = `indicator-help-${item.id}`
+  return createPortal(
+    <div className="indicator-help-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="indicator-help-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <header className="indicator-help-modal-header">
+          <h2 id={titleId}>{item.name}</h2>
+          <button type="button" onClick={onClose} aria-label="설명 닫기"><X/></button>
+        </header>
+        <div className="indicator-help-modal-body">
+          <section><h3>개요</h3><p>{item.help.overview}</p></section>
+          <section><h3>입력값</h3><ul>{item.help.inputs.map((input) => <li key={input}>{input}</li>)}</ul></section>
+          <section><h3>차트에서 보는 법</h3><p>{item.help.reading}</p></section>
+          <section><h3>자동매매 해석</h3><p>{item.help.automation}</p></section>
+          <section><h3>주의할 점</h3><p>{item.help.caution}</p></section>
+          <p className="indicator-help-notice">지표 설명은 기능 이해를 위한 참고 정보이며 투자 수익을 보장하지 않습니다.</p>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  )
+}
+
+function IndicatorConfigCard({ config, onOpenHelp, onChange, onRemove }) {
+  const item = INDICATOR_CATALOG.find((indicator) => indicator.id === config.id)
+  const update = (key, value) => onChange(config.id, { [key]: value })
+  return (
+    <article className="indicator-config-card">
+      <div className="indicator-config-title"><strong>{item?.name}</strong><button className="indicator-help" onClick={() => onOpenHelp(config.id)} aria-label={`${item?.name} 상세 설명 열기`}>!</button><button className="indicator-remove" onClick={() => onRemove(config.id)} aria-label={`${item?.name} 삭제`}><X/></button></div>
+      <div className="indicator-config-grid">
+        {config.id === 'ma' && <><SelectSetting label="종류" value={config.type || 'SMA'} options={['SMA', 'EMA']} onChange={(value) => update('type', value)}/><span className="indicator-grid-spacer"/><NumberSetting label="단기 기간" value={config.shortPeriod ?? config.period ?? 5} max={Math.max(1, Number(config.longPeriod || 20) - 1)} onChange={(value) => update('shortPeriod', Math.min(value, Number(config.longPeriod || 20) - 1))}/><ColorSetting label="단기선 색상" value={config.shortColor || config.color || '#f4c542'} onChange={(value) => update('shortColor', value)}/><NumberSetting label="장기 기간" value={config.longPeriod ?? 20} min={Number(config.shortPeriod ?? config.period ?? 5) + 1} onChange={(value) => update('longPeriod', Math.max(value, Number(config.shortPeriod ?? config.period ?? 5) + 1))}/><ColorSetting label="장기선 색상" value={config.longColor || '#4b86ff'} onChange={(value) => update('longColor', value)}/></>}
+        {config.id === 'bollinger' && <><NumberSetting label="기간" value={config.period} onChange={(value) => update('period', value)}/><NumberSetting label="표준편차" value={config.multiplier} step={0.1} max={10} onChange={(value) => update('multiplier', value)}/><ColorSetting label="상단선 색상" value={config.upperColor} onChange={(value) => update('upperColor', value)}/><ColorSetting label="중심선 색상" value={config.middleColor} onChange={(value) => update('middleColor', value)}/><ColorSetting label="하단선 색상" value={config.lowerColor} onChange={(value) => update('lowerColor', value)}/></>}
+        {config.id === 'volume-ma' && <><NumberSetting label="기간" value={config.period} onChange={(value) => update('period', value)}/><ColorSetting label="거래량 MA 색상" value={config.color} onChange={(value) => update('color', value)}/></>}
+        {config.id === 'rsi' && <><NumberSetting label="기간" value={config.period} onChange={(value) => update('period', value)}/><NumberSetting label="하단값" value={config.lower} min={0} max={100} onChange={(value) => update('lower', value)}/><NumberSetting label="상단값" value={config.upper} min={0} max={100} onChange={(value) => update('upper', value)}/><ColorSetting label="RSI선 색상" value={config.color} onChange={(value) => update('color', value)}/><ColorSetting label="상단선 색상" value={config.upperColor} onChange={(value) => update('upperColor', value)}/><ColorSetting label="하단선 색상" value={config.lowerColor} onChange={(value) => update('lowerColor', value)}/></>}
+        {config.id === 'macd' && <><NumberSetting label="단기 기간" value={config.fast} onChange={(value) => update('fast', value)}/><NumberSetting label="장기 기간" value={config.slow} onChange={(value) => update('slow', value)}/><NumberSetting label="시그널 기간" value={config.signal} onChange={(value) => update('signal', value)}/><ColorSetting label="MACD선 색상" value={config.macdColor} onChange={(value) => update('macdColor', value)}/><ColorSetting label="시그널선 색상" value={config.signalColor} onChange={(value) => update('signalColor', value)}/><ColorSetting label="상승 색상" value={config.positiveColor} onChange={(value) => update('positiveColor', value)}/><ColorSetting label="하락 색상" value={config.negativeColor} onChange={(value) => update('negativeColor', value)}/></>}
+      </div>
+    </article>
+  )
+}
+
+function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+  const [query, setQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [helpIndicatorId, setHelpIndicatorId] = useState(null)
+  const [actionMessage, setActionMessage] = useState('')
+  const searchRef = useRef(null)
+  const filtered = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    return INDICATOR_CATALOG.filter((item) => !keyword || `${item.name} ${item.shortName}`.toLowerCase().includes(keyword))
+  }, [query])
+  const addFirstResult = () => {
+    const candidate = filtered.find((item) => !indicatorConfigs.some((config) => config.id === item.id))
+    if (candidate) {
+      onAddIndicator(candidate.id)
+      setQuery('')
+      setSearchOpen(false)
+    }
+  }
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event) => {
+      if (!searchRef.current?.contains(event.target)) setSearchOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick)
+  }, [])
+
+  return (
+    <div className="indicator-settings">
+      <FieldRow label="지표 설정"><select className="trade-input accent"><option>저장한 전략 불러오기</option></select></FieldRow>
+      <hr/>
+      <label className="strategy-name"><span>전략 이름</span><input className="trade-input" value={strategyName} onChange={(event) => onStrategyNameChange(event.target.value)} placeholder="전략 이름을 입력하세요"/><small>Supabase 연결 후 전략 목록을 불러옵니다.</small></label>
+      <div className="indicator-search-wrap" ref={searchRef}>
+        <div className="indicator-search"><div className="trade-input"><Search/><input role="combobox" aria-expanded={searchOpen} value={query} onFocus={() => setSearchOpen(true)} onClick={() => setSearchOpen(true)} onChange={(event) => { setQuery(event.target.value); setSearchOpen(true) }} onKeyDown={(event) => { if (event.key === 'Enter') addFirstResult(); if (event.key === 'Escape') setSearchOpen(false) }} placeholder="보조지표 검색"/></div><button onClick={addFirstResult} disabled={!filtered.some((item) => !indicatorConfigs.some((config) => config.id === item.id))}>추가</button></div>
+        {searchOpen && <div className="indicator-catalog-popover">
+          <div className="indicator-catalog-list">
+            {filtered.map((item) => {
+              const added = indicatorConfigs.some((config) => config.id === item.id)
+              return <button className={added ? 'added' : ''} onClick={() => { added ? onRemoveIndicator(item.id) : onAddIndicator(item.id); setQuery(''); setSearchOpen(false) }} key={item.id}><span><strong>{item.name}</strong><small>{item.shortName}</small></span><b>{added ? '추가됨' : '추가'}</b></button>
+            })}
+            {filtered.length === 0 && <div className="indicator-no-result">검색 결과가 없습니다.</div>}
+          </div>
+        </div>}
+      </div>
+      <div className="indicator-config-list">
+        {indicatorConfigs.map((config) => <IndicatorConfigCard key={config.id} config={config} onOpenHelp={setHelpIndicatorId} onChange={onUpdateIndicator} onRemove={onRemoveIndicator}/>) }
+        {indicatorConfigs.length === 0 && <div className="indicator-empty">보조지표를 검색해서 추가하세요.</div>}
+      </div>
+      <div className="strategy-actions-area">
+        {actionMessage && <p className="strategy-action-message">{actionMessage}</p>}
+        <div className="strategy-actions"><button onClick={() => { onResetIndicators(); setActionMessage('지표 설정을 기본값으로 초기화했습니다.') }} disabled={indicatorConfigs.length === 0}>초기화</button><button onClick={() => { onDeleteIndicators(); setActionMessage('현재 지표 조합을 삭제했습니다.') }} disabled={indicatorConfigs.length === 0}>삭제</button><button className="save" onClick={() => setActionMessage(strategyName.trim() ? 'Supabase 연결 후 이 전략을 저장할 수 있습니다.' : '전략 이름을 입력해주세요.')}>저장</button></div>
+      </div>
+      {helpIndicatorId && <IndicatorHelpModal item={INDICATOR_CATALOG.find((item) => item.id === helpIndicatorId)} onClose={() => setHelpIndicatorId(null)}/>} 
+    </div>
+  )
+}
+
+export default function OrderEntryPanel({ indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+  const [mainTab, setMainTab] = useState('order')
+  const [mode, setMode] = useState('general')
+  return (
+    <section className="atlas-order-entry" aria-label="주식 주문 입력">
+      <div className="order-main-tabs"><button className={mainTab === 'order' ? 'active' : ''} onClick={() => setMainTab('order')}>주문</button><button className={mainTab === 'indicator' ? 'active' : ''} onClick={() => setMainTab('indicator')}>지표 설정</button></div>
+      {mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/> : <>
+        <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
+        {mode === 'general' ? <GeneralOrder/> : <AutoTrade/>}
+      </>}
+    </section>
+  )
+}

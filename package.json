@@ -1,0 +1,26 @@
+{
+  "name": "dual-broker-web-hts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:web": "vite",
+    "dev:api": "node --watch server/index.js",
+    "start:api": "node server/index.js",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@vitejs/plugin-react": "latest",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.10.0",
+    "lightweight-charts": "^5.2.0",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}
