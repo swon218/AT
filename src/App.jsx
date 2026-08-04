@@ -160,8 +160,9 @@ function App() {
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileNav ? 'open' : ''}`}>
         <div className="brand">
-          {sidebarCollapsed ? <button className="brand-mark brand-expand-trigger" title="사이드바 펼치기" aria-label="사이드바 펼치기" onClick={() => setSidebarCollapsed(false)}><Activity className="brand-logo-icon" size={18}/><PanelLeftOpen className="brand-expand-icon" size={18}/></button> : <span className="brand-mark"><Activity size={18}/></span>}
-          <div><strong>ATLAS</strong><small>TRADING SYSTEM</small></div>
+          {sidebarCollapsed
+            ? <><button className="brand-mark brand-expand-trigger" title="사이드바 펼치기" aria-label="사이드바 펼치기" onClick={() => setSidebarCollapsed(false)}><Activity className="brand-logo-icon" size={18}/><PanelLeftOpen className="brand-expand-icon" size={18}/></button><div><strong>ATLAS</strong><small>TRADING SYSTEM</small></div></>
+            : <button type="button" className="brand-home" aria-label="대시보드로 이동" onClick={() => openPage('dashboard')}><span className="brand-mark"><Activity size={18}/></span><span className="brand-copy"><strong>ATLAS</strong><small>TRADING SYSTEM</small></span></button>}
           {!sidebarCollapsed && <button className="sidebar-toggle" title="사이드바 접기" aria-label="사이드바 접기" onClick={() => setSidebarCollapsed(true)}><PanelLeftClose/></button>}
           <button className="mobile-close" onClick={() => setMobileNav(false)}><X/></button>
         </div>
@@ -169,7 +170,6 @@ function App() {
           <p>WORKSPACE</p>
           <button className={`nav-link ${activePage === 'dashboard' ? 'active' : ''}`} onClick={() => openPage('dashboard')}><LayoutDashboard/><span>대시보드</span></button>
           <button className={`nav-link ${activePage === 'order' ? 'active' : ''}`} onClick={() => openPage('order')}><LineChart/><span>주식 주문</span></button>
-          <button className="nav-link" onClick={() => { openPage('dashboard'); setRankingType('favorites') }}><Star/><span>관심종목</span></button>
           <button className={`nav-link ${activePage === 'assets' ? 'active' : ''}`} onClick={() => openPage('assets')}><WalletCards/><span>자산 현황</span></button>
           <p>MARKET</p>
           <a><Newspaper/><span>마켓 뉴스</span></a>

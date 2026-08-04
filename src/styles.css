@@ -25,6 +25,7 @@ main{margin-left:226px;min-width:0;flex:1}header{height:67px;position:sticky;top
 .sidebar{width:240px;transition:width .22s ease,padding .22s ease}
 main{margin-left:240px;transition:margin-left .22s ease}
 .brand{padding-left:4px;padding-right:0;gap:10px}
+.brand-home{display:flex;align-items:center;gap:10px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer;text-align:left}.brand-copy{display:flex;flex-direction:column}.brand-home:hover strong,.brand-home:focus-visible strong{color:#fff}.brand-home:focus-visible{outline:2px solid #78a5ff;outline-offset:4px;border-radius:10px}
 .brand strong{font-size:17px}.brand small{font-size:9px}
 .brand-expand-trigger{position:relative;padding:0;border:0;cursor:pointer}.brand-expand-trigger svg{grid-area:1/1;transition:opacity .16s ease,transform .16s ease}.brand-expand-icon{opacity:0;transform:scale(.72)}.brand-expand-trigger:hover .brand-logo-icon,.brand-expand-trigger:focus-visible .brand-logo-icon{opacity:0;transform:scale(.72)}.brand-expand-trigger:hover .brand-expand-icon,.brand-expand-trigger:focus-visible .brand-expand-icon{opacity:1;transform:scale(1)}.brand-expand-trigger:focus-visible{outline:2px solid #78a5ff;outline-offset:3px}
 .sidebar-toggle{display:grid;place-items:center;width:30px;height:30px;margin-left:auto;flex:0 0 auto;border:1px solid #243850;border-radius:8px;background:#102138;color:#8da1bb;cursor:pointer}
