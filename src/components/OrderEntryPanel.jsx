@@ -197,7 +197,7 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
       </div>
       <div className="strategy-actions-area">
         {actionMessage && <p className="strategy-action-message">{actionMessage}</p>}
-        <div className="strategy-actions"><button onClick={() => { onResetIndicators(); setActionMessage('지표 설정을 기본값으로 초기화했습니다.') }} disabled={indicatorConfigs.length === 0}>초기화</button><button onClick={() => { onDeleteIndicators(); setActionMessage('현재 지표 조합을 삭제했습니다.') }} disabled={indicatorConfigs.length === 0}>삭제</button><button className="save" onClick={() => setActionMessage(strategyName.trim() ? 'Supabase 연결 후 이 전략을 저장할 수 있습니다.' : '전략 이름을 입력해주세요.')}>저장</button></div>
+        <div className="strategy-actions"><button onClick={() => { onResetIndicators(); setActionMessage('지표 설정을 기본값으로 초기화했습니다.') }} disabled={indicatorConfigs.length === 0}>초기화</button><button onClick={() => { onDeleteIndicators(); setActionMessage('현재 지표 조합을 삭제했습니다.') }} disabled={indicatorConfigs.length === 0}>삭제</button><button className="save" onClick={() => setActionMessage(strategyName.trim() ? '로그인 후 이용할 수 있습니다.' : '전략 이름을 입력해주세요.')}>저장</button></div>
       </div>
       {helpIndicatorId && <IndicatorHelpModal item={INDICATOR_CATALOG.find((item) => item.id === helpIndicatorId)} onClose={() => setHelpIndicatorId(null)}/>} 
     </div>
