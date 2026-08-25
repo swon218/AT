@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Activity, BarChart3, Bell, ChevronDown, CircleDollarSign, LayoutDashboard, LineChart,
-  LockKeyhole, LogIn, Menu, Newspaper, PanelLeftClose, PanelLeftOpen, Radio,
+  LockKeyhole, LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen, Radio,
   Search, ShieldCheck, Star, TrendingDown, TrendingUp, WalletCards, X, Zap,
 } from 'lucide-react'
 import { getKiwoomRankings } from './services/kiwoomMarketApi'
 import { getPublicNews } from './services/newsApi'
 import TradingViewChart from './components/TradingViewChart'
 import OrderEntryPanel from './components/OrderEntryPanel'
+import AuthModal from './components/AuthModal'
+import { supabase } from './services/supabaseClient'
 import { createIndicatorConfig } from './utils/indicators'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
@@ -90,6 +92,8 @@ function App() {
   const [newsError, setNewsError] = useState('')
   const [indicatorConfigs, setIndicatorConfigs] = useState([])
   const [strategyName, setStrategyName] = useState('')
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
 
   const visibleStocks = useMemo(
     () => rankingList.filter((stock) => `${stock.name}${stock.code}`.toLowerCase().includes(search.toLowerCase())),
@@ -111,6 +115,23 @@ function App() {
   const removeIndicator = (id) => setIndicatorConfigs((items) => items.filter((item) => item.id !== id))
   const resetIndicators = () => setIndicatorConfigs((items) => items.map((item) => createIndicatorConfig(item.id)))
   const deleteIndicators = () => { setIndicatorConfigs([]); setStrategyName('') }
+
+  const handleAccountAction = async () => {
+    if (!currentUser) {
+      setAuthModalOpen(true)
+      return
+    }
+    await supabase?.auth.signOut()
+  }
+
+  useEffect(() => {
+    if (!supabase) return undefined
+    supabase.auth.getSession().then(({ data }) => setCurrentUser(data.session?.user ?? null))
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUser(session?.user ?? null)
+    })
+    return () => authListener.subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
     if (activePage !== 'order') {
@@ -180,7 +201,7 @@ function App() {
           <div><span><i className="dot kiwoom"/>키움 공개시세</span><b>읽기전용</b></div>
           <div><span><LockKeyhole/>주문·계좌</span><b className="blocked">차단</b></div>
         </div>
-        <button className="guest-profile"><span>G</span><div><strong>게스트</strong><small>로그인 후 개인 기능 사용</small></div><LogIn/></button>
+        <button type="button" className="guest-profile" onClick={handleAccountAction} title={currentUser ? '로그아웃' : '로그인'}><span>{currentUser?.email?.charAt(0).toUpperCase() ?? 'G'}</span><div><strong>{currentUser ? '로그인됨' : '게스트'}</strong><small>{currentUser?.email ?? '로그인 후 개인 기능 사용'}</small></div>{currentUser ? <LogOut/> : <LogIn/>}</button>
       </aside>
 
       <main>
@@ -190,7 +211,7 @@ function App() {
             <Search/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="현재 목록에서 종목 검색"/>
             {search && rankingList.length > 0 && <div className="search-results">{visibleStocks.map((stock) => <button key={stock.code} onClick={() => chooseStock(stock)}><span><strong>{stock.name}</strong><small>{stock.code}</small></span><b>{won(stock.price)}원</b></button>)}</div>}
           </div>
-          <div className="header-actions"><span className="market-open"><i/>시장 조회</span><button title="알림"><Bell/></button><button className="login-button" title="로그인"><LogIn/></button></div>
+          <div className="header-actions"><span className="market-open"><i/>시장 조회</span><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={handleAccountAction}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
         <div className={`content guest-content ${activePage === 'order' ? 'order-content' : ''}`}>
@@ -238,6 +259,7 @@ function App() {
         </div>
       </main>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
+      <AuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)}/>
     </div>
   )
 }
