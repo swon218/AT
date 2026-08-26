@@ -11,6 +11,10 @@ export const config = {
   tossSecretKey: process.env.TOSS_SECRET_KEY || process.env.toss_secret_key || '',
   naverClientId: process.env.NAVER_CLIENT_ID || process.env.client_id || '',
   naverClientSecret: process.env.NAVER_CLIENT_SECRET || process.env.client_secret || '',
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || '',
+  supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || '',
+  credentialEncryptionKey: process.env.ATLAS_CREDENTIAL_ENCRYPTION_KEY || '',
 }
 
 export function publicConfigurationStatus() {
@@ -18,5 +22,11 @@ export function publicConfigurationStatus() {
     kiwoomConfigured: Boolean(config.kiwoomAppKey && config.kiwoomSecretKey),
     tossConfigured: Boolean(config.tossApiKey && config.tossSecretKey),
     naverConfigured: Boolean(config.naverClientId && config.naverClientSecret),
+    accountSettingsConfigured: Boolean(
+      config.supabaseUrl
+      && config.supabasePublishableKey
+      && config.supabaseSecretKey
+      && config.credentialEncryptionKey
+    ),
   }
 }

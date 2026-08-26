@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity, BarChart3, Bell, ChevronDown, CircleDollarSign, LayoutDashboard, LineChart,
   LockKeyhole, LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen, Radio,
@@ -9,6 +9,8 @@ import { getPublicNews } from './services/newsApi'
 import TradingViewChart from './components/TradingViewChart'
 import OrderEntryPanel from './components/OrderEntryPanel'
 import AuthModal from './components/AuthModal'
+import AccountSettingsModal from './components/AccountSettingsModal'
+import ConfirmDialog from './components/ConfirmDialog'
 import { supabase } from './services/supabaseClient'
 import { createIndicatorConfig } from './utils/indicators'
 
@@ -93,7 +95,11 @@ function App() {
   const [indicatorConfigs, setIndicatorConfigs] = useState([])
   const [strategyName, setStrategyName] = useState('')
   const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false)
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
+  const [nickname, setNickname] = useState('')
 
   const visibleStocks = useMemo(
     () => rankingList.filter((stock) => `${stock.name}${stock.code}`.toLowerCase().includes(search.toLowerCase())),
@@ -116,22 +122,52 @@ function App() {
   const resetIndicators = () => setIndicatorConfigs((items) => items.map((item) => createIndicatorConfig(item.id)))
   const deleteIndicators = () => { setIndicatorConfigs([]); setStrategyName('') }
 
-  const handleAccountAction = async () => {
-    if (!currentUser) {
-      setAuthModalOpen(true)
+  const closeAuthModal = useCallback(() => setAuthModalOpen(false), [])
+  const closeAccountSettings = useCallback(() => setAccountSettingsOpen(false), [])
+
+  const loadNickname = useCallback(async (user) => {
+    if (!supabase || !user) {
+      setNickname('')
       return
     }
-    await supabase?.auth.signOut()
+    const { data } = await supabase.from('profiles').select('nickname').eq('id', user.id).maybeSingle()
+    setNickname(data?.nickname ?? '')
+  }, [])
+
+  const openProfileOrLogin = () => {
+    if (currentUser) setAccountSettingsOpen(true)
+    else setAuthModalOpen(true)
+  }
+
+  const openLoginOrLogoutConfirm = () => {
+    if (currentUser) setLogoutConfirmOpen(true)
+    else setAuthModalOpen(true)
+  }
+
+  const confirmLogout = async () => {
+    setLoggingOut(true)
+    const { error } = await supabase?.auth.signOut() ?? {}
+    setLoggingOut(false)
+    if (!error) {
+      setLogoutConfirmOpen(false)
+      setAccountSettingsOpen(false)
+    }
   }
 
   useEffect(() => {
     if (!supabase) return undefined
-    supabase.auth.getSession().then(({ data }) => setCurrentUser(data.session?.user ?? null))
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user ?? null
+      setCurrentUser(user)
+      loadNickname(user)
+    })
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user ?? null)
+      const user = session?.user ?? null
+      setCurrentUser(user)
+      window.setTimeout(() => loadNickname(user), 0)
     })
     return () => authListener.subscription.unsubscribe()
-  }, [])
+  }, [loadNickname])
 
   useEffect(() => {
     if (activePage !== 'order') {
@@ -201,7 +237,10 @@ function App() {
           <div><span><i className="dot kiwoom"/>키움 공개시세</span><b>읽기전용</b></div>
           <div><span><LockKeyhole/>주문·계좌</span><b className="blocked">차단</b></div>
         </div>
-        <button type="button" className="guest-profile" onClick={handleAccountAction} title={currentUser ? '로그아웃' : '로그인'}><span>{currentUser?.email?.charAt(0).toUpperCase() ?? 'G'}</span><div><strong>{currentUser ? '로그인됨' : '게스트'}</strong><small>{currentUser?.email ?? '로그인 후 개인 기능 사용'}</small></div>{currentUser ? <LogOut/> : <LogIn/>}</button>
+        <div className="account-profile">
+          <button type="button" className="account-profile-main" onClick={openProfileOrLogin} title={currentUser ? '개인 설정' : '로그인'}><span>{nickname?.charAt(0).toUpperCase() || currentUser?.email?.charAt(0).toUpperCase() || 'G'}</span><div><strong>{currentUser ? nickname || '사용자' : '게스트'}</strong><small>{currentUser?.email ?? '로그인 후 개인 기능 사용'}</small></div></button>
+          <button type="button" className="account-session-button" onClick={openLoginOrLogoutConfirm} title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'}>{currentUser ? <LogOut/> : <LogIn/>}</button>
+        </div>
       </aside>
 
       <main>
@@ -211,7 +250,7 @@ function App() {
             <Search/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="현재 목록에서 종목 검색"/>
             {search && rankingList.length > 0 && <div className="search-results">{visibleStocks.map((stock) => <button key={stock.code} onClick={() => chooseStock(stock)}><span><strong>{stock.name}</strong><small>{stock.code}</small></span><b>{won(stock.price)}원</b></button>)}</div>}
           </div>
-          <div className="header-actions"><span className="market-open"><i/>시장 조회</span><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={handleAccountAction}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
+          <div className="header-actions"><span className="market-open"><i/>시장 조회</span><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
         <div className={`content guest-content ${activePage === 'order' ? 'order-content' : ''}`}>
@@ -259,7 +298,9 @@ function App() {
         </div>
       </main>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
-      <AuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)}/>
+      <AuthModal open={authModalOpen} onClose={closeAuthModal}/>
+      <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname}/>
+      <ConfirmDialog open={logoutConfirmOpen} pending={loggingOut} onCancel={() => setLogoutConfirmOpen(false)} onConfirm={confirmLogout}/>
     </div>
   )
 }

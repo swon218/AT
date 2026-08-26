@@ -1,5 +1,5 @@
-import { requestKiwoom } from './kiwoomClient.js'
 
+import { requestKiwoom } from './kiwoomClient.js'
 const definitions = {
   realtime: {
     apiId: 'ka00198', endpoint: '/api/dostk/stkinfo', listKey: 'item_inq_rank', body: { qry_tp: '5' },

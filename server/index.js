@@ -4,9 +4,14 @@ import { config, publicConfigurationStatus } from './config.js'
 import { getRankings } from './rankings.js'
 import { getCandles } from './charts.js'
 import { getNews } from './news.js'
+import { getAccountSettings, updateAccountSettings } from './accountSettings.js'
 
 const app = Fastify({ logger: true })
-await app.register(cors, { origin: config.frontendOrigin, methods: ['GET'] })
+await app.register(cors, {
+  origin: config.frontendOrigin,
+  methods: ['GET', 'PUT'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+})
 
 app.get('/api/health', async () => ({ ok: true, ...publicConfigurationStatus() }))
 
@@ -41,6 +46,24 @@ app.get('/api/public/news', async (request, reply) => {
   } catch (error) {
     request.log.error({ error: error.message }, 'Naver news failed')
     return reply.code(502).send({ error: error.message })
+  }
+})
+
+app.get('/api/account/settings', async (request, reply) => {
+  try {
+    return await getAccountSettings(request)
+  } catch (error) {
+    request.log.error({ error: error.message }, 'Account settings lookup failed')
+    return reply.code(error.statusCode || 500).send({ error: error.message })
+  }
+})
+
+app.put('/api/account/settings', async (request, reply) => {
+  try {
+    return await updateAccountSettings(request)
+  } catch (error) {
+    request.log.error({ error: error.message }, 'Account settings update failed')
+    return reply.code(error.statusCode || 500).send({ error: error.message })
   }
 })
 
