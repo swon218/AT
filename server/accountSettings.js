@@ -34,7 +34,7 @@ function ensureConfigured() {
   }
 }
 
-async function authenticate(request) {
+export async function authenticateAccountRequest(request) {
   ensureConfigured()
   const authorization = request.headers.authorization || ''
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
@@ -62,7 +62,7 @@ function configuredStatus(row) {
 }
 
 export async function getAccountSettings(request) {
-  const user = await authenticate(request)
+  const user = await authenticateAccountRequest(request)
   const { data, error } = await adminClient
     .from('user_integrations')
     .select('kiwoom_configured,toss_configured,telegram_configured')
@@ -74,7 +74,7 @@ export async function getAccountSettings(request) {
 }
 
 export async function updateAccountSettings(request) {
-  const user = await authenticate(request)
+  const user = await authenticateAccountRequest(request)
   const input = request.body && typeof request.body === 'object' ? request.body : {}
   const replacements = Object.fromEntries(
     credentialFields
@@ -123,4 +123,23 @@ export async function updateAccountSettings(request) {
   if (error) throw error
 
   return configuredStatus(data)
+}
+
+export async function getAuthenticatedCredentials(request) {
+  const user = await authenticateAccountRequest(request)
+  const { data, error } = await adminClient
+    .from('user_integrations')
+    .select('credentials_ciphertext,credentials_iv,credentials_auth_tag,kiwoom_configured,toss_configured,telegram_configured')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) return { user, credentials: {}, status: configuredStatus(null) }
+
+  const credentials = decryptCredentials(user.id, {
+    ciphertext: data.credentials_ciphertext,
+    iv: data.credentials_iv,
+    authTag: data.credentials_auth_tag,
+  })
+  return { user, credentials, status: configuredStatus(data) }
 }

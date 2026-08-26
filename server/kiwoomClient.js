@@ -1,7 +1,7 @@
 import { config } from './config.js'
+import { createHash } from 'node:crypto'
 
-let cachedToken = null
-let tokenExpiresAt = 0
+const tokenCache = new Map()
 
 async function readJson(response, label) {
   const text = await response.text()
@@ -22,28 +22,33 @@ function parseKiwoomExpiry(expiresDt) {
   return Number.isFinite(time) ? time : Date.now() + 23 * 60 * 60 * 1000
 }
 
-async function getAccessToken() {
-  if (!config.kiwoomAppKey || !config.kiwoomSecretKey) throw new Error('키움 API 키가 설정되지 않았습니다.')
-  if (cachedToken && Date.now() < tokenExpiresAt - 10 * 60 * 1000) return cachedToken
+function credentialCacheKey(appKey, secretKey) {
+  return createHash('sha256').update(`${appKey}\0${secretKey}`).digest('hex')
+}
+
+async function getAccessToken({ appKey, secretKey }) {
+  if (!appKey || !secretKey) throw new Error('키움 API 키가 설정되지 않았습니다.')
+  const cacheKey = credentialCacheKey(appKey, secretKey)
+  const cached = tokenCache.get(cacheKey)
+  if (cached?.token && Date.now() < cached.expiresAt - 10 * 60 * 1000) return { token: cached.token, cacheKey }
 
   const response = await fetch(`${config.kiwoomHost}/oauth2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json;charset=UTF-8' },
     body: JSON.stringify({
       grant_type: 'client_credentials',
-      appkey: config.kiwoomAppKey,
-      secretkey: config.kiwoomSecretKey,
+      appkey: appKey,
+      secretkey: secretKey,
     }),
   })
   const body = await readJson(response, '키움 인증')
   if (!body.token) throw new Error('키움 인증 응답에 토큰이 없습니다.')
-  cachedToken = body.token
-  tokenExpiresAt = parseKiwoomExpiry(body.expires_dt)
-  return cachedToken
+  tokenCache.set(cacheKey, { token: body.token, expiresAt: parseKiwoomExpiry(body.expires_dt) })
+  return { token: body.token, cacheKey }
 }
 
-export async function requestKiwoom({ apiId, endpoint, body }) {
-  const token = await getAccessToken()
+export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body }) {
+  const { token, cacheKey } = await getAccessToken({ appKey, secretKey })
   const response = await fetch(`${config.kiwoomHost}${endpoint}`, {
     method: 'POST',
     headers: {
@@ -56,8 +61,17 @@ export async function requestKiwoom({ apiId, endpoint, body }) {
     body: JSON.stringify(body),
   })
   if (response.status === 401) {
-    cachedToken = null
-    tokenExpiresAt = 0
+    tokenCache.delete(cacheKey)
   }
   return readJson(response, `키움 ${apiId}`)
+}
+
+export async function requestKiwoom({ apiId, endpoint, body }) {
+  return requestKiwoomWithCredentials({
+    appKey: config.kiwoomAppKey,
+    secretKey: config.kiwoomSecretKey,
+    apiId,
+    endpoint,
+    body,
+  })
 }

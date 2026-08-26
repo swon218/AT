@@ -12,6 +12,7 @@ import AuthModal from './components/AuthModal'
 import AccountSettingsModal from './components/AccountSettingsModal'
 import ConfirmDialog from './components/ConfirmDialog'
 import { supabase } from './services/supabaseClient'
+import { getIntegrationSettings } from './services/accountSettingsApi'
 import { createIndicatorConfig } from './utils/indicators'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
@@ -51,11 +52,11 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], order
   )
 }
 
-function OrderPreview({ selected, period, onPeriodChange, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+function OrderPreview({ selected, period, onPeriodChange, currentUser, integrationStatus, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
   return (
     <section className="preview-grid order-preview-grid">
       <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} orderMode/>
-      <article className="panel preview-order"><OrderEntryPanel indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/></article>
+      <article className="panel preview-order"><OrderEntryPanel stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/></article>
     </section>
   )
 }
@@ -100,6 +101,7 @@ function App() {
   const [loggingOut, setLoggingOut] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
   const [nickname, setNickname] = useState('')
+  const [integrationStatus, setIntegrationStatus] = useState({ kiwoomConfigured: false, tossConfigured: false, telegramConfigured: false })
 
   const visibleStocks = useMemo(
     () => rankingList.filter((stock) => `${stock.name}${stock.code}`.toLowerCase().includes(search.toLowerCase())),
@@ -175,6 +177,18 @@ function App() {
       setStrategyName('')
     }
   }, [activePage])
+
+  useEffect(() => {
+    let active = true
+    if (!currentUser) {
+      setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, telegramConfigured: false })
+      return () => { active = false }
+    }
+    getIntegrationSettings()
+      .then((status) => active && setIntegrationStatus(status))
+      .catch(() => active && setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, telegramConfigured: false }))
+    return () => { active = false }
+  }, [currentUser])
 
   useEffect(() => {
     let active = true
@@ -294,12 +308,12 @@ function App() {
               </div>
             </article>
           </section>
-          </> : activePage === 'order' ? <OrderPreview selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={setStrategyName} onAddIndicator={addIndicator} onUpdateIndicator={updateIndicator} onRemoveIndicator={removeIndicator} onResetIndicators={resetIndicators} onDeleteIndicators={deleteIndicators}/> : <AssetsPreview/>}
+          </> : activePage === 'order' ? <OrderPreview selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={setStrategyName} onAddIndicator={addIndicator} onUpdateIndicator={updateIndicator} onRemoveIndicator={removeIndicator} onResetIndicators={resetIndicators} onDeleteIndicators={deleteIndicators}/> : <AssetsPreview/>}
         </div>
       </main>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal}/>
-      <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname}/>
+      <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={setIntegrationStatus}/>
       <ConfirmDialog open={logoutConfirmOpen} pending={loggingOut} onCancel={() => setLogoutConfirmOpen(false)} onConfirm={confirmLogout}/>
     </div>
   )

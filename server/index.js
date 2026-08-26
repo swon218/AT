@@ -5,11 +5,12 @@ import { getRankings } from './rankings.js'
 import { getCandles } from './charts.js'
 import { getNews } from './news.js'
 import { getAccountSettings, updateAccountSettings } from './accountSettings.js'
+import { placeKiwoomOrder } from './orders.js'
 
 const app = Fastify({ logger: true })
 await app.register(cors, {
   origin: config.frontendOrigin,
-  methods: ['GET', 'PUT'],
+  methods: ['GET', 'POST', 'PUT'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 })
 
@@ -64,6 +65,15 @@ app.put('/api/account/settings', async (request, reply) => {
   } catch (error) {
     request.log.error({ error: error.message }, 'Account settings update failed')
     return reply.code(error.statusCode || 500).send({ error: error.message })
+  }
+})
+
+app.post('/api/orders/kiwoom', async (request, reply) => {
+  try {
+    return await placeKiwoomOrder(request)
+  } catch (error) {
+    request.log.error({ error: error.message }, 'Kiwoom order failed')
+    return reply.code(error.statusCode || 502).send({ error: error.message })
   }
 })
 

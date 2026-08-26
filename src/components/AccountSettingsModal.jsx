@@ -32,7 +32,7 @@ function SecretField({ label, value, placeholder, disabled, onChange }) {
   )
 }
 
-export default function AccountSettingsModal({ open, user, onClose, onNicknameSaved }) {
+export default function AccountSettingsModal({ open, user, onClose, onNicknameSaved, onIntegrationStatusChange }) {
   const [nickname, setNickname] = useState('')
   const [credentials, setCredentials] = useState(emptyCredentials)
   const [status, setStatus] = useState(emptyStatus)
@@ -115,6 +115,7 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
       if (hasCredentialInput) {
         const nextStatus = await saveIntegrationSettings(credentials)
         setStatus({ ...emptyStatus, ...nextStatus })
+        onIntegrationStatusChange?.({ ...emptyStatus, ...nextStatus })
         setCredentials(emptyCredentials)
       }
 
