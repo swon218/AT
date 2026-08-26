@@ -27,7 +27,7 @@ function normalizeCandles(rows) {
     .sort((a, b) => String(a.time).localeCompare(String(b.time), undefined, { numeric: true }))
 }
 
-export default function TradingViewChart({ stock, period, indicators = [] }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest' }) {
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
@@ -83,7 +83,7 @@ export default function TradingViewChart({ stock, period, indicators = [] }) {
       .finally(() => active && setLoading(false))
 
     return () => { active = false }
-  }, [stock?.code, period])
+  }, [stock?.code, period, credentialScope])
 
   useEffect(() => {
     const container = containerRef.current

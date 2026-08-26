@@ -13,6 +13,7 @@ import AccountSettingsModal from './components/AccountSettingsModal'
 import ConfirmDialog from './components/ConfirmDialog'
 import { supabase } from './services/supabaseClient'
 import { getIntegrationSettings } from './services/accountSettingsApi'
+import { getKiwoomAccountSummary } from './services/kiwoomAccountApi'
 import { createIndicatorConfig } from './utils/indicators'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
@@ -30,7 +31,7 @@ function LoginNotice({ text }) {
   return <div className="login-preview-note"><LogIn/><span>{text}</span></div>
 }
 
-function StockChartPanel({ stock, period, onPeriodChange, indicators = [], orderMode = false }) {
+function StockChartPanel({ stock, period, onPeriodChange, indicators = [], orderMode = false, credentialScope = 'guest' }) {
   const [minuteMenuOpen, setMinuteMenuOpen] = useState(false)
   const minutePeriods = ['1분', '5분', '10분', '15분', '30분', '60분']
   const selectedMinute = minutePeriods.includes(period) ? period : '15분'
@@ -47,29 +48,44 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], order
         </div>
         {['일','주','월'].map((item) => <button type="button" className={period === item ? 'active' : ''} onClick={() => { onPeriodChange(item); setMinuteMenuOpen(false) }} key={item}>{item}</button>)}
       </></div><span>키움 캔들 데이터</span></div>
-      <div className="main-chart tradingview-host"><TradingViewChart stock={stock} period={period} indicators={indicators}/></div>
+      <div className="main-chart tradingview-host"><TradingViewChart stock={stock} period={period} indicators={indicators} credentialScope={credentialScope}/></div>
     </article>
   )
 }
 
-function OrderPreview({ selected, period, onPeriodChange, currentUser, integrationStatus, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+function OrderPreview({ selected, period, onPeriodChange, currentUser, integrationStatus, accountSummary, accountLoading, accountError, onAccountRefresh, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+  const credentialScope = currentUser && integrationStatus.kiwoomConfigured ? `user:${currentUser.id}` : 'operator'
   return (
     <section className="preview-grid order-preview-grid">
-      <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} orderMode/>
-      <article className="panel preview-order"><OrderEntryPanel stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/></article>
+      <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} orderMode credentialScope={credentialScope}/>
+      <article className="panel preview-order"><OrderEntryPanel stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/></article>
     </section>
   )
 }
 
-function AssetsPreview() {
+function HoldingsTable({ currentUser, kiwoomConfigured, accountSummary, accountLoading, accountError }) {
+  if (!currentUser) return <div className="empty-panel-body"><LoginNotice text="로그인 시 보유종목이 표시됩니다."/></div>
+  if (!kiwoomConfigured) return <div className="empty-panel-body"><LoginNotice text="개인 설정에서 키움 API 키를 저장해 주세요."/></div>
+  if (accountLoading) return <div className="data-message"><span className="loading-ring"/></div>
+  if (accountError) return <div className="data-message error">{accountError}</div>
+  const holdings = accountSummary?.holdings || []
+  if (holdings.length === 0) return <div className="data-message">보유종목이 없습니다.</div>
+  return <div className="account-holdings-table">
+    <div className="account-holding-row head"><span>종목</span><span>보유수량</span><span>평균단가</span><span>평가금액</span><span>수익률</span></div>
+    <div className="account-holding-scroll">{holdings.map((item) => <div className="account-holding-row" key={item.code}><span><strong>{item.name}</strong><small>{item.code}</small></span><span>{won(item.quantity)}주</span><span>{won(item.averagePrice)}원</span><span>{won(item.evaluationAmount)}원</span><span className={item.profitRate >= 0 ? 'up' : 'down'}>{item.profitRate >= 0 ? '+' : ''}{item.profitRate}%</span></div>)}</div>
+  </div>
+}
+
+function AssetsPreview({ currentUser, integrationStatus, accountSummary, accountLoading, accountError }) {
+  const accountReady = currentUser && integrationStatus.kiwoomConfigured && accountSummary
   return (
     <>
-      <section className="welcome preview-welcome"><div><p>GUEST PREVIEW</p><h1>자산 현황</h1><span>자산 화면의 구성을 미리 확인할 수 있습니다.</span></div><LoginNotice text="로그인 후 내 자산을 확인할 수 있습니다."/></section>
+      <section className="welcome preview-welcome"><div><p>{currentUser ? 'KIWOOM ACCOUNT' : 'GUEST PREVIEW'}</p><h1>자산 현황</h1><span>{accountReady ? '저장한 키움 API로 조회한 계좌 현황입니다.' : '로그인하고 키움 API를 저장하면 계좌를 조회합니다.'}</span></div>{!currentUser && <LoginNotice text="로그인 후 내 자산을 확인할 수 있습니다."/>}</section>
       <section className="asset-summary-preview">
-        {['총 자산', '평가손익', '주문가능금액'].map((label) => <article className="panel" key={label}><small>{label}</small><div className="masked-value"/></article>)}
+        {[['총 자산', 'estimatedAssets'], ['평가손익', 'totalEvaluationProfit'], ['주문가능금액', 'orderableAmount']].map(([label, key]) => <article className="panel" key={label}><small>{label}</small>{accountLoading ? <div className="masked-value"/> : <strong className="asset-summary-value">{accountReady ? `${won(accountSummary[key] || 0)}원` : '-'}</strong>}</article>)}
       </section>
       <section className="preview-grid asset-preview-grid">
-        <article className="panel"><div className="panel-head"><div><h2>보유종목</h2></div></div><div className="preview-table-head asset-table-head"><span>종목</span><span>보유수량</span><span>평균단가</span><span>평가금액</span><span>수익률</span></div><div className="preview-empty-space"/></article>
+        <article className="panel"><div className="panel-head"><div><h2>보유종목</h2></div></div><HoldingsTable currentUser={currentUser} kiwoomConfigured={integrationStatus.kiwoomConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/></article>
         <article className="panel"><div className="panel-head"><div><h2>자산 구성</h2></div></div><div className="preview-chart-space"><LoginNotice text="로그인 시 표시됩니다."/></div></article>
         <article className="panel preview-wide"><div className="panel-head"><div><h2>거래 내역</h2></div></div><div className="preview-table-head"><span>일자</span><span>종목</span><span>구분</span><span>수량</span><span>금액</span></div><div className="preview-empty-space"/></article>
       </section>
@@ -102,6 +118,10 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null)
   const [nickname, setNickname] = useState('')
   const [integrationStatus, setIntegrationStatus] = useState({ kiwoomConfigured: false, tossConfigured: false, telegramConfigured: false })
+  const [accountSummary, setAccountSummary] = useState(null)
+  const [accountLoading, setAccountLoading] = useState(false)
+  const [accountError, setAccountError] = useState('')
+  const [accountRefreshVersion, setAccountRefreshVersion] = useState(0)
 
   const visibleStocks = useMemo(
     () => rankingList.filter((stock) => `${stock.name}${stock.code}`.toLowerCase().includes(search.toLowerCase())),
@@ -192,6 +212,27 @@ function App() {
 
   useEffect(() => {
     let active = true
+    if (!currentUser || !integrationStatus.kiwoomConfigured) {
+      setAccountSummary(null)
+      setAccountLoading(false)
+      setAccountError('')
+      return () => { active = false }
+    }
+    setAccountLoading(true)
+    setAccountError('')
+    getKiwoomAccountSummary()
+      .then((summary) => active && setAccountSummary(summary))
+      .catch((error) => {
+        if (!active) return
+        setAccountSummary(null)
+        setAccountError(error.message)
+      })
+      .finally(() => active && setAccountLoading(false))
+    return () => { active = false }
+  }, [currentUser, integrationStatus.kiwoomConfigured, accountRefreshVersion])
+
+  useEffect(() => {
+    let active = true
     setRankingLoading(true)
     setRankingAvailable(false)
     setRankingError('')
@@ -214,7 +255,7 @@ function App() {
       .finally(() => active && setRankingLoading(false))
 
     return () => { active = false }
-  }, [rankingType])
+  }, [rankingType, currentUser, integrationStatus.kiwoomConfigured])
 
   useEffect(() => {
     let active = true
@@ -247,9 +288,9 @@ function App() {
           <a><CircleDollarSign/><span>시세 분석</span></a>
         </nav>
         <div className="connection-card guest-connection">
-          <div className="connection-title"><ShieldCheck/><span>게스트 API 범위</span></div>
-          <div><span><i className="dot kiwoom"/>키움 공개시세</span><b>읽기전용</b></div>
-          <div><span><LockKeyhole/>주문·계좌</span><b className="blocked">차단</b></div>
+          <div className="connection-title"><ShieldCheck/><span>{currentUser ? '사용자 API 범위' : '게스트 API 범위'}</span></div>
+          <div><span><i className="dot kiwoom"/>{currentUser && integrationStatus.kiwoomConfigured ? '개인 키움 API' : '키움 공개시세'}</span><b>{currentUser && integrationStatus.kiwoomConfigured ? '연결됨' : '읽기전용'}</b></div>
+          <div><span><LockKeyhole/>주문·계좌</span><b className={currentUser && integrationStatus.kiwoomConfigured ? '' : 'blocked'}>{currentUser && integrationStatus.kiwoomConfigured ? '사용가능' : '차단'}</b></div>
         </div>
         <div className="account-profile">
           <button type="button" className="account-profile-main" onClick={openProfileOrLogin} title={currentUser ? '개인 설정' : '로그인'}><span>{nickname?.charAt(0).toUpperCase() || currentUser?.email?.charAt(0).toUpperCase() || 'G'}</span><div><strong>{currentUser ? nickname || '사용자' : '게스트'}</strong><small>{currentUser?.email ?? '로그인 후 개인 기능 사용'}</small></div></button>
@@ -270,15 +311,15 @@ function App() {
         <div className={`content guest-content ${activePage === 'order' ? 'order-content' : ''}`}>
           {activePage === 'dashboard' ? <>
           <section className="welcome guest-welcome">
-            <div><p>{today}</p><h1>실시간 시장을 확인하세요</h1><span>비로그인 상태에서는 공개 시세만 제공되며 주문과 계좌 조회는 차단됩니다.</span></div>
-            <div className="guest-access-badge"><ShieldCheck/><div><strong>읽기 전용 모드</strong><small>운영자 키는 VPS에서만 사용</small></div></div>
+            <div><p>{today}</p><h1>실시간 시장을 확인하세요</h1><span>{currentUser && integrationStatus.kiwoomConfigured ? '저장한 사용자 키움 API로 시세와 계좌를 조회합니다.' : '비로그인 상태에서는 공개 시세만 제공되며 주문과 계좌 조회는 차단됩니다.'}</span></div>
+            <div className="guest-access-badge"><ShieldCheck/><div><strong>{currentUser && integrationStatus.kiwoomConfigured ? '개인 API 모드' : '읽기 전용 모드'}</strong><small>{currentUser && integrationStatus.kiwoomConfigured ? '사용자 키는 VPS에서 복호화 후 사용' : '운영자 키는 VPS에서만 사용'}</small></div></div>
           </section>
 
           <section className="trading-grid">
             <article className="panel ranking-menu">
               <div className="ranking-source"><i className="dot kiwoom"/><span>키움증권 API</span><b>READ</b></div>
               <div className="ranking-buttons">{rankingCategories.map(({ id, label, icon: Icon }) => <button className={rankingType === id ? 'active' : ''} key={id} onClick={() => setRankingType(id)}><Icon/><span>{label}</span></button>)}</div>
-              <p>VPS의 공개 시장조회 API만 호출합니다.</p>
+              <p>{currentUser && integrationStatus.kiwoomConfigured ? '저장한 사용자 키움 API로 조회합니다.' : 'VPS의 공개 시장조회 API만 호출합니다.'}</p>
             </article>
 
             <article className="panel watch-panel">
@@ -293,11 +334,11 @@ function App() {
               </div>
             </article>
 
-            <StockChartPanel stock={selected} period={period} onPeriodChange={setPeriod}/>
+            <StockChartPanel stock={selected} period={period} onPeriodChange={setPeriod} credentialScope={currentUser && integrationStatus.kiwoomConfigured ? `user:${currentUser.id}` : 'operator'}/>
           </section>
 
           <section className="lower-grid guest-lower-grid">
-            <article className="panel holdings"><div className="panel-head"><div><h2>보유종목</h2></div></div><div className="empty-panel-body"><LoginNotice text="로그인 시 보유종목이 표시됩니다."/></div></article>
+            <article className="panel holdings"><div className="panel-head"><div><h2>보유종목</h2></div></div><HoldingsTable currentUser={currentUser} kiwoomConfigured={integrationStatus.kiwoomConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/></article>
             <article className="panel news-panel">
               <div className="panel-head"><div><h2>주요 뉴스</h2></div><small>NAVER</small></div>
               <div className="news-list">
@@ -308,7 +349,7 @@ function App() {
               </div>
             </article>
           </section>
-          </> : activePage === 'order' ? <OrderPreview selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={setStrategyName} onAddIndicator={addIndicator} onUpdateIndicator={updateIndicator} onRemoveIndicator={removeIndicator} onResetIndicators={resetIndicators} onDeleteIndicators={deleteIndicators}/> : <AssetsPreview/>}
+          </> : activePage === 'order' ? <OrderPreview selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={() => setAccountRefreshVersion((value) => value + 1)} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={setStrategyName} onAddIndicator={addIndicator} onUpdateIndicator={updateIndicator} onRemoveIndicator={removeIndicator} onResetIndicators={resetIndicators} onDeleteIndicators={deleteIndicators}/> : <AssetsPreview currentUser={currentUser} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/>}
         </div>
       </main>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 

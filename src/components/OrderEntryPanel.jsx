@@ -55,7 +55,7 @@ function OrderConfirmDialog({ draft, stock, pending, error, onCancel, onConfirm 
   )
 }
 
-function GeneralOrder({ stock, authenticated, kiwoomConfigured }) {
+function GeneralOrder({ stock, authenticated, kiwoomConfigured, accountSummary, accountLoading, accountError, onAccountRefresh }) {
   const [side, setSide] = useState('buy')
   const [orderSession, setOrderSession] = useState('regular')
   const [priceType, setPriceType] = useState('limit')
@@ -68,7 +68,11 @@ function GeneralOrder({ stock, authenticated, kiwoomConfigured }) {
   const total = useMemo(() => Number(price || 0) * Number(quantity || 0), [price, quantity])
   const ready = authenticated && kiwoomConfigured
   const needsLimitPrice = orderSession === 'regular' && priceType === 'limit'
-  const canSubmit = ready && /^\d{6}$/.test(stock?.code || '') && Number(quantity) > 0 && (!needsLimitPrice || Number(price) > 0)
+  const selectedHolding = accountSummary?.holdings?.find((item) => item.code === stock?.code)
+  const hasAccountCapacity = side === 'buy'
+    ? Number(accountSummary?.orderableAmount || 0) > 0 && (!needsLimitPrice || total <= Number(accountSummary?.orderableAmount || 0))
+    : Number(selectedHolding?.tradableQuantity || 0) >= Number(quantity || 0)
+  const canSubmit = ready && Boolean(accountSummary) && hasAccountCapacity && /^\d{6}$/.test(stock?.code || '') && Number(quantity) > 0 && (!needsLimitPrice || Number(price) > 0)
 
   const openConfirmation = () => {
     if (!canSubmit) return
@@ -96,6 +100,7 @@ function GeneralOrder({ stock, authenticated, kiwoomConfigured }) {
       setQuantity('')
       if (priceType === 'limit') setPrice('')
       setSubmitMessage(`${result.message}${result.orderNumber ? ` · 주문번호 ${result.orderNumber}` : ''}`)
+      onAccountRefresh?.()
     } catch (error) {
       setSubmitError(error.message)
     } finally {
@@ -121,32 +126,41 @@ function GeneralOrder({ stock, authenticated, kiwoomConfigured }) {
           {priceType === 'limit' && <StepInput value={price} onChange={setPrice} placeholder="가격 입력" unit="원"/>}
         </FieldRow>
         <FieldRow label="주문수량"><StepInput value={quantity} onChange={setQuantity} placeholder="수량 입력" unit="주"/></FieldRow>
-        <FieldRow label="총 주문 금액"><div className="trade-input readonly"><span>{total ? `${total.toLocaleString('ko-KR')}원` : '자동 계산'}</span></div></FieldRow>
-        {side === 'buy' ? <FieldRow label="주문 가능 금액"><div className="trade-input readonly"><span>{ready ? '주문 시 키움에서 검증' : 'API 연결 필요'}</span></div></FieldRow> : <SellAccountPreview ready={ready}/>}
+        <FieldRow label="총 주문 금액"><div className="trade-input readonly"><span>{needsLimitPrice ? `${total.toLocaleString('ko-KR')}원` : '시장가 주문'}</span></div></FieldRow>
+        {side === 'buy'
+          ? <FieldRow label="주문 가능 금액"><div className="trade-input readonly"><span>{!ready ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary ? `${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원` : '조회 실패'}</span></div></FieldRow>
+          : <SellAccountPreview ready={ready} loading={accountLoading} holding={selectedHolding}/>}
       </div>
       <button className={`order-execute ${side}`} disabled={!canSubmit || pending} onClick={openConfirmation}>{side === 'buy' ? '매수 주문하기' : '매도 주문하기'}</button>
       {submitMessage && <p className="order-submit-message success" role="status">{submitMessage}</p>}
+      {ready && accountError && <p className="order-submit-message error" role="alert">계좌 조회 실패: {accountError}</p>}
       <OrderAccessNotice authenticated={authenticated} kiwoomConfigured={kiwoomConfigured}/>
       <OrderConfirmDialog draft={draft} stock={stock} pending={pending} error={submitError} onCancel={() => { if (!pending) { setDraft(null); setSubmitError('') } }} onConfirm={submitOrder}/>
     </>
   )
 }
 
-function SellAccountPreview({ ready }) {
+function SellAccountPreview({ ready, loading, holding }) {
+  const values = [
+    holding ? `${Number(holding.averagePrice || 0).toLocaleString('ko-KR')}원` : '0원',
+    holding ? `${Number(holding.quantity || 0).toLocaleString('ko-KR')}주` : '0주',
+    holding ? `${Number(holding.purchaseAmount || 0).toLocaleString('ko-KR')}원` : '0원',
+    holding ? `${Number(holding.evaluationProfit || 0).toLocaleString('ko-KR')}원` : '0원',
+  ]
   return (
     <div className="sell-account-preview">
-      {['평균 매입단가', '보유수량', '총 매입금액', '평가손익'].map((label) => <div key={label}><small>{label}</small><span>{ready ? '계좌 조회 준비 중' : 'API 연결 필요'}</span></div>)}
+      {['평균 매입단가', '보유수량', '총 매입금액', '평가손익'].map((label, index) => <div key={label}><small>{label}</small><span>{!ready ? 'API 연결 필요' : loading ? '조회 중...' : values[index]}</span></div>)}
     </div>
   )
 }
 
-function AutoTrade({ authenticated, kiwoomConfigured }) {
+function AutoTrade({ authenticated, kiwoomConfigured, accountSummary, accountLoading }) {
   const [quantity, setQuantity] = useState('')
   return (
     <>
       <div className="trade-form auto-trade-form">
         <FieldRow label="저장 전략"><select className="trade-input"><option>전략 선택</option></select></FieldRow>
-        <FieldRow label="주문가능금액"><div className="trade-input readonly"><span>{authenticated && kiwoomConfigured ? '자동매매 API 준비 중' : 'API 연결 필요'}</span></div></FieldRow>
+        <FieldRow label="주문가능금액"><div className="trade-input readonly"><span>{!authenticated || !kiwoomConfigured ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary ? `${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원` : '조회 실패'}</span></div></FieldRow>
         <FieldRow label="주문수량"><StepInput value={quantity} onChange={setQuantity} placeholder="수량 입력" unit="주"/></FieldRow>
         <FieldRow label="매수 상한가"><div className="trade-input"><input inputMode="numeric" placeholder="상한가 입력"/></div></FieldRow>
         <FieldRow label="매수 하한가"><div className="trade-input"><input inputMode="numeric" placeholder="하한가 입력"/></div></FieldRow>
@@ -278,7 +292,7 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
   )
 }
 
-export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
   const [mainTab, setMainTab] = useState('order')
   const [mode, setMode] = useState('general')
   return (
@@ -286,7 +300,7 @@ export default function OrderEntryPanel({ stock, authenticated = false, integrat
       <div className="order-main-tabs"><button className={mainTab === 'order' ? 'active' : ''} onClick={() => setMainTab('order')}>주문</button><button className={mainTab === 'indicator' ? 'active' : ''} onClick={() => setMainTab('indicator')}>지표 설정</button></div>
       {mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/> : <>
         <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
-        {mode === 'general' ? <GeneralOrder stock={stock} authenticated={authenticated} kiwoomConfigured={Boolean(integrationStatus.kiwoomConfigured)}/> : <AutoTrade authenticated={authenticated} kiwoomConfigured={Boolean(integrationStatus.kiwoomConfigured)}/>}
+        {mode === 'general' ? <GeneralOrder stock={stock} authenticated={authenticated} kiwoomConfigured={Boolean(integrationStatus.kiwoomConfigured)} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} kiwoomConfigured={Boolean(integrationStatus.kiwoomConfigured)} accountSummary={accountSummary} accountLoading={accountLoading}/>}
       </>}
     </section>
   )

@@ -32,15 +32,15 @@ function chartDefinition(symbol, interval) {
   return { apiId, endpoint: '/api/dostk/chart', listKeys, body: { stk_cd: symbol, base_dt: todayInSeoul(), upd_stkpc_tp: '1' } }
 }
 
-export async function getCandles(symbol, interval, limit = 200) {
+export async function getCandles(symbol, interval, limit = 200, { requester = requestKiwoom, cacheScope = 'operator' } = {}) {
   if (!/^\d{6}$/.test(symbol)) throw new Error('올바른 6자리 종목코드가 필요합니다.')
   if (!allowedIntervals.has(interval)) throw new Error('지원하지 않는 차트 주기입니다.')
-  const key = `${symbol}:${interval}:${limit}`
+  const key = `${cacheScope}:${symbol}:${interval}:${limit}`
   const existing = cache.get(key)
   if (existing && Date.now() - existing.at < 30_000) return existing.items
 
   const definition = chartDefinition(symbol, interval)
-  const payload = await requestKiwoom(definition)
+  const payload = await requester(definition)
   const rows = definition.listKeys.map((listKey) => payload[listKey]).find(Array.isArray) || []
   const items = rows.map((row) => ({
     time: normalizeTime(row.dt || row.cntr_tm),

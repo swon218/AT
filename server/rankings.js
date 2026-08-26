@@ -46,15 +46,15 @@ function normalize(row) {
   }
 }
 
-export async function getRankings(type, limit = 20) {
+export async function getRankings(type, limit = 20, { requester = requestKiwoom, cacheScope = 'operator' } = {}) {
   if (type === 'favorites') return []
   const definition = definitions[type]
   if (!definition) throw new Error('지원하지 않는 순위 유형입니다.')
-  const cacheKey = `${type}:${limit}`
+  const cacheKey = `${cacheScope}:${type}:${limit}`
   const existing = cache.get(cacheKey)
   if (existing && Date.now() - existing.at < 8_000) return existing.items
 
-  const payload = await requestKiwoom(definition)
+  const payload = await requester(definition)
   const rows = Array.isArray(payload[definition.listKey]) ? payload[definition.listKey] : []
   const items = rows.map(normalize).filter((item) => item.code && item.name).slice(0, limit)
   cache.set(cacheKey, { at: Date.now(), items })
