@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, createChart,
 } from 'lightweight-charts'
-import { getKiwoomCandles } from '../services/kiwoomMarketApi'
+import { getBrokerCandles } from '../services/kiwoomMarketApi'
 import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma, indicatorDisplayName } from '../utils/indicators'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(Math.round(value))
@@ -27,7 +27,7 @@ function normalizeCandles(rows) {
     .sort((a, b) => String(a.time).localeCompare(String(b.time), undefined, { numeric: true }))
 }
 
-export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest' }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom' }) {
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
@@ -72,7 +72,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     if (!stock?.code) return () => { active = false }
 
     setLoading(true)
-    getKiwoomCandles(stock.code, period, 200)
+    getBrokerCandles(broker, stock.code, period, 200)
       .then((rows) => {
         if (!active) return
         const candles = normalizeCandles(rows)
@@ -83,7 +83,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       .finally(() => active && setLoading(false))
 
     return () => { active = false }
-  }, [stock?.code, period, credentialScope])
+  }, [stock?.code, period, credentialScope, broker])
 
   useEffect(() => {
     const container = containerRef.current

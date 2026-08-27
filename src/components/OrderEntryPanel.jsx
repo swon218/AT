@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, Info, KeyRound, LogIn, Minus, Plus, Search
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { INDICATOR_CATALOG } from '../utils/indicators'
-import { placeKiwoomOrder } from '../services/orderApi'
+import { placeBrokerOrder } from '../services/orderApi'
 
 const onlyNumber = (value) => value.replace(/[^0-9]/g, '')
 
@@ -21,13 +21,14 @@ function StepInput({ value, onChange, placeholder, unit }) {
   )
 }
 
-function OrderAccessNotice({ authenticated, kiwoomConfigured }) {
-  if (!authenticated) return <p className="order-login-warning"><LogIn/>로그인 후 본인의 키움 API 키를 등록하면 주문할 수 있습니다.</p>
-  if (!kiwoomConfigured) return <p className="order-login-warning"><KeyRound/>개인 설정에서 키움 App Key와 Secret Key를 먼저 저장해 주세요.</p>
-  return <p className="order-login-warning ready"><CheckCircle2/>사용자 키움 API가 연결되었습니다. 실제 주문 전 종목, 가격, 수량을 반드시 확인하세요.</p>
+function OrderAccessNotice({ authenticated, broker, brokerConfigured }) {
+  const brokerName = broker === 'toss' ? '토스증권' : '키움증권'
+  if (!authenticated) return <p className="order-login-warning"><LogIn/>로그인 후 본인의 {brokerName} API 키를 등록하면 주문할 수 있습니다.</p>
+  if (!brokerConfigured) return <p className="order-login-warning"><KeyRound/>운영자 {brokerName} API로 차트만 표시됩니다. 개인 설정에서 {brokerName} API를 저장하면 계좌 조회와 주문을 이용할 수 있습니다.</p>
+  return <p className="order-login-warning ready"><CheckCircle2/>사용자 {brokerName} API가 연결되었습니다. 실제 주문 전 종목, 가격, 수량을 반드시 확인하세요.</p>
 }
 
-function OrderConfirmDialog({ draft, stock, pending, error, onCancel, onConfirm }) {
+function OrderConfirmDialog({ draft, stock, broker, pending, error, onCancel, onConfirm }) {
   if (!draft) return null
   const sideLabel = draft.side === 'buy' ? '매수' : '매도'
   const priceLabel = draft.session !== 'regular'
@@ -40,13 +41,13 @@ function OrderConfirmDialog({ draft, stock, pending, error, onCancel, onConfirm 
         <span className={`order-confirm-icon ${draft.side}`}><AlertTriangle/></span>
         <h2 id="order-confirm-title">실제 {sideLabel} 주문을 전송할까요?</h2>
         <dl>
-          <div><dt>증권사</dt><dd>키움증권</dd></div>
+          <div><dt>증권사</dt><dd>{broker === 'toss' ? '토스증권' : '키움증권'}</dd></div>
           <div><dt>종목</dt><dd>{stock?.name || '-'} ({draft.symbol})</dd></div>
           <div><dt>구분</dt><dd>{sideLabel}</dd></div>
           <div><dt>가격</dt><dd>{priceLabel}</dd></div>
           <div><dt>수량</dt><dd>{Number(draft.quantity).toLocaleString('ko-KR')}주</dd></div>
         </dl>
-        <p>확인을 누르면 저장된 본인의 키움 API 키로 실제 주문이 전송됩니다.</p>
+        <p>확인을 누르면 저장된 본인의 {broker === 'toss' ? '토스증권' : '키움증권'} API 키로 실제 주문이 전송됩니다.</p>
         {error && <p className="order-submit-message error" role="alert">{error}</p>}
         <div className="order-confirm-actions"><button type="button" onClick={onCancel} disabled={pending}>취소</button><button type="button" className={draft.side} onClick={onConfirm} disabled={pending}>{pending ? '전송 중...' : `${sideLabel} 주문 확정`}</button></div>
       </section>
@@ -55,7 +56,7 @@ function OrderConfirmDialog({ draft, stock, pending, error, onCancel, onConfirm 
   )
 }
 
-function GeneralOrder({ stock, authenticated, kiwoomConfigured, accountSummary, accountLoading, accountError, onAccountRefresh }) {
+function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountSummary, accountLoading, accountError, onAccountRefresh }) {
   const [side, setSide] = useState('buy')
   const [orderSession, setOrderSession] = useState('regular')
   const [priceType, setPriceType] = useState('limit')
@@ -66,13 +67,23 @@ function GeneralOrder({ stock, authenticated, kiwoomConfigured, accountSummary, 
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
   const total = useMemo(() => Number(price || 0) * Number(quantity || 0), [price, quantity])
-  const ready = authenticated && kiwoomConfigured
+  const ready = authenticated && brokerConfigured
   const needsLimitPrice = orderSession === 'regular' && priceType === 'limit'
   const selectedHolding = accountSummary?.holdings?.find((item) => item.code === stock?.code)
   const hasAccountCapacity = side === 'buy'
     ? Number(accountSummary?.orderableAmount || 0) > 0 && (!needsLimitPrice || total <= Number(accountSummary?.orderableAmount || 0))
     : Number(selectedHolding?.tradableQuantity || 0) >= Number(quantity || 0)
   const canSubmit = ready && Boolean(accountSummary) && hasAccountCapacity && /^\d{6}$/.test(stock?.code || '') && Number(quantity) > 0 && (!needsLimitPrice || Number(price) > 0)
+
+  useEffect(() => {
+    setOrderSession('regular')
+    setPriceType('limit')
+    setPrice('')
+    setQuantity('')
+    setDraft(null)
+    setSubmitError('')
+    setSubmitMessage('')
+  }, [broker])
 
   const openConfirmation = () => {
     if (!canSubmit) return
@@ -95,7 +106,7 @@ function GeneralOrder({ stock, authenticated, kiwoomConfigured, accountSummary, 
     setPending(true)
     setSubmitError('')
     try {
-      const result = await placeKiwoomOrder(draft)
+      const result = await placeBrokerOrder(broker, draft)
       setDraft(null)
       setQuantity('')
       if (priceType === 'limit') setPrice('')
@@ -111,8 +122,8 @@ function GeneralOrder({ stock, authenticated, kiwoomConfigured, accountSummary, 
   if (side === 'open') return (
     <>
       <div className="side-tabs"><button onClick={() => setSide('buy')}>매수</button><button onClick={() => setSide('sell')}>매도</button><button className="active open" onClick={() => setSide('open')}>미체결</button></div>
-      <div className="unfilled-empty"><Info/><span>미체결 주문 조회는 다음 단계에서 연결됩니다.</span></div>
-      <OrderAccessNotice authenticated={authenticated} kiwoomConfigured={kiwoomConfigured}/>
+      <div className="unfilled-empty"><Info/><span>{broker === 'toss' ? '토스증권' : '키움증권'} 미체결 주문 조회는 다음 단계에서 연결됩니다.</span></div>
+      <OrderAccessNotice authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured}/>
     </>
   )
 
@@ -120,7 +131,7 @@ function GeneralOrder({ stock, authenticated, kiwoomConfigured, accountSummary, 
     <>
       <div className="side-tabs"><button className={side === 'buy' ? 'active buy' : ''} onClick={() => setSide('buy')}>매수</button><button className={side === 'sell' ? 'active sell' : ''} onClick={() => setSide('sell')}>매도</button><button onClick={() => setSide('open')}>미체결</button></div>
       <div className="trade-form">
-        <FieldRow label="주문 유형"><select className="trade-input" value={orderSession} onChange={(event) => { const next = event.target.value; setOrderSession(next); if (next !== 'regular') { setPriceType('market'); setPrice('') } }}><option value="regular">정규장 주문</option><option value="pre">장전 시간외</option><option value="post">장후 시간외</option></select></FieldRow>
+        <FieldRow label="주문 유형"><select className="trade-input" value={orderSession} onChange={(event) => { const next = event.target.value; setOrderSession(next); if (next !== 'regular') { setPriceType('market'); setPrice('') } }}><option value="regular">정규장 주문</option>{broker === 'kiwoom' && <><option value="pre">장전 시간외</option><option value="post">장후 시간외</option></>}</select></FieldRow>
         <FieldRow label="주문 가격">
           <div className="price-type-tabs"><button disabled={orderSession !== 'regular'} className={priceType === 'limit' ? 'active' : ''} onClick={() => setPriceType('limit')}>지정가</button><button disabled={orderSession !== 'regular'} className={priceType === 'market' ? 'active' : ''} onClick={() => { setPriceType('market'); setPrice('') }}>시장가</button></div>
           {priceType === 'limit' && <StepInput value={price} onChange={setPrice} placeholder="가격 입력" unit="원"/>}
@@ -134,8 +145,8 @@ function GeneralOrder({ stock, authenticated, kiwoomConfigured, accountSummary, 
       <button className={`order-execute ${side}`} disabled={!canSubmit || pending} onClick={openConfirmation}>{side === 'buy' ? '매수 주문하기' : '매도 주문하기'}</button>
       {submitMessage && <p className="order-submit-message success" role="status">{submitMessage}</p>}
       {ready && accountError && <p className="order-submit-message error" role="alert">계좌 조회 실패: {accountError}</p>}
-      <OrderAccessNotice authenticated={authenticated} kiwoomConfigured={kiwoomConfigured}/>
-      <OrderConfirmDialog draft={draft} stock={stock} pending={pending} error={submitError} onCancel={() => { if (!pending) { setDraft(null); setSubmitError('') } }} onConfirm={submitOrder}/>
+      <OrderAccessNotice authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured}/>
+      <OrderConfirmDialog draft={draft} stock={stock} broker={broker} pending={pending} error={submitError} onCancel={() => { if (!pending) { setDraft(null); setSubmitError('') } }} onConfirm={submitOrder}/>
     </>
   )
 }
@@ -154,13 +165,13 @@ function SellAccountPreview({ ready, loading, holding }) {
   )
 }
 
-function AutoTrade({ authenticated, kiwoomConfigured, accountSummary, accountLoading }) {
+function AutoTrade({ authenticated, brokerConfigured, accountSummary, accountLoading }) {
   const [quantity, setQuantity] = useState('')
   return (
     <>
       <div className="trade-form auto-trade-form">
         <FieldRow label="저장 전략"><select className="trade-input"><option>전략 선택</option></select></FieldRow>
-        <FieldRow label="주문가능금액"><div className="trade-input readonly"><span>{!authenticated || !kiwoomConfigured ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary ? `${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원` : '조회 실패'}</span></div></FieldRow>
+        <FieldRow label="주문가능금액"><div className="trade-input readonly"><span>{!authenticated || !brokerConfigured ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary ? `${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원` : '조회 실패'}</span></div></FieldRow>
         <FieldRow label="주문수량"><StepInput value={quantity} onChange={setQuantity} placeholder="수량 입력" unit="주"/></FieldRow>
         <FieldRow label="매수 상한가"><div className="trade-input"><input inputMode="numeric" placeholder="상한가 입력"/></div></FieldRow>
         <FieldRow label="매수 하한가"><div className="trade-input"><input inputMode="numeric" placeholder="하한가 입력"/></div></FieldRow>
@@ -292,15 +303,17 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
   )
 }
 
-export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
   const [mainTab, setMainTab] = useState('order')
   const [mode, setMode] = useState('general')
+  const brokerConfigured = Boolean(broker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured)
   return (
     <section className="atlas-order-entry" aria-label="주식 주문 입력">
       <div className="order-main-tabs"><button className={mainTab === 'order' ? 'active' : ''} onClick={() => setMainTab('order')}>주문</button><button className={mainTab === 'indicator' ? 'active' : ''} onClick={() => setMainTab('indicator')}>지표 설정</button></div>
+      <div className="broker-select-tabs" aria-label="주문 증권사 선택"><button className={broker === 'kiwoom' ? 'active kiwoom' : ''} onClick={() => onBrokerChange?.('kiwoom')}><span>키움증권</span><small>{integrationStatus.kiwoomConfigured ? '내 API' : '차트 전용'}</small></button><button className={broker === 'toss' ? 'active toss' : ''} onClick={() => onBrokerChange?.('toss')}><span>토스증권</span><small>{integrationStatus.tossConfigured ? '내 API' : '차트 전용'}</small></button></div>
       {mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/> : <>
         <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
-        {mode === 'general' ? <GeneralOrder stock={stock} authenticated={authenticated} kiwoomConfigured={Boolean(integrationStatus.kiwoomConfigured)} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} kiwoomConfigured={Boolean(integrationStatus.kiwoomConfigured)} accountSummary={accountSummary} accountLoading={accountLoading}/>}
+        {mode === 'general' ? <GeneralOrder stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/>}
       </>}
     </section>
   )

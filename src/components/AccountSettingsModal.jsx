@@ -147,8 +147,8 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
             <div className="account-field-grid">
               <SecretField label="키움 App Key" value={credentials.kiwoomAppKey} placeholder={status.kiwoomConfigured ? '저장됨 · 변경할 때만 입력' : '키움 App Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('kiwoomAppKey', value)}/>
               <SecretField label="키움 Secret Key" value={credentials.kiwoomSecretKey} placeholder={status.kiwoomConfigured ? '저장됨 · 변경할 때만 입력' : '키움 Secret Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('kiwoomSecretKey', value)}/>
-              <SecretField label="토스 API Key" value={credentials.tossApiKey} placeholder={status.tossConfigured ? '저장됨 · 변경할 때만 입력' : '토스 API Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('tossApiKey', value)}/>
-              <SecretField label="토스 Secret Key" value={credentials.tossSecretKey} placeholder={status.tossConfigured ? '저장됨 · 변경할 때만 입력' : '토스 Secret Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('tossSecretKey', value)}/>
+              <SecretField label="토스 Client ID" value={credentials.tossApiKey} placeholder={status.tossConfigured ? '저장됨 · 변경할 때만 입력' : '토스 Client ID'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('tossApiKey', value)}/>
+              <SecretField label="토스 Client Secret" value={credentials.tossSecretKey} placeholder={status.tossConfigured ? '저장됨 · 변경할 때만 입력' : '토스 Client Secret'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('tossSecretKey', value)}/>
             </div>
           </section>
 

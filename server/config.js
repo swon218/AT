@@ -8,8 +8,10 @@ export const config = {
   kiwoomAppKey: process.env.KIWOOM_APP_KEY || process.env.kiwoom_app_key || '',
   kiwoomSecretKey: process.env.KIWOOM_SECRET_KEY || process.env.kiwoom_secret_key || '',
   kiwoomOrdersEnabled: process.env.KIWOOM_ORDERS_ENABLED === 'true',
+  tossHost: process.env.TOSS_API_HOST || 'https://openapi.tossinvest.com',
   tossApiKey: process.env.TOSS_API_KEY || process.env.toss_api_key || '',
   tossSecretKey: process.env.TOSS_SECRET_KEY || process.env.toss_secret_key || '',
+  tossOrdersEnabled: process.env.TOSS_ORDERS_ENABLED === 'true',
   naverClientId: process.env.NAVER_CLIENT_ID || process.env.client_id || '',
   naverClientSecret: process.env.NAVER_CLIENT_SECRET || process.env.client_secret || '',
   supabaseUrl: process.env.SUPABASE_URL || '',
@@ -23,6 +25,7 @@ export function publicConfigurationStatus() {
     kiwoomConfigured: Boolean(config.kiwoomAppKey && config.kiwoomSecretKey),
     kiwoomOrdersEnabled: config.kiwoomOrdersEnabled,
     tossConfigured: Boolean(config.tossApiKey && config.tossSecretKey),
+    tossOrdersEnabled: config.tossOrdersEnabled,
     naverConfigured: Boolean(config.naverClientId && config.naverClientSecret),
     accountSettingsConfigured: Boolean(
       config.supabaseUrl

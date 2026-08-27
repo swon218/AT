@@ -24,3 +24,8 @@ export function getKiwoomRankings(type = 'realtime', limit = 20) {
 export function getKiwoomCandles(symbol, interval = '일', limit = 200) {
   return getPublicMarketData('/api/public/market/kiwoom/candles', { symbol, interval, limit: String(limit) })
 }
+
+export function getBrokerCandles(broker, symbol, interval = '일', limit = 200) {
+  const selectedBroker = broker === 'toss' ? 'toss' : 'kiwoom'
+  return getPublicMarketData(`/api/public/market/${selectedBroker}/candles`, { symbol, interval, limit: String(limit) })
+}

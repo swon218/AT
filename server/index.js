@@ -8,6 +8,9 @@ import { getAccountSettings, getAuthenticatedCredentials, updateAccountSettings 
 import { placeKiwoomOrder } from './orders.js'
 import { getKiwoomAccountSummary } from './kiwoomAccount.js'
 import { requestKiwoom, requestKiwoomWithCredentials } from './kiwoomClient.js'
+import { getTossCandles } from './tossCharts.js'
+import { getTossAccountSummary } from './tossAccount.js'
+import { placeTossOrder } from './tossOrders.js'
 
 const app = Fastify({ logger: true })
 await app.register(cors, {
@@ -36,6 +39,19 @@ async function marketRequestContext(request) {
   }
 }
 
+async function tossMarketCredentials(request) {
+  const authorization = request.headers.authorization || ''
+  if (!authorization.startsWith('Bearer ')) {
+    return { apiKey: config.tossApiKey, secretKey: config.tossSecretKey, cacheScope: 'operator' }
+  }
+
+  const { user, credentials, status } = await getAuthenticatedCredentials(request)
+  if (!status.tossConfigured || !credentials.tossApiKey || !credentials.tossSecretKey) {
+    return { apiKey: config.tossApiKey, secretKey: config.tossSecretKey, cacheScope: 'operator' }
+  }
+  return { apiKey: credentials.tossApiKey, secretKey: credentials.tossSecretKey, cacheScope: `user:${user.id}` }
+}
+
 app.get('/api/public/market/kiwoom/rankings', async (request, reply) => {
   try {
     const type = String(request.query.type || 'realtime')
@@ -56,6 +72,18 @@ app.get('/api/public/market/kiwoom/candles', async (request, reply) => {
   } catch (error) {
     request.log.error({ error: error.message }, 'Kiwoom candles failed')
     return reply.code(502).send({ error: error.message })
+  }
+})
+
+app.get('/api/public/market/toss/candles', async (request, reply) => {
+  try {
+    const symbol = String(request.query.symbol || '')
+    const interval = String(request.query.interval || '일')
+    const limit = Math.min(500, Math.max(1, Number(request.query.limit) || 200))
+    return { items: await getTossCandles(symbol, interval, limit, await tossMarketCredentials(request)) }
+  } catch (error) {
+    request.log.error({ error: error.message }, 'Toss candles failed')
+    return reply.code(error.statusCode || 502).send({ error: error.message })
   }
 })
 
@@ -97,11 +125,29 @@ app.get('/api/account/kiwoom/summary', async (request, reply) => {
   }
 })
 
+app.get('/api/account/toss/summary', async (request, reply) => {
+  try {
+    return await getTossAccountSummary(request)
+  } catch (error) {
+    request.log.error({ error: error.message }, 'Toss account summary failed')
+    return reply.code(error.statusCode || 502).send({ error: error.message })
+  }
+})
+
 app.post('/api/orders/kiwoom', async (request, reply) => {
   try {
     return await placeKiwoomOrder(request)
   } catch (error) {
     request.log.error({ error: error.message }, 'Kiwoom order failed')
+    return reply.code(error.statusCode || 502).send({ error: error.message })
+  }
+})
+
+app.post('/api/orders/toss', async (request, reply) => {
+  try {
+    return await placeTossOrder(request)
+  } catch (error) {
+    request.log.error({ error: error.message }, 'Toss order failed')
     return reply.code(error.statusCode || 502).send({ error: error.message })
   }
 })
