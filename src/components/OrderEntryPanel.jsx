@@ -70,10 +70,26 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
   const ready = authenticated && brokerConfigured
   const needsLimitPrice = orderSession === 'regular' && priceType === 'limit'
   const selectedHolding = accountSummary?.holdings?.find((item) => item.code === stock?.code)
-  const hasAccountCapacity = side === 'buy'
-    ? Number(accountSummary?.orderableAmount || 0) > 0 && (!needsLimitPrice || total <= Number(accountSummary?.orderableAmount || 0))
-    : Number(selectedHolding?.tradableQuantity || 0) >= Number(quantity || 0)
-  const canSubmit = ready && Boolean(accountSummary) && hasAccountCapacity && /^\d{6}$/.test(stock?.code || '') && Number(quantity) > 0 && (!needsLimitPrice || Number(price) > 0)
+  const validStock = /^\d{6}$/.test(stock?.code || '')
+  const validQuantity = Number(quantity) > 0
+  const validPrice = !needsLimitPrice || Number(price) > 0
+  const canSubmit = ready && validStock && validQuantity && validPrice
+  const capacityWarning = accountSummary && validQuantity
+    ? side === 'buy' && needsLimitPrice && total > Number(accountSummary.orderableAmount || 0)
+      ? `입력한 주문금액이 조회된 주문 가능 금액 ${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원을 초과합니다. 최종 가능 여부는 증권사에서 확인합니다.`
+      : side === 'sell' && Number(quantity) > Number(selectedHolding?.tradableQuantity || 0)
+        ? `입력한 수량이 조회된 매도 가능 수량 ${Number(selectedHolding?.tradableQuantity || 0).toLocaleString('ko-KR')}주를 초과합니다. 최종 가능 여부는 증권사에서 확인합니다.`
+        : ''
+    : ''
+  const orderButtonGuide = !ready
+    ? '로그인 후 선택한 증권사 API를 연결해 주세요.'
+    : !validStock
+      ? '주문할 종목을 선택해 주세요.'
+      : !validQuantity
+        ? '주문수량을 입력하면 주문 버튼이 활성화됩니다.'
+        : !validPrice
+          ? '주문가격을 입력하면 주문 버튼이 활성화됩니다.'
+          : ''
 
   useEffect(() => {
     setOrderSession('regular')
@@ -143,6 +159,8 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
           : <SellAccountPreview ready={ready} loading={accountLoading} holding={selectedHolding}/>}
       </div>
       <button className={`order-execute ${side}`} disabled={!canSubmit || pending} onClick={openConfirmation}>{side === 'buy' ? '매수 주문하기' : '매도 주문하기'}</button>
+      {orderButtonGuide && <p className="order-button-guide">{orderButtonGuide}</p>}
+      {capacityWarning && <p className="order-capacity-warning"><AlertTriangle/>{capacityWarning}</p>}
       {submitMessage && <p className="order-submit-message success" role="status">{submitMessage}</p>}
       {ready && accountError && <p className="order-submit-message error" role="alert">계좌 조회 실패: {accountError}</p>}
       <OrderAccessNotice authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured}/>
