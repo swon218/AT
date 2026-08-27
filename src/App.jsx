@@ -18,6 +18,14 @@ import { createIndicatorConfig } from './utils/indicators'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
 const today = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'full' }).format(new Date())
+const defaultStock = {
+  code: '005930',
+  name: '삼성전자',
+  market: 'KRX',
+  price: 0,
+  change: 0,
+  volume: 0,
+}
 const rankingCategories = [
   { id: 'realtime', label: '실시간조회', icon: Radio },
   { id: 'rising', label: '상승률', icon: TrendingUp },
@@ -115,7 +123,7 @@ function AssetsPreview({ currentUser, integrationStatus, accountSummary, account
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState(defaultStock)
   const [period, setPeriod] = useState('15분')
   const [orderPeriod, setOrderPeriod] = useState('15분')
   const [search, setSearch] = useState('')
@@ -320,7 +328,6 @@ function App() {
     setRankingAvailable(false)
     setRankingError('')
     setRankingList([])
-    setSelected(null)
 
     getKiwoomRankings(rankingType, 20)
       .then((stocks) => {
@@ -332,7 +339,6 @@ function App() {
       .catch((error) => {
         if (!active) return
         setRankingList([])
-        setSelected(null)
         setRankingError(error.message)
       })
       .finally(() => active && setRankingLoading(false))

@@ -66,6 +66,7 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
   const [pending, setPending] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
+  const [validationMessage, setValidationMessage] = useState('')
   const total = useMemo(() => Number(price || 0) * Number(quantity || 0), [price, quantity])
   const ready = authenticated && brokerConfigured
   const needsLimitPrice = orderSession === 'regular' && priceType === 'limit'
@@ -99,10 +100,15 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
     setDraft(null)
     setSubmitError('')
     setSubmitMessage('')
+    setValidationMessage('')
   }, [broker])
 
   const openConfirmation = () => {
-    if (!canSubmit) return
+    if (!canSubmit) {
+      setValidationMessage(orderButtonGuide)
+      return
+    }
+    setValidationMessage('')
     setSubmitError('')
     setSubmitMessage('')
     setDraft({
@@ -158,8 +164,9 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
           ? <FieldRow label="주문 가능 금액"><div className="trade-input readonly"><span>{!ready ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary ? `${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원` : '조회 실패'}</span></div></FieldRow>
           : <SellAccountPreview ready={ready} loading={accountLoading} holding={selectedHolding}/>}
       </div>
-      <button className={`order-execute ${side}`} disabled={!canSubmit || pending} onClick={openConfirmation}>{side === 'buy' ? '매수 주문하기' : '매도 주문하기'}</button>
+      <button className={`order-execute ${side}`} disabled={!ready || pending} onClick={openConfirmation}>{side === 'buy' ? '매수 주문하기' : '매도 주문하기'}</button>
       {orderButtonGuide && <p className="order-button-guide">{orderButtonGuide}</p>}
+      {validationMessage && <p className="order-submit-message error" role="alert">{validationMessage}</p>}
       {capacityWarning && <p className="order-capacity-warning"><AlertTriangle/>{capacityWarning}</p>}
       {submitMessage && <p className="order-submit-message success" role="status">{submitMessage}</p>}
       {ready && accountError && <p className="order-submit-message error" role="alert">계좌 조회 실패: {accountError}</p>}
