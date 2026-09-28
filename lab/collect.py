@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-from store import KST, SOURCE, connect, now_iso, save_rows, validate_rows
+from store import KST, SOURCE, connect, now_iso, save_rows, prepare_rows, quality_counts
 from contextlib import contextmanager
 
 
@@ -96,7 +96,13 @@ def collect(args):
     message = None
     deadline = time.monotonic() + args.max_minutes * 60
     try:
-        if args.symbols:
+        if args.retry_invalid_ohlc:
+            symbols = [{"code": r[0], "name": r[1], "market": r[2]} for r in db.execute("""
+              SELECT code,name,market FROM symbols WHERE active=1 AND
+              (error='Invalid OHLC range' OR code IN
+               (SELECT code FROM current_candle_quality WHERE status='quarantined'))
+              ORDER BY code""")]
+        elif args.symbols:
             import re
             codes = list(dict.fromkeys(args.symbols.split(",")))
             if any(not re.fullmatch(r"[0-9][0-9A-Z]{5}", c) for c in codes):
@@ -126,7 +132,7 @@ def collect(args):
                 full = args.full or now.weekday() == 6 or latest is None or (source and source[0] != f"FDR:{args.source}")
                 begin = start if full else max(start, date.fromisoformat(latest) - timedelta(days=60))
                 rows = fetch("prices", code, begin.isoformat(), end.isoformat(), args.source)
-                clean = validate_rows(rows)
+                clean = [p["row"] for p in prepare_rows(rows, f"FDR:{args.source}")]
                 # A split/adjustment revises history, so refetch the entire 5y window.
                 previous = {r[0]: r[1:] for r in db.execute("SELECT date,open,high,low,close FROM candles WHERE code=? AND date>=?", (code, begin.isoformat()))}
                 revised = any(r[0] in previous and any(abs(a - b) > 0.01 for a, b in zip(r[1:5], previous[r[0]])) for r in clean)
@@ -136,8 +142,14 @@ def collect(args):
                 count = save_rows(db, code, stock["name"], stock["market"], rows, begin.isoformat(), end.isoformat(), full, f"FDR:{args.source}")
                 with db:
                     db.execute("DELETE FROM candles WHERE code=? AND date<?", (code, start.isoformat()))
-                succeeded += 1
-                print(json.dumps({"code": code, "rows": count, "ok": True}), flush=True)
+                    db.execute("DELETE FROM candle_quality WHERE code=? AND date<?", (code, start.isoformat()))
+                quality = quality_counts(db, code)
+                unresolved = quality.get("quarantined", 0)
+                failed += int(bool(unresolved))
+                succeeded += int(not unresolved)
+                print(json.dumps({"code": code, "rows": count, "ok": not unresolved,
+                                  "corrected": quality.get("corrected", 0), "quarantined": unresolved,
+                                  "error": "OHLC quarantine" if unresolved else None}), flush=True)
             except Exception as exc:
                 failed += 1
                 with db:
@@ -162,6 +174,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default=os.environ.get("LAB_DB_PATH", "data/lab.sqlite"))
     parser.add_argument("--symbols", help="Omit to collect currently listed KOSPI/KOSDAQ stocks")
+    parser.add_argument("--retry-invalid-ohlc", action="store_true", help="Only retry active symbols with OHLC validation/quarantine errors")
+    parser.add_argument("--migrate-only", action="store_true", help="Add quality tables without fetching or changing existing candles")
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--max-minutes", type=int, default=600)
     parser.add_argument("--delay", type=float, default=0.4)
@@ -171,6 +185,8 @@ if __name__ == "__main__":
     parser.add_argument("--source", choices=("NAVER", "KRX"), default=os.environ.get("LAB_SOURCE", "NAVER"))
     parser.add_argument("--start")
     args = parser.parse_args()
+    if args.symbols and args.retry_invalid_ohlc:
+        parser.error("--symbols and --retry-invalid-ohlc cannot be combined")
     if args.worker:
         # Keep stdout exclusively JSON (FDR may print progress notices).
         import contextlib
@@ -180,7 +196,11 @@ if __name__ == "__main__":
     else:
         try:
             with collection_lock(args.db):
-                sys.exit(collect(args))
+                if args.migrate_only:
+                    connect(args.db).close()
+                    print("Quality schema ready; existing candles preserved.")
+                else:
+                    sys.exit(collect(args))
         except OSError as exc:
             print(f"Collector lock/storage unavailable: {exc}", file=sys.stderr)
             sys.exit(1)

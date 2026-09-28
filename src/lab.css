@@ -1,4 +1,5 @@
 /* Laboratory shares the chart engine and right-hand indicator editor. */
+.lab-quality{margin:0 20px 12px;padding:10px 12px;border:1px solid #534831;border-radius:6px;background:#26261f;color:#dec89a;font-size:11px;line-height:1.7}.lab-quality p{margin:0 0 7px}.lab-quality summary{cursor:pointer}.lab-quality .lab-trades{margin-top:8px;max-height:200px}
 .lab-mode .sidebar .account-profile{margin-top:auto}
 .order-preview-grid>.lab-chart-panel{overflow-y:auto;display:block;min-width:0;scrollbar-color:#314968 #0c1a2b}
 .lab-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 20px 14px}

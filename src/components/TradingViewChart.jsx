@@ -4,6 +4,7 @@ import {
 } from 'lightweight-charts'
 import { getBrokerCandles } from '../services/kiwoomMarketApi'
 import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma, indicatorDisplayName } from '../utils/indicators'
+import { gapSafeSeries, isQuarantined } from '../utils/dataQuality'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(Math.round(value))
 const volumeFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
@@ -18,12 +19,14 @@ function normalizeCandles(rows) {
         : /^\d{4}-\d{2}-\d{2}$/.test(rawTime ?? '')
           ? rawTime
           : Math.floor(new Date(rawTime).getTime() / 1000)
+      if (isQuarantined(row)) return { time, quality: 'quarantined' }
       return {
+        quality: row.quality,
         time, open: Math.abs(Number(row.open)), high: Math.abs(Number(row.high)), low: Math.abs(Number(row.low)),
         close: Math.abs(Number(row.close)), volume: Math.abs(Number(row.volume ?? 0)),
       }
     })
-    .filter((row) => row.time && [row.open, row.high, row.low, row.close].every(Number.isFinite))
+    .filter((row) => row.time && (isQuarantined(row) || [row.open, row.high, row.low, row.close].every(Number.isFinite)))
     .sort((a, b) => String(a.time).localeCompare(String(b.time), undefined, { numeric: true }))
 }
 
@@ -155,10 +158,12 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       borderColor: '#1d334d',
       scaleMargins: { top: 0.12, bottom: 0.05 },
     })
-    volumeSeries.setData(data.map((item) => ({
+    volumeSeries.setData(data.map((item) => isQuarantined(item) ? { time: item.time } : ({
       time: item.time, value: item.volume,
       color: item.close >= item.open ? 'rgba(255,92,105,.42)' : 'rgba(57,127,245,.42)',
     })))
+
+    const plot = (calculate, line = true) => gapSafeSeries(data, calculate, line)
 
     const enabled = new Map(indicators.map((config) => [config.id, config]))
     const maConfig = enabled.get('ma')
@@ -169,13 +174,13 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       const common = { lineWidth: 2, priceLineVisible: false, lastValueVisible: false }
       const shortSeries = chart.addSeries(LineSeries, { ...common, color: maConfig.shortColor || maConfig.color || '#f4c542' })
       const longSeries = chart.addSeries(LineSeries, { ...common, color: maConfig.longColor || '#4b86ff' })
-      shortSeries.setData(movingAverage(data, shortPeriod))
-      longSeries.setData(movingAverage(data, longPeriod))
+      shortSeries.setData(plot(segment => movingAverage(segment, shortPeriod)))
+      longSeries.setData(plot(segment => movingAverage(segment, longPeriod)))
     }
 
     const bollingerConfig = enabled.get('bollinger')
     if (bollingerConfig) {
-      const bands = calculateBollinger(data, Math.max(1, Number(bollingerConfig.period) || 20), Math.max(0.1, Number(bollingerConfig.multiplier) || 2))
+      const bands = Object.fromEntries(['upper', 'middle', 'lower'].map(key => [key, plot(segment => calculateBollinger(segment, Math.max(1, Number(bollingerConfig.period) || 20), Math.max(0.1, Number(bollingerConfig.multiplier) || 2))[key])]))
       const common = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false }
       const upper = chart.addSeries(LineSeries, { ...common, color: bollingerConfig.upperColor })
       const middle = chart.addSeries(LineSeries, { ...common, color: bollingerConfig.middleColor, lineStyle: 2 })
@@ -192,13 +197,13 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
         priceFormat: { type: 'custom', formatter: formatVolume, minMove: 1 },
         priceLineVisible: false, lastValueVisible: false,
       }, 1)
-      series.setData(calculateSma(data, Math.max(1, Number(volumeMaConfig.period) || 20), 'volume'))
+      series.setData(plot(segment => calculateSma(segment, Math.max(1, Number(volumeMaConfig.period) || 20), 'volume')))
     }
 
     let nextPane = 2
     const rsiConfig = enabled.get('rsi')
     if (rsiConfig) {
-      const rsiValues = calculateRsi(data, Math.max(1, Number(rsiConfig.period) || 14))
+      const rsiValues = plot(segment => calculateRsi(segment, Math.max(1, Number(rsiConfig.period) || 14)))
       const series = chart.addSeries(LineSeries, {
         color: rsiConfig.color, lineWidth: 2, priceScaleId: 'right',
         priceFormat: { type: 'custom', formatter: (value) => value.toFixed(1), minMove: 0.1 },
@@ -218,7 +223,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       const fast = Math.max(1, Number(macdConfig.fast) || 12)
       const slow = Math.max(fast + 1, Number(macdConfig.slow) || 26)
       const signalPeriod = Math.max(1, Number(macdConfig.signal) || 9)
-      const values = calculateMacd(data, fast, slow, signalPeriod)
+      const values = Object.fromEntries(['macd', 'signal', 'histogram'].map(key => [key, plot(segment => calculateMacd(segment, fast, slow, signalPeriod)[key], key !== 'histogram')]))
       const macd = chart.addSeries(LineSeries, { color: macdConfig.macdColor, lineWidth: 2, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: true }, nextPane)
       const signal = chart.addSeries(LineSeries, { color: macdConfig.signalColor, lineWidth: 2, priceScaleId: 'right', priceLineVisible: false, lastValueVisible: true }, nextPane)
       const histogram = chart.addSeries(HistogramSeries, { priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false }, nextPane)
@@ -261,19 +266,18 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     const volumeLegendValue = document.createElement('b')
     volumeLegendElement.className = 'tv-volume-legend'
     volumeLegendElement.append('거래량 ', volumeLegendValue)
-    volumeLegendValue.textContent = formatVolume(data.at(-1)?.volume)
+    volumeLegendValue.textContent = isQuarantined(data.at(-1)) ? '—' : formatVolume(data.at(-1)?.volume)
     volumePaneElement?.append(volumeLegendElement)
     chart.timeScale().fitContent()
     const scaleWidthFrame = requestAnimationFrame(() => {
       rightScaleWidthRef.current = Math.max(56, chart.priceScale('right', 0).width())
     })
     chart.subscribeCrosshairMove((param) => {
-      const point = param.seriesData.get(candleSeries)
-      const volumePoint = param.seriesData.get(volumeSeries)
-      const fallback = data.at(-1)
-      const nextLegend = point?.open ? { ...point, volume: volumePoint?.value ?? fallback.volume } : fallback
+      const time = typeof param.time === 'object' && param.time
+        ? `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}` : param.time
+      const nextLegend = data.find(row => row.time === time) || data.at(-1)
       setLegend(nextLegend)
-      volumeLegendValue.textContent = formatVolume(nextLegend.volume)
+      volumeLegendValue.textContent = isQuarantined(nextLegend) ? '—' : formatVolume(nextLegend.volume)
     })
 
     let previousContainerWidth = container.clientWidth
@@ -330,7 +334,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       event.stopPropagation()
       root.scrollTop += event.deltaY
     }}>
-      {legend && <div className="tv-legend"><span>시 <b>{won(legend.open)}</b></span><span>고 <b className="up">{won(legend.high)}</b></span><span>저 <b className="down">{won(legend.low)}</b></span><span>종 <b>{won(legend.close)}</b></span></div>}
+      {legend && <div className="tv-legend">{isQuarantined(legend) ? <span>{legend.time} · 가격 오류 격리</span> : <><span>시 <b>{won(legend.open)}</b></span><span>고 <b className="up">{won(legend.high)}</b></span><span>저 <b className="down">{won(legend.low)}</b></span><span>종 <b>{won(legend.close)}</b></span>{legend.quality === 'corrected' && <span>1원 보정</span>}</>}</div>}
       {indicators.length > 0 && <div className="tv-indicator-badges">{indicators.map((config) => <span key={config.id}>{indicatorDisplayName(config)}</span>)}</div>}
       <div ref={scrollContentRef} className="tv-chart-scroll-content" style={scrollContentStyle}>
         <div ref={containerRef} className="tv-chart-canvas" aria-label={`${stock.name} TradingView 캔들 차트`}/>

@@ -1,4 +1,5 @@
 import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma } from './indicators.js'
+import { backtestWindow } from './dataQuality.js'
 
 export const RULES = [
   { id: 'ma-up', indicator: 'ma', label: 'MA 단기선 > 장기선' },
@@ -88,7 +89,8 @@ function signals(candles, indicators) {
 
 export function runBacktest(candles, indicators, settings) {
   validateIndicators(indicators)
-  if (!Array.isArray(candles) || candles.length < 2 || candles.length > 2000) throw new Error('백테스트에 필요한 일봉이 부족합니다.')
+  const window = backtestWindow(candles, indicators, settings)
+  candles = window.candles
   candles.forEach((c, i) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(c.time) || (i && candles[i - 1].time >= c.time)
       || !['open', 'high', 'low', 'close', 'volume'].every(k => Number.isFinite(c[k]) && c[k] >= 0) || c.close <= 0
@@ -106,8 +108,7 @@ export function runBacktest(candles, indicators, settings) {
       if (!rule || !indicators.some(c => c.id === rule.indicator)) throw new Error('조건에 필요한 지표를 오른쪽에서 추가하세요.')
     }
   }
-  const start = settings.start || candles[0].time, end = settings.end || candles.at(-1).time
-  if (start > end || start < candles[0].time || end > candles.at(-1).time) throw new Error('수집된 기간 안에서 시작일과 종료일을 선택하세요.')
+  const { start, end } = window
   const evaluate = signals(candles, indicators)
   const used = [...new Set([...settings.entry, ...settings.exit])]
   const first = candles.findIndex(c => c.time >= start)
@@ -152,6 +153,7 @@ export function runBacktest(candles, indicators, settings) {
   if (!readyBars) throw new Error('지표 준비 기간이 부족합니다. 기간을 늘리거나 지표 기간을 줄이세요.')
   const finalEquity = equity.at(-1).value
   return { start: candles[first].time, end: candles[last].time, initialCapital: initial, finalEquity,
+    quality: { correctedBarsUsed: candles.filter(c => c.quality === 'corrected').length, calculationStart: candles[0].time },
     returnPct: (finalEquity / initial - 1) * 100, maxDrawdownPct: drawdown,
     closedTrades: trades.length, winRate: trades.length ? trades.filter(t => t.pnl > 0).length / trades.length * 100 : null,
     costs, trades, equity, readyBars, firstSignalDate,

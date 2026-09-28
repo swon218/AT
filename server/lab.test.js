@@ -26,3 +26,16 @@ test('empty data and reader failures are explicit without private error leakage'
     assert.equal((await app.inject('/api/public/lab/candles?symbol=005930')).statusCode, 404)
   } finally { await app.close() }
 })
+
+test('quality metadata and quarantine-only timelines survive the public API', async () => {
+  const app = Fastify()
+  const data = { items: [{ time: '2025-01-02', open: null, high: null, low: null, close: null, volume: null, tradable: 0, quality: 'quarantined' }], quality: { policy: 'naver-close-envelope-1krw-v1', corrected: 0, quarantined: 1, issues: [{ time: '2025-01-02', raw: { high: 100, close: 150 }, delta: 50 }] } }
+  registerLabRoutes(app, async () => data)
+  try {
+    const response = await app.inject('/api/public/lab/candles?symbol=005930')
+    assert.equal(response.statusCode, 200)
+    const body = response.json()
+    assert.deepEqual(body.items, data.items)
+    assert.deepEqual(body.quality, data.quality)
+  } finally { await app.close() }
+})
