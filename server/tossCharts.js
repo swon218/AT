@@ -83,7 +83,7 @@ async function fetchRawCandles(symbol, interval, limit, credentials) {
 }
 
 export async function getTossCandles(symbol, interval, limit = 200, { apiKey, secretKey, cacheScope = 'operator' }) {
-  if (!/^\d{6}$/.test(symbol)) throw new Error('올바른 6자리 종목코드가 필요합니다.')
+  if (!/^[0-9][0-9A-Z]{5}$/.test(symbol)) throw new Error('올바른 6자리 종목코드가 필요합니다.')
   if (!allowedIntervals.has(interval)) throw new Error('지원하지 않는 차트 주기입니다.')
   const key = `${cacheScope}:${symbol}:${interval}:${limit}`
   const existing = cache.get(key)

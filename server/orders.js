@@ -26,7 +26,7 @@ function normalizeOrder(input) {
   if (!side) throw httpError('매수 또는 매도를 선택해 주세요.')
 
   const symbol = String(input.symbol || '').trim()
-  if (!/^\d{6}$/.test(symbol)) throw httpError('국내주식 종목코드를 확인해 주세요.')
+  if (!/^[0-9][0-9A-Z]{5}$/.test(symbol)) throw httpError('국내주식 종목코드를 확인해 주세요.')
 
   const exchange = String(input.exchange || 'KRX').toUpperCase()
   if (!['KRX', 'NXT', 'SOR'].includes(exchange)) throw httpError('지원하지 않는 거래소입니다.')

@@ -7,7 +7,8 @@ import { getNews } from './news.js'
 import { getAccountSettings, getAuthenticatedCredentials, updateAccountSettings } from './accountSettings.js'
 import { placeKiwoomOrder } from './orders.js'
 import { getKiwoomAccountSummary } from './kiwoomAccount.js'
-import { requestKiwoom, requestKiwoomWithCredentials } from './kiwoomClient.js'
+import { marketRequestContext } from './marketContext.js'
+import { registerStockSearchRoutes } from './stockSearch.js'
 import { getTossCandles } from './tossCharts.js'
 import { getTossAccountSummary } from './tossAccount.js'
 import { placeTossOrder } from './tossOrders.js'
@@ -22,24 +23,7 @@ await app.register(cors, {
 
 app.get('/api/health', async () => ({ ok: true, ...publicConfigurationStatus() }))
 registerLabRoutes(app)
-
-async function marketRequestContext(request) {
-  const authorization = request.headers.authorization || ''
-  if (!authorization.startsWith('Bearer ')) return { requester: requestKiwoom, cacheScope: 'operator' }
-
-  const { user, credentials, status } = await getAuthenticatedCredentials(request)
-  if (!status.kiwoomConfigured || !credentials.kiwoomAppKey || !credentials.kiwoomSecretKey) {
-    return { requester: requestKiwoom, cacheScope: 'operator' }
-  }
-  return {
-    cacheScope: `user:${user.id}`,
-    requester: (definition) => requestKiwoomWithCredentials({
-      appKey: credentials.kiwoomAppKey,
-      secretKey: credentials.kiwoomSecretKey,
-      ...definition,
-    }),
-  }
-}
+registerStockSearchRoutes(app)
 
 async function tossMarketCredentials(request) {
   const authorization = request.headers.authorization || ''

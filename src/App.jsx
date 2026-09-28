@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity, BarChart3, Bell, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
   LockKeyhole, LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen, Radio,
-  Search, ShieldCheck, Star, TrendingDown, TrendingUp, WalletCards, X, Zap,
+  ShieldCheck, Star, TrendingDown, TrendingUp, WalletCards, X, Zap,
 } from 'lucide-react'
-import { getKiwoomRankings } from './services/kiwoomMarketApi'
+import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketApi'
+import GlobalStockSearch from './components/GlobalStockSearch'
 import { getPublicNews } from './services/newsApi'
 import TradingViewChart from './components/TradingViewChart'
 import LabChartPanel from './components/LabChartPanel'
@@ -48,7 +49,7 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], order
     <article className="panel chart-panel">
       <div className="quote-head">
         <div className={`quote-identity${orderMode ? ' order-quote-identity' : ''}`}><h2>{stock?.name ?? ''}{stock && !orderMode && <button aria-label="관심종목 추가"><Star size={17}/></button>}</h2><small>{stock ? `${stock.code} · ${stock.market ?? 'KRX'}` : ''}</small>{stock && orderMode && <button className="order-favorite" aria-label="관심종목 추가"><Star size={17}/></button>}</div>
-        {stock && <div className="quote-price"><strong>{won(stock.price)}<small>원</small></strong><span className={stock.change >= 0 ? 'up' : 'down'}>{stock.change >= 0 ? '▲' : '▼'} {Math.abs(stock.change)}%</span></div>}
+        {stock && <div className="quote-price"><strong>{stock.price == null ? '—' : won(stock.price)}<small>원</small></strong>{stock.change != null && <span className={stock.change >= 0 ? 'up' : 'down'}>{stock.change >= 0 ? '▲' : '▼'} {Math.abs(stock.change)}%</span>}{stock.quoteError && <span title={stock.quoteError}>시세 조회 실패</span>}</div>}
       </div>
       <div className="chart-toolbar"><div className="chart-periods"><>
         <div className="minute-period-select" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setMinuteMenuOpen(false) }}>
@@ -128,7 +129,9 @@ function App() {
   const [selected, setSelected] = useState(defaultStock)
   const [period, setPeriod] = useState('15분')
   const [orderPeriod, setOrderPeriod] = useState('15분')
-  const [search, setSearch] = useState('')
+  const selectionVersion = useRef(0)
+  const [selectionRevision, setSelectionRevision] = useState(0)
+  const [integrationVersion, setIntegrationVersion] = useState(0)
   const [mobileNav, setMobileNav] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [rankingType, setRankingType] = useState('realtime')
@@ -163,14 +166,23 @@ function App() {
   const [tossDashboardLoading, setTossDashboardLoading] = useState(false)
   const [tossDashboardError, setTossDashboardError] = useState('')
 
-  const visibleStocks = useMemo(
-    () => rankingList.filter((stock) => `${stock.name}${stock.code}`.toLowerCase().includes(search.toLowerCase())),
-    [rankingList, search],
-  )
-
   const chooseStock = (stock) => {
+    selectionVersion.current += 1
+    setSelectionRevision(selectionVersion.current)
     setSelected(stock)
-    setSearch('')
+  }
+
+  const searchCredentialScope = `${currentUser?.id || 'guest'}:${integrationStatus.kiwoomConfigured}:${integrationVersion}`
+  const chooseSearchStock = (stock) => {
+    chooseStock(stock)
+    setOrderBroker('kiwoom')
+    setActivePage('order')
+    setMobileNav(false)
+  }
+
+  const onIntegrationStatusChange = (status) => {
+    setIntegrationStatus(status)
+    setIntegrationVersion(version => version + 1)
   }
 
   const openPage = (page) => {
@@ -227,8 +239,24 @@ function App() {
 
   useEffect(() => {
     if (activePage !== 'order') return
-    setOrderBroker(integrationStatus.kiwoomConfigured ? 'kiwoom' : integrationStatus.tossConfigured ? 'toss' : 'kiwoom')
+    setOrderBroker('kiwoom')
   }, [activePage, currentUser?.id, integrationStatus.kiwoomConfigured, integrationStatus.tossConfigured])
+
+  useEffect(() => {
+    if (activePage !== 'order' || !selected?.code) return
+    const controller = new AbortController()
+    const code = selected.code
+    const version = selectionVersion.current
+    setSelected(stock => ({ ...stock, price: null, change: null, quoteError: '' }))
+    getKiwoomStockQuote(code, controller.signal)
+      .then(quote => {
+        if (!controller.signal.aborted && selectionVersion.current === version) setSelected(stock => stock.code === code ? { ...stock, ...quote } : stock)
+      })
+      .catch(error => {
+        if (!controller.signal.aborted && selectionVersion.current === version) setSelected(stock => stock.code === code ? { ...stock, quoteError: error.message } : stock)
+      })
+    return () => controller.abort()
+  }, [activePage, selected?.code, searchCredentialScope, selectionRevision])
 
   useEffect(() => {
     if (activePage !== 'dashboard') return
@@ -322,13 +350,13 @@ function App() {
     setRankingAvailable(false)
     setRankingError('')
     setRankingList([])
-
+    const version = selectionVersion.current
     getKiwoomRankings(rankingType, 20)
       .then((stocks) => {
         if (!active) return
         setRankingList(stocks)
         setRankingAvailable(true)
-        if (stocks.length > 0) setSelected(stocks[0])
+        if (stocks.length > 0 && activePage === 'dashboard' && selectionVersion.current === version) setSelected(stocks[0])
       })
       .catch((error) => {
         if (!active) return
@@ -338,7 +366,7 @@ function App() {
       .finally(() => active && setRankingLoading(false))
 
     return () => { active = false }
-  }, [brokerageDataEnabled, rankingType, currentUser, integrationStatus.kiwoomConfigured])
+  }, [brokerageDataEnabled, rankingType, currentUser, integrationStatus.kiwoomConfigured, integrationVersion])
 
   useEffect(() => {
     let active = true
@@ -385,10 +413,7 @@ function App() {
       <main>
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
-          {brokerageDataEnabled ? <div className="global-search">
-            <Search/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="현재 목록에서 종목 검색"/>
-            {search && rankingList.length > 0 && <div className="search-results">{visibleStocks.map((stock) => <button key={stock.code} onClick={() => chooseStock(stock)}><span><strong>{stock.name}</strong><small>{stock.code}</small></span><b>{won(stock.price)}원</b></button>)}</div>}
-          </div> : <div className="lab-workspace-title"><FlaskConical/><span>실험실 · 백테스팅</span></div>}
+          {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title"><FlaskConical/><span>실험실 · 백테스팅</span></div>}
           <div className="header-actions">{brokerageDataEnabled && <span className="market-open"><i/>시장 조회</span>}<button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
@@ -438,7 +463,7 @@ function App() {
       </main>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal}/>
-      <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={setIntegrationStatus}/>
+      <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange}/>
       <ConfirmDialog open={logoutConfirmOpen} pending={loggingOut} onCancel={() => setLogoutConfirmOpen(false)} onConfirm={confirmLogout}/>
     </div>
   )

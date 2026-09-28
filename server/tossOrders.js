@@ -23,7 +23,7 @@ function normalizeOrder(input) {
   const side = input.side === 'sell' ? 'SELL' : input.side === 'buy' ? 'BUY' : ''
   if (!side) throw httpError('매수 또는 매도를 선택해 주세요.')
   const symbol = String(input.symbol || '').trim()
-  if (!/^\d{6}$/.test(symbol)) throw httpError('국내주식 종목코드를 확인해 주세요.')
+  if (!/^[0-9][0-9A-Z]{5}$/.test(symbol)) throw httpError('국내주식 종목코드를 확인해 주세요.')
   if (input.session && input.session !== 'regular') throw httpError('토스 주문은 현재 정규장 주문만 지원합니다.')
   const orderType = input.priceType === 'market' ? 'MARKET' : 'LIMIT'
   const quantity = positiveInteger(input.quantity, '주문수량', 1_000_000)

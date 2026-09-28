@@ -71,7 +71,7 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
   const ready = authenticated && brokerConfigured
   const needsLimitPrice = orderSession === 'regular' && priceType === 'limit'
   const selectedHolding = accountSummary?.holdings?.find((item) => item.code === stock?.code)
-  const validStock = /^\d{6}$/.test(stock?.code || '')
+  const validStock = /^[0-9][0-9A-Z]{5}$/.test(stock?.code || '')
   const validQuantity = Number(quantity) > 0
   const validPrice = !needsLimitPrice || Number(price) > 0
   const canSubmit = ready && validStock && validQuantity && validPrice
@@ -101,7 +101,7 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
     setSubmitError('')
     setSubmitMessage('')
     setValidationMessage('')
-  }, [broker])
+  }, [broker, stock?.code])
 
   const openConfirmation = () => {
     if (!canSubmit) {

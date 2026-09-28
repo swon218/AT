@@ -7,6 +7,24 @@ const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), 
   headers: { 'Content-Type': 'application/json' },
 })
 
+test('전체 종목 연속조회 헤더와 응답 메타데이터를 인증 재시도에서도 보존한다', async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  let requests = 0
+  globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/oauth2/token')) return jsonResponse({ token: `page-token-${requests}`, expires_dt: '20991231235959' })
+    assert.equal(options.headers['cont-yn'], 'Y')
+    assert.equal(options.headers['next-key'], 'second-page')
+    if (++requests === 1) return jsonResponse({ return_code: 8005 }, 401)
+    return new Response(JSON.stringify({ list: [{ code: '005930' }] }), { headers: { 'cont-yn': 'Y', 'next-key': 'third-page' } })
+  }
+  const page = await requestKiwoomWithCredentials({ appKey: 'pagination-key', secretKey: 'pagination-secret', apiId: 'ka10099', endpoint: '/api/dostk/stkinfo', body: { mrkt_tp: '0' }, contYn: 'Y', nextKey: 'second-page', returnPage: true })
+  assert.equal(requests, 2)
+  assert.equal(page.body.list[0].code, '005930')
+  assert.equal(page.contYn, 'Y')
+  assert.equal(page.nextKey, 'third-page')
+})
+
 test('8005 응답이면 토큰을 한 번 재발급하고 원래 요청을 재시도한다', async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = originalFetch })

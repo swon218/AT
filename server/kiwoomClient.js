@@ -78,7 +78,7 @@ async function getAccessToken({ appKey, secretKey }) {
   }
 }
 
-export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true }) {
+export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false }) {
   const { token, cacheKey } = await getAccessToken({ appKey, secretKey })
   try {
     const response = await fetch(`${config.kiwoomHost}${endpoint}`, {
@@ -86,28 +86,27 @@ export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, e
       headers: {
         'Content-Type': 'application/json;charset=UTF-8',
         authorization: `Bearer ${token}`,
-        'cont-yn': 'N',
-        'next-key': '',
+        'cont-yn': contYn,
+        'next-key': nextKey,
         'api-id': apiId,
       },
       body: JSON.stringify(body),
     })
-    return await readJson(response, `키움 ${apiId}`)
+    const payload = await readJson(response, `키움 ${apiId}`)
+    return returnPage ? { body: payload, contYn: response.headers.get('cont-yn'), nextKey: response.headers.get('next-key') } : payload
   } catch (error) {
     if (!retry || !error.invalidToken) throw error
 
     const cached = tokenCache.get(cacheKey)
     if (cached?.token === token) tokenCache.delete(cacheKey)
-    return requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry: false })
+    return requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry: false, contYn, nextKey, returnPage })
   }
 }
 
-export async function requestKiwoom({ apiId, endpoint, body }) {
+export async function requestKiwoom(definition) {
   return requestKiwoomWithCredentials({
+    ...definition,
     appKey: config.kiwoomAppKey,
     secretKey: config.kiwoomSecretKey,
-    apiId,
-    endpoint,
-    body,
   })
 }
