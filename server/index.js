@@ -11,6 +11,7 @@ import { requestKiwoom, requestKiwoomWithCredentials } from './kiwoomClient.js'
 import { getTossCandles } from './tossCharts.js'
 import { getTossAccountSummary } from './tossAccount.js'
 import { placeTossOrder } from './tossOrders.js'
+import { registerLabRoutes } from './lab.js'
 
 const app = Fastify({ logger: true })
 await app.register(cors, {
@@ -20,6 +21,7 @@ await app.register(cors, {
 })
 
 app.get('/api/health', async () => ({ ok: true, ...publicConfigurationStatus() }))
+registerLabRoutes(app)
 
 async function marketRequestContext(request) {
   const authorization = request.headers.authorization || ''

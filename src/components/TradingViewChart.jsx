@@ -27,7 +27,7 @@ function normalizeCandles(rows) {
     .sort((a, b) => String(a.time).localeCompare(String(b.time), undefined, { numeric: true }))
 }
 
-export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom' }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles }) {
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
@@ -69,6 +69,13 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     let active = true
     setData([])
     setLegend(null)
+    if (suppliedCandles !== undefined) {
+      const candles = normalizeCandles(suppliedCandles)
+      setData(candles)
+      setLegend(candles.at(-1) ?? null)
+      setLoading(false)
+      return () => { active = false }
+    }
     if (!stock?.code) return () => { active = false }
 
     setLoading(true)
@@ -83,7 +90,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       .finally(() => active && setLoading(false))
 
     return () => { active = false }
-  }, [stock?.code, period, credentialScope, broker])
+  }, [stock?.code, period, credentialScope, broker, suppliedCandles])
 
   useEffect(() => {
     const container = containerRef.current
@@ -123,7 +130,9 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       wickDownColor: '#5c99ff', borderUpColor: '#ff5c69', borderDownColor: '#397ff5',
       priceLineColor: '#758ca9',
     })
-    candleSeries.setData(data.map(({ volume, ...candle }) => candle))
+    // Keep reported suspension closes in indicator calculations, matching the
+    // backtest, but draw whitespace for candles without a valid OHLC range.
+    candleSeries.setData(data.map(({ volume, ...candle }) => candle.open > 0 && candle.high > 0 && candle.low > 0 ? candle : { time: candle.time }))
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'custom', formatter: formatVolume, minMove: 1 }, priceScaleId: 'right',

@@ -123,7 +123,7 @@ export function calculateRsi(candles, period = 14) {
   let averageLoss = losses / period
   const result = []
   const pushValue = (index) => {
-    const value = averageLoss === 0 ? 100 : 100 - (100 / (1 + averageGain / averageLoss))
+    const value = averageLoss === 0 ? (averageGain === 0 ? 50 : 100) : 100 - (100 / (1 + averageGain / averageLoss))
     result.push({ time: candles[index].time, value })
   }
   pushValue(period)

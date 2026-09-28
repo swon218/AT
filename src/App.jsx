@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Activity, BarChart3, Bell, ChevronDown, CircleDollarSign, LayoutDashboard, LineChart,
+  Activity, BarChart3, Bell, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
   LockKeyhole, LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen, Radio,
   Search, ShieldCheck, Star, TrendingDown, TrendingUp, WalletCards, X, Zap,
 } from 'lucide-react'
 import { getKiwoomRankings } from './services/kiwoomMarketApi'
 import { getPublicNews } from './services/newsApi'
 import TradingViewChart from './components/TradingViewChart'
+import LabChartPanel from './components/LabChartPanel'
 import OrderEntryPanel from './components/OrderEntryPanel'
 import AuthModal from './components/AuthModal'
 import AccountSettingsModal from './components/AccountSettingsModal'
@@ -14,7 +15,7 @@ import ConfirmDialog from './components/ConfirmDialog'
 import { supabase } from './services/supabaseClient'
 import { getIntegrationSettings } from './services/accountSettingsApi'
 import { getBrokerAccountSummary, getKiwoomAccountSummary } from './services/kiwoomAccountApi'
-import { createIndicatorConfig } from './utils/indicators'
+import useIndicatorDraft from './hooks/useIndicatorDraft'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
 const today = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'full' }).format(new Date())
@@ -61,13 +62,13 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], order
   )
 }
 
-function OrderPreview({ selected, period, onPeriodChange, currentUser, integrationStatus, broker, onBrokerChange, accountSummary, accountLoading, accountError, onAccountRefresh, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+function ChartWorkspace({ selected, period, onPeriodChange, currentUser, integrationStatus = {}, broker, onBrokerChange, accountSummary, accountLoading, accountError, onAccountRefresh, indicatorsOnly = false, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange }) {
   const configured = broker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured
   const credentialScope = currentUser && configured ? `${broker}:user:${currentUser.id}` : `${broker}:operator`
   return (
-    <section className="preview-grid order-preview-grid">
-      <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} orderMode credentialScope={credentialScope} broker={broker}/>
-      <article className="panel preview-order"><OrderEntryPanel stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} broker={broker} onBrokerChange={onBrokerChange} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/></article>
+    <section className="preview-grid order-preview-grid" aria-label={indicatorsOnly ? '실험실' : '주식 주문'}>
+      {indicatorsOnly ? <LabChartPanel indicators={indicatorConfigs} strategyName={strategyName} settings={backtestSettings} onSettingsChange={onBacktestSettingsChange}/> : <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} orderMode credentialScope={credentialScope} broker={broker}/>}
+      <article className="panel preview-order"><OrderEntryPanel indicatorsOnly={indicatorsOnly} stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} broker={broker} onBrokerChange={onBrokerChange} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/></article>
     </section>
   )
 }
@@ -123,6 +124,7 @@ function AssetsPreview({ currentUser, integrationStatus, accountSummary, account
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
+  const brokerageDataEnabled = activePage !== 'lab'
   const [selected, setSelected] = useState(defaultStock)
   const [period, setPeriod] = useState('15분')
   const [orderPeriod, setOrderPeriod] = useState('15분')
@@ -137,13 +139,14 @@ function App() {
   const [news, setNews] = useState([])
   const [newsLoading, setNewsLoading] = useState(true)
   const [newsError, setNewsError] = useState('')
-  const [indicatorConfigs, setIndicatorConfigs] = useState([])
-  const [strategyName, setStrategyName] = useState('')
+
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
+  const orderDraft = useIndicatorDraft(currentUser?.id)
+  const labDraft = useIndicatorDraft(currentUser?.id)
   const [nickname, setNickname] = useState('')
   const [integrationStatus, setIntegrationStatus] = useState({ kiwoomConfigured: false, tossConfigured: false, telegramConfigured: false })
   const [accountSummary, setAccountSummary] = useState(null)
@@ -174,12 +177,6 @@ function App() {
     setActivePage(page)
     setMobileNav(false)
   }
-
-  const addIndicator = (id) => setIndicatorConfigs((items) => items.some((item) => item.id === id) ? items : [...items, createIndicatorConfig(id)])
-  const updateIndicator = (id, patch) => setIndicatorConfigs((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item))
-  const removeIndicator = (id) => setIndicatorConfigs((items) => items.filter((item) => item.id !== id))
-  const resetIndicators = () => setIndicatorConfigs((items) => items.map((item) => createIndicatorConfig(item.id)))
-  const deleteIndicators = () => { setIndicatorConfigs([]); setStrategyName('') }
 
   const closeAuthModal = useCallback(() => setAuthModalOpen(false), [])
   const closeAccountSettings = useCallback(() => setAccountSettingsOpen(false), [])
@@ -229,13 +226,6 @@ function App() {
   }, [loadNickname])
 
   useEffect(() => {
-    if (activePage !== 'order') {
-      setIndicatorConfigs([])
-      setStrategyName('')
-    }
-  }, [activePage])
-
-  useEffect(() => {
     if (activePage !== 'order') return
     setOrderBroker(integrationStatus.kiwoomConfigured ? 'kiwoom' : integrationStatus.tossConfigured ? 'toss' : 'kiwoom')
   }, [activePage, currentUser?.id, integrationStatus.kiwoomConfigured, integrationStatus.tossConfigured])
@@ -259,7 +249,7 @@ function App() {
 
   useEffect(() => {
     let active = true
-    if (!currentUser || !integrationStatus.kiwoomConfigured) {
+    if (!brokerageDataEnabled || !currentUser || !integrationStatus.kiwoomConfigured) {
       setAccountSummary(null)
       setAccountLoading(false)
       setAccountError('')
@@ -276,7 +266,7 @@ function App() {
       })
       .finally(() => active && setAccountLoading(false))
     return () => { active = false }
-  }, [currentUser, integrationStatus.kiwoomConfigured, accountRefreshVersion])
+  }, [brokerageDataEnabled, currentUser, integrationStatus.kiwoomConfigured, accountRefreshVersion])
 
   useEffect(() => {
     let active = true
@@ -324,6 +314,10 @@ function App() {
 
   useEffect(() => {
     let active = true
+    if (!brokerageDataEnabled) {
+      setRankingLoading(false)
+      return () => { active = false }
+    }
     setRankingLoading(true)
     setRankingAvailable(false)
     setRankingError('')
@@ -344,7 +338,7 @@ function App() {
       .finally(() => active && setRankingLoading(false))
 
     return () => { active = false }
-  }, [rankingType, currentUser, integrationStatus.kiwoomConfigured])
+  }, [brokerageDataEnabled, rankingType, currentUser, integrationStatus.kiwoomConfigured])
 
   useEffect(() => {
     let active = true
@@ -358,7 +352,7 @@ function App() {
   const selectedCategory = rankingCategories.find((item) => item.id === rankingType)
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''} ${activePage === 'lab' ? 'lab-mode' : ''}`}>
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileNav ? 'open' : ''}`}>
         <div className="brand">
           {sidebarCollapsed
@@ -371,16 +365,17 @@ function App() {
           <p>WORKSPACE</p>
           <button className={`nav-link ${activePage === 'dashboard' ? 'active' : ''}`} onClick={() => openPage('dashboard')}><LayoutDashboard/><span>대시보드</span></button>
           <button className={`nav-link ${activePage === 'order' ? 'active' : ''}`} onClick={() => openPage('order')}><LineChart/><span>주식 주문</span></button>
+          <button className={`nav-link ${activePage === 'lab' ? 'active' : ''}`} onClick={() => openPage('lab')}><FlaskConical/><span>실험실</span></button>
           <button className={`nav-link ${activePage === 'assets' ? 'active' : ''}`} onClick={() => openPage('assets')}><WalletCards/><span>자산 현황</span></button>
           <p>MARKET</p>
           <a><Newspaper/><span>마켓 뉴스</span></a>
           <a><CircleDollarSign/><span>시세 분석</span></a>
         </nav>
-        <div className="connection-card guest-connection">
+        {brokerageDataEnabled && <div className="connection-card guest-connection">
           <div className="connection-title"><ShieldCheck/><span>{currentUser ? '사용자 API 범위' : '게스트 API 범위'}</span></div>
           <div><span><i className="dot kiwoom"/>{currentUser && integrationStatus.kiwoomConfigured ? '개인 키움 API' : '키움 공개시세'}</span><b>{currentUser && integrationStatus.kiwoomConfigured ? '연결됨' : '읽기전용'}</b></div>
           <div><span><LockKeyhole/>주문·계좌</span><b className={currentUser && integrationStatus.kiwoomConfigured ? '' : 'blocked'}>{currentUser && integrationStatus.kiwoomConfigured ? '사용가능' : '차단'}</b></div>
-        </div>
+        </div>}
         <div className="account-profile">
           <button type="button" className="account-profile-main" onClick={openProfileOrLogin} title={currentUser ? '개인 설정' : '로그인'}><span>{nickname?.charAt(0).toUpperCase() || currentUser?.email?.charAt(0).toUpperCase() || 'G'}</span><div><strong>{currentUser ? nickname || '사용자' : '게스트'}</strong><small>{currentUser?.email ?? '로그인 후 개인 기능 사용'}</small></div></button>
           <button type="button" className="account-session-button" onClick={openLoginOrLogoutConfirm} title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'}>{currentUser ? <LogOut/> : <LogIn/>}</button>
@@ -390,14 +385,14 @@ function App() {
       <main>
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
-          <div className="global-search">
+          {brokerageDataEnabled ? <div className="global-search">
             <Search/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="현재 목록에서 종목 검색"/>
             {search && rankingList.length > 0 && <div className="search-results">{visibleStocks.map((stock) => <button key={stock.code} onClick={() => chooseStock(stock)}><span><strong>{stock.name}</strong><small>{stock.code}</small></span><b>{won(stock.price)}원</b></button>)}</div>}
-          </div>
-          <div className="header-actions"><span className="market-open"><i/>시장 조회</span><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
+          </div> : <div className="lab-workspace-title"><FlaskConical/><span>실험실 · 백테스팅</span></div>}
+          <div className="header-actions">{brokerageDataEnabled && <span className="market-open"><i/>시장 조회</span>}<button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
-        <div className={`content guest-content ${activePage === 'order' ? 'order-content' : ''}`}>
+        <div className={`content guest-content ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
           {activePage === 'dashboard' ? <>
           <section className="welcome guest-welcome">
             <div><p>{today}</p><h1>실시간 시장을 확인하세요</h1><span>{currentUser && integrationStatus.kiwoomConfigured ? '저장한 사용자 키움 API로 시세와 계좌를 조회합니다.' : '비로그인 상태에서는 공개 시세만 제공되며 주문과 계좌 조회는 차단됩니다.'}</span></div>
@@ -438,7 +433,7 @@ function App() {
               </div>
             </article>
           </section>
-          </> : activePage === 'order' ? <OrderPreview selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={orderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={setStrategyName} onAddIndicator={addIndicator} onUpdateIndicator={updateIndicator} onRemoveIndicator={removeIndicator} onResetIndicators={resetIndicators} onDeleteIndicators={deleteIndicators}/> : <AssetsPreview currentUser={currentUser} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/>}
+          </> : activePage === 'order' ? <ChartWorkspace key="order" selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={orderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" indicatorsOnly {...labDraft}/> : <AssetsPreview currentUser={currentUser} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/>}
         </div>
       </main>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 

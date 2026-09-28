@@ -1,0 +1,24 @@
+[Unit]
+Description=ATLAS historical daily candle collection
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=atlas
+Group=atlas
+WorkingDirectory=/opt/atlas
+Environment=LAB_DB_PATH=/var/lib/atlas/lab.sqlite
+Environment=LAB_SOURCE=NAVER
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/atlas/.venv-lab/bin/python /opt/atlas/lab/collect.py --max-minutes 260
+TimeoutStartSec=270min
+KillMode=control-group
+UMask=0027
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/atlas
