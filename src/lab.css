@@ -1,4 +1,5 @@
 /* Laboratory shares the chart engine and right-hand indicator editor. */
+.lab-mode .sidebar .account-profile{margin-top:auto}
 .order-preview-grid>.lab-chart-panel{overflow-y:auto;display:block;min-width:0;scrollbar-color:#314968 #0c1a2b}
 .lab-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 20px 14px}
 .lab-eyebrow{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:1.6px;color:#929fff}.lab-eyebrow svg{width:15px;height:15px}
