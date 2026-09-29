@@ -419,11 +419,17 @@ function App() {
           <div className="header-actions">{brokerageDataEnabled && <span className="market-open"><i/>시장 조회</span>}<button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
-        <div className={`content guest-content ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
+        <div className={`content guest-content ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
           {activePage === 'dashboard' ? <>
           <section className="welcome guest-welcome">
             <div><p>{today}</p><h1>통합 대시보드</h1><span>시장 순위와 뉴스를 살펴보고, 관심 있는 종목의 차트를 확인하세요.</span></div>
             <div className="guest-access-badge"><ShieldCheck/><div><strong>{currentUser && integrationStatus.kiwoomConfigured ? '개인 API 모드' : '읽기 전용 모드'}</strong><small>{currentUser && integrationStatus.kiwoomConfigured ? '사용자 키는 VPS에서 복호화 후 사용' : '운영자 키는 VPS에서만 사용'}</small></div></div>
+          </section>
+
+          <section className="dashboard-market-summary" aria-label="시장 지표">
+            {['코스피', '코스닥', '원/달러', '장 상태', '거래대금', '상승·하락 종목 수'].map((title) => (
+              <article className="panel dashboard-summary-card" key={title}><h2>{title}</h2></article>
+            ))}
           </section>
 
           <section className="trading-grid dashboard-market-grid">

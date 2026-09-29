@@ -282,13 +282,16 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
 
     let previousContainerWidth = container.clientWidth
     let previousContainerHeight = container.clientHeight
-    const resizeObserver = new ResizeObserver(([entry]) => {
-      const width = Math.floor(entry.contentRect.width)
-      const height = Math.floor(entry.contentRect.height)
+    let resizeFrame = null
+    const resizeChart = () => {
+      resizeFrame = null
+      const width = container.clientWidth
+      const height = container.clientHeight
+      if (width <= 0 || height <= 0) return
       if (width === previousContainerWidth && height === previousContainerHeight) return
       const panes = chart.panes()
       const previousLastPaneHeight = panes.at(-1)?.getHeight() ?? 90
-      chart.resize(width, height)
+      chart.resize(width, height, true)
       rightScaleWidthRef.current = Math.max(56, chart.priceScale('right', 0).width())
       if (manualBottomResizeRef.current && panes.length > 2) {
         panes.at(-1)?.setHeight(Math.max(90, previousLastPaneHeight + height - previousContainerHeight))
@@ -296,6 +299,10 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       }
       previousContainerWidth = width
       previousContainerHeight = height
+    }
+    // Follow the latest layout each frame without resizing inside the observer loop.
+    const resizeObserver = new ResizeObserver(() => {
+      if (resizeFrame === null) resizeFrame = requestAnimationFrame(resizeChart)
     })
     resizeObserver.observe(container)
     let captureEnabled = false
@@ -315,6 +322,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       paneResizeObservers.forEach((observer) => observer.disconnect())
       document.removeEventListener('pointerup', capturePaneLayouts)
       resizeObserver.disconnect()
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       volumeLegendElement.remove()
       chart.remove()
     }

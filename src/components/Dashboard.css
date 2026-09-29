@@ -1,6 +1,15 @@
 /* Dashboard only: rankings select the adjacent stock chart; news shares the row. */
+.dashboard-content { container: atlas-dashboard / inline-size; }
+.dashboard-market-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.dashboard-summary-card { min-width: 0; min-height: 108px; padding: 16px; }
+.dashboard-summary-card h2 { margin: 0; color: #9cb9d9; font-size: 12px; font-weight: 500; line-height: 1.5; }
 .guest-content .trading-grid.dashboard-market-grid {
-  grid-template-columns: minmax(430px, .35fr) minmax(330px, .41fr) minmax(250px, .24fr);
+  grid-template-columns: minmax(0, .35fr) minmax(0, .41fr) minmax(0, .24fr);
   align-items: stretch;
 }
 .dashboard-market-grid > .panel { min-width: 0; }
@@ -42,6 +51,7 @@
   flex: 1;
   height: auto;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #294f6a transparent;
@@ -63,6 +73,8 @@
   font-size: 12px;
 }
 .dashboard-news .news-item small { line-height: 1.5; margin-top: 7px; }
+.dashboard-news .news-item > div { flex: 1; overflow-wrap: anywhere; }
+.dashboard-news .news-item > span { flex: 0 0 auto; }
 .dashboard-account-grid .dashboard-holdings-table { overflow-x: auto; }
 .dashboard-account-grid .dashboard-holding-row { min-width: 455px; }
 .dashboard-orders-scroll { overflow-x: auto; }
@@ -85,15 +97,20 @@
 .dashboard-orders-table th:nth-child(5) { text-align: right; }
 .dashboard-orders-table td { padding: 0; }
 .dashboard-orders-table .data-message { min-height: 180px; }
-@media (max-width: 1350px) {
+@container atlas-dashboard (max-width: 960px) {
+  .dashboard-market-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .guest-content .trading-grid.dashboard-market-grid {
-    grid-template-columns: minmax(430px, .46fr) minmax(330px, .54fr);
+    grid-template-columns: minmax(0, .46fr) minmax(0, .54fr);
   }
   .dashboard-market-grid .dashboard-news { grid-column: 1 / -1; height: 300px; }
 }
-@media (max-width: 1050px) {
+@container atlas-dashboard (max-width: 680px) {
   .guest-content .trading-grid.dashboard-market-grid { grid-template-columns: minmax(0, 1fr); }
   .guest-content .dashboard-account-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@container atlas-dashboard (max-width: 540px) {
+  .dashboard-market-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .dashboard-summary-card { min-height: 90px; padding: 13px; }
 }
 @media (max-width: 540px) {
   .dashboard-market-grid .chart-panel { height: 480px; }
