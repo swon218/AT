@@ -2,7 +2,7 @@
 .dashboard-content { container: atlas-dashboard / inline-size; }
 .dashboard-welcome { gap: 16px; flex-wrap: wrap; }
 .dashboard-clock { display: flex; align-items: baseline; gap: 8px; margin-left: auto; white-space: nowrap; }
-.dashboard-clock strong { color: #e4efff; font-size: 28px; font-weight: 600; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+.dashboard-clock strong { color: #e4efff; font-size: 18px; font-weight: 600; letter-spacing: .5px; font-variant-numeric: tabular-nums; }
 .dashboard-clock small { color: #7898b9; font-size: 11px; }
 .dashboard-market-summary {
   display: grid;
@@ -114,7 +114,7 @@
 }
 @container atlas-dashboard (max-width: 540px) {
   .dashboard-clock { gap: 5px; }
-  .dashboard-clock strong { font-size: 22px; }
+  .dashboard-clock strong { font-size: 16px; }
   .dashboard-clock small { font-size: 10px; }
   .dashboard-market-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .dashboard-summary-card { min-height: 90px; padding: 13px; }
