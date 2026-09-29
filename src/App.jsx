@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, BarChart3, Bell, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
-  LockKeyhole, LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen, Radio,
-  ShieldCheck, Star, TrendingDown, TrendingUp, WalletCards, X, Zap,
+  Activity, Bell, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
+  LockKeyhole, LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen,
+  ShieldCheck, Star, WalletCards, X,
 } from 'lucide-react'
 import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketApi'
 import GlobalStockSearch from './components/GlobalStockSearch'
+import MarketRankings from './components/MarketRankings'
 import { getPublicNews } from './services/newsApi'
 import TradingViewChart from './components/TradingViewChart'
 import LabChartPanel from './components/LabChartPanel'
@@ -30,12 +31,12 @@ const defaultStock = {
   volume: 0,
 }
 const rankingCategories = [
-  { id: 'realtime', label: '실시간조회', icon: Radio },
-  { id: 'rising', label: '상승률', icon: TrendingUp },
-  { id: 'falling', label: '하락률', icon: TrendingDown },
-  { id: 'volume', label: '거래량 상위', icon: BarChart3 },
-  { id: 'surge', label: '거래량 급증', icon: Zap },
-  { id: 'favorites', label: '관심종목', icon: Star },
+  { id: 'realtime', label: '실시간조회' },
+  { id: 'rising', label: '상승률' },
+  { id: 'falling', label: '하락률' },
+  { id: 'volume', label: '거래량 상위' },
+  { id: 'surge', label: '거래량 급증' },
+  { id: 'favorites', label: '관심종목' },
 ]
 
 function LoginNotice({ text }) {
@@ -379,8 +380,6 @@ function App() {
     return () => { active = false }
   }, [])
 
-  const selectedCategory = rankingCategories.find((item) => item.id === rankingType)
-
   return (
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''} ${activePage === 'lab' ? 'lab-mode' : ''}`}>
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileNav ? 'open' : ''}`}>
@@ -426,24 +425,8 @@ function App() {
             <div className="guest-access-badge"><ShieldCheck/><div><strong>{currentUser && integrationStatus.kiwoomConfigured ? '개인 API 모드' : '읽기 전용 모드'}</strong><small>{currentUser && integrationStatus.kiwoomConfigured ? '사용자 키는 VPS에서 복호화 후 사용' : '운영자 키는 VPS에서만 사용'}</small></div></div>
           </section>
 
-          <section className="trading-grid">
-            <article className="panel ranking-menu">
-              <div className="ranking-source"><i className="dot kiwoom"/><span>키움증권 API</span><b>READ</b></div>
-              <div className="ranking-buttons">{rankingCategories.map(({ id, label, icon: Icon }) => <button className={rankingType === id ? 'active' : ''} key={id} onClick={() => setRankingType(id)}><Icon/><span>{label}</span></button>)}</div>
-              <p>{currentUser && integrationStatus.kiwoomConfigured ? '저장한 사용자 키움 API로 조회합니다.' : 'VPS의 공개 시장조회 API만 호출합니다.'}</p>
-            </article>
-
-            <article className="panel watch-panel">
-              <div className="panel-head ranking-list-head"><div><h2>{selectedCategory?.label}</h2></div><small className={rankingLoading ? 'ranking-updating loading' : 'ranking-updating'}>{rankingLoading ? '조회 중' : rankingAvailable ? `${rankingList.length}개` : ''}</small></div>
-              <div className="stock-table">
-                <div className="stock-row table-head"><span>종목</span><span>현재가</span><span>{rankingType === 'surge' ? '급증률' : '등락률'}</span></div>
-                <div className="ranking-stock-scroll">
-                  {rankingList.map((stock, index) => <button className={`stock-row ${selected?.code === stock.code ? 'selected' : ''}`} key={stock.code} onClick={() => chooseStock(stock)}><span><strong><em>{String(index + 1).padStart(2, '0')}</em><span className="ranking-stock-name">{stock.name}</span><small className="ranking-stock-code">{stock.code}</small></strong><small className="ranking-stock-volume">거래량 {stock.volume}</small></span><span>{won(stock.price)}</span><span className={rankingType === 'surge' || stock.change >= 0 ? 'up' : 'down'}>{rankingType === 'surge' ? `+${stock.surge}%` : `${stock.change >= 0 ? '+' : ''}${stock.change}%`}</span></button>)}
-                  {!rankingLoading && rankingError && <div className="data-message error">{rankingError}</div>}
-                  {!rankingLoading && !rankingError && rankingList.length === 0 && <div className="data-message">표시할 종목이 없습니다.</div>}
-                </div>
-              </div>
-            </article>
+          <section className="trading-grid dashboard-market-grid">
+            <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={chooseStock}/>
 
             <StockChartPanel stock={selected} period={period} onPeriodChange={setPeriod} credentialScope={currentUser && integrationStatus.kiwoomConfigured ? `user:${currentUser.id}` : 'operator'}/>
           </section>
