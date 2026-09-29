@@ -201,6 +201,7 @@ nav .nav-link{width:100%;height:42px;border:0;border-radius:9px;display:flex;ali
 .order-main-tabs.indicators-only{grid-template-columns:1fr}
 .strategy-name>small{font-size:11px;line-height:1.6}
 .strategy-storage-notice{margin:0 0 10px;color:#9aafca;font-size:11px;line-height:1.6}
+.strategy-library-tools{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.strategy-library-tools button,.strategy-copy{padding:7px 9px;border:1px solid #344962;border-radius:6px;background:#15253a;color:#bcd0e8;font-size:11px;cursor:pointer}.strategy-library-tools button:disabled,.strategy-copy:disabled{opacity:.45;cursor:not-allowed}.strategy-copy{width:100%;margin-top:8px}.strategy-feedback{font-size:11px;line-height:1.5;margin:0 0 8px;overflow-wrap:anywhere}.strategy-feedback.error{color:#ff909c}.strategy-feedback.warning{color:#edc57d}
 .indicator-settings select:disabled{opacity:.65;cursor:not-allowed}
 .lab-chart-panel .lab-data-label{color:#92a9c8;font-size:12px}
 .lab-chart-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;color:#92a9c8}

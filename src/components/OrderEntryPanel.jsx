@@ -271,11 +271,10 @@ function IndicatorConfigCard({ config, onOpenHelp, onChange, onRemove }) {
   )
 }
 
-function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, strategyStorage }) {
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [helpIndicatorId, setHelpIndicatorId] = useState(null)
-  const [actionMessage, setActionMessage] = useState('')
   const searchRef = useRef(null)
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -300,9 +299,18 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
 
   return (
     <div className="indicator-settings">
-      <FieldRow label="지표 설정"><select className="trade-input accent" aria-label="저장한 전략 불러오기" disabled><option>전략 저장 기능 준비 중</option></select></FieldRow>
+      <FieldRow label="저장 전략"><select className="trade-input accent" aria-label="저장한 전략 불러오기" value={strategyStorage.selectedId} onChange={event => strategyStorage.onSelect(event.target.value)} disabled={!strategyStorage.authenticated || strategyStorage.busy || strategyStorage.loading}>
+        <option value="">{!strategyStorage.authenticated ? '로그인 후 불러오기' : strategyStorage.loading ? '목록 불러오는 중…' : '새 전략 / 전략 선택'}</option>
+        {strategyStorage.selectedId && !strategyStorage.rows.some(row => row.id === strategyStorage.selectedId) && <option value={strategyStorage.selectedId}>삭제되었거나 확인할 수 없는 전략</option>}
+        {strategyStorage.rows.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
+      </select></FieldRow>
+      <div className="strategy-library-tools">
+        <button onClick={() => strategyStorage.onSelect('')} disabled={strategyStorage.busy}>새 전략</button>
+        <button onClick={strategyStorage.refresh} disabled={!strategyStorage.authenticated || strategyStorage.loading || strategyStorage.busy}>목록 새로고침</button>
+        <button onClick={() => strategyStorage.onSelect(strategyStorage.selectedId)} disabled={!strategyStorage.selectedId || strategyStorage.busy || strategyStorage.loading || !strategyStorage.rows.some(row => row.id === strategyStorage.selectedId)}>다시 불러오기</button>
+      </div>
       <hr/>
-      <label className="strategy-name"><span>전략 이름</span><input className="trade-input" value={strategyName} onChange={(event) => onStrategyNameChange(event.target.value)} placeholder="전략 이름을 입력하세요" maxLength={100}/><small>현재 탭의 작업 내용은 탭 이동 시 유지됩니다. 새로고침하거나 로그인 계정이 바뀌면 초기화됩니다.</small></label>
+      <label className="strategy-name"><span>전략 이름</span><input className="trade-input" value={strategyName} onChange={(event) => onStrategyNameChange(event.target.value)} placeholder="전략 이름을 입력하세요" maxLength={100}/><small>저장한 전략은 주식 주문·실험실에서 함께 사용합니다. 저장하지 않은 변경은 새로고침 시 사라집니다.</small></label>
       <div className="indicator-search-wrap" ref={searchRef}>
         <div className="indicator-search"><div className="trade-input"><Search/><input role="combobox" aria-expanded={searchOpen} value={query} onFocus={() => setSearchOpen(true)} onClick={() => setSearchOpen(true)} onChange={(event) => { setQuery(event.target.value); setSearchOpen(true) }} onKeyDown={(event) => { if (event.key === 'Enter') addFirstResult(); if (event.key === 'Escape') setSearchOpen(false) }} placeholder="보조지표 검색"/></div><button onClick={addFirstResult} disabled={!filtered.some((item) => !indicatorConfigs.some((config) => config.id === item.id))}>추가</button></div>
         {searchOpen && <div className="indicator-catalog-popover">
@@ -320,16 +328,19 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
         {indicatorConfigs.length === 0 && <div className="indicator-empty">보조지표를 검색해서 추가하세요.</div>}
       </div>
       <div className="strategy-actions-area">
-        <p className="strategy-storage-notice">전략 저장·불러오기는 준비 중입니다. 현재는 주식 주문과 실험실의 지표 설정을 각각 편집할 수 있습니다.</p>
-        {actionMessage && <p className="strategy-action-message" role="status">{actionMessage}</p>}
-        <div className="strategy-actions"><button onClick={() => { onResetIndicators(); setActionMessage('지표 설정을 기본값으로 초기화했습니다.') }} disabled={indicatorConfigs.length === 0}>초기화</button><button onClick={() => { onDeleteIndicators(); setActionMessage('현재 지표 조합을 삭제했습니다.') }} disabled={indicatorConfigs.length === 0 && !strategyName}>삭제</button><button className="save" disabled title="전략 저장 기능 준비 중">저장</button></div>
+        <p className="strategy-storage-notice">{strategyStorage.authenticated ? '지표·매매 조건·비용 설정을 저장합니다. 종목과 조회 기간은 각 화면에서 유지됩니다.' : '로그인하면 전략을 저장하고 두 탭에서 불러올 수 있습니다.'}</p>
+        {strategyStorage.stale && <p className="strategy-feedback warning" role="status">다른 탭에서 변경되었거나 삭제된 전략입니다. 다시 불러오거나 이름을 바꿔 복사 저장하세요.</p>}
+        {(strategyStorage.draftError || strategyStorage.error) && <p className="strategy-feedback error" role="alert">{strategyStorage.draftError || strategyStorage.error}</p>}
+        <p className="strategy-action-message" role="status">{strategyStorage.busy ? '처리 중…' : strategyStorage.message || (strategyStorage.dirty ? '저장하지 않은 변경 내용이 있습니다.' : '')}</p>
+        <div className="strategy-actions"><button onClick={onResetIndicators} disabled={strategyStorage.busy || indicatorConfigs.length === 0}>초기화</button><button onClick={onDeleteIndicators} disabled={strategyStorage.busy || (!strategyStorage.selectedId && indicatorConfigs.length === 0 && !strategyName)}>{strategyStorage.selectedId ? '삭제' : '비우기'}</button><button className="save" onClick={() => strategyStorage.onSave()} disabled={!strategyStorage.authenticated || strategyStorage.busy || !indicatorConfigs.length || !strategyName.trim() || !!strategyStorage.stale}>저장</button></div>
+        {strategyStorage.selectedId && <button className="strategy-copy" onClick={() => strategyStorage.onSave(true)} disabled={!strategyStorage.authenticated || strategyStorage.busy || !indicatorConfigs.length || !strategyName.trim()}>다른 이름으로 복사 저장</button>}
       </div>
       {helpIndicatorId && <IndicatorHelpModal item={INDICATOR_CATALOG.find((item) => item.id === helpIndicatorId)} onClose={() => setHelpIndicatorId(null)}/>} 
     </div>
   )
 }
 
-export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators }) {
+export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, strategyStorage }) {
   const [mainTab, setMainTab] = useState('order')
   const [mode, setMode] = useState('general')
   const brokerConfigured = Boolean(broker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured)
@@ -337,7 +348,7 @@ export default function OrderEntryPanel({ stock, authenticated = false, integrat
     <section className="atlas-order-entry" aria-label={indicatorsOnly ? '실험실 지표 설정' : '주식 주문 입력'}>
       <div className={`order-main-tabs${indicatorsOnly ? ' indicators-only' : ''}`}>{!indicatorsOnly && <button className={mainTab === 'order' ? 'active' : ''} onClick={() => setMainTab('order')}>주문</button>}<button className={indicatorsOnly || mainTab === 'indicator' ? 'active' : ''} onClick={() => setMainTab('indicator')}>지표 설정</button></div>
       {!indicatorsOnly && <div className="broker-select-tabs" aria-label="주문 증권사 선택"><button className={broker === 'kiwoom' ? 'active kiwoom' : ''} onClick={() => onBrokerChange?.('kiwoom')}><span>키움증권</span><small>{integrationStatus.kiwoomConfigured ? '내 API' : '차트 전용'}</small></button><button className={broker === 'toss' ? 'active toss' : ''} onClick={() => onBrokerChange?.('toss')}><span>토스증권</span><small>{integrationStatus.tossConfigured ? '내 API' : '차트 전용'}</small></button></div>}
-      {indicatorsOnly || mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators}/> : <>
+      {indicatorsOnly || mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/> : <>
         <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
         {mode === 'general' ? <GeneralOrder stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/>}
       </>}

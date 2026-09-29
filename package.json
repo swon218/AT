@@ -9,6 +9,7 @@
     "dev:api": "node --watch server/index.js",
     "start:api": "node server/index.js",
     "test:server": "node --test server/*.test.js",
+    "test:strategies": "node --test tests/strategies*.test.js",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -24,5 +25,8 @@
     "react-dom": "latest",
     "typescript": "latest",
     "vite": "latest"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
   }
 }
