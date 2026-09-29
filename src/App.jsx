@@ -7,6 +7,7 @@ import {
 import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketApi'
 import GlobalStockSearch from './components/GlobalStockSearch'
 import MarketRankings from './components/MarketRankings'
+import DashboardWelcome from './components/DashboardWelcome'
 import './components/Dashboard.css'
 import { getPublicNews } from './services/newsApi'
 import TradingViewChart from './components/TradingViewChart'
@@ -22,7 +23,6 @@ import useIndicatorDraft from './hooks/useIndicatorDraft'
 import useStrategies from './hooks/useStrategies'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
-const today = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'full' }).format(new Date())
 const defaultStock = {
   code: '005930',
   name: '삼성전자',
@@ -421,9 +421,7 @@ function App() {
 
         <div className={`content guest-content ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
           {activePage === 'dashboard' ? <>
-          <section className="welcome guest-welcome">
-            <div><p>{today}</p><h1>통합 대시보드</h1></div>
-          </section>
+          <DashboardWelcome/>
 
           <section className="dashboard-market-summary" aria-label="시장 지표">
             {['코스피', '코스닥', '원/달러', '장 상태', '거래대금', '상승·하락 종목 수'].map((title) => (
