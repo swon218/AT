@@ -1,5 +1,4 @@
 /* Dashboard ranking card: shared API lists, horizontal categories, aligned rows. */
-.guest-content .trading-grid.dashboard-market-grid{grid-template-columns:minmax(470px,.36fr) minmax(340px,.64fr)}
 .panel.market-rankings{height:520px;min-width:0;display:flex;flex-direction:column;padding:14px 12px 0;background:linear-gradient(135deg,#061c2e,#081a2b 70%);border-color:#17354b;border-radius:9px}
 .market-rankings-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 13px}
 .market-rankings-heading h2{margin:0;font-size:16px;font-weight:700;letter-spacing:-.3px;color:#edf4ff}
@@ -24,6 +23,5 @@
 .market-ranking-identity>small{flex:0 0 auto;color:#729ec4;font-size:10px}
 .market-ranking-row>.up,.market-ranking-row>.down{font-weight:600}
 .market-ranking-list .data-message{min-height:230px;gap:10px;align-content:center}
-@media(max-width:1150px) and (min-width:851px){.guest-content .trading-grid.dashboard-market-grid{grid-template-columns:minmax(420px,.36fr) minmax(280px,.64fr)}.market-ranking-tabs button{padding-inline:7px;font-size:10px}}
-@media(max-width:1030px){.guest-content .trading-grid.dashboard-market-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:1150px) and (min-width:851px){.market-ranking-tabs button{padding-inline:7px;font-size:10px}}
 @media(max-width:540px){.panel.market-rankings{height:480px;padding:12px 9px 0}.market-rankings-heading h2{font-size:15px}.market-ranking-tabs button{min-height:37px;padding-inline:10px}.market-ranking-row{min-height:42px}}

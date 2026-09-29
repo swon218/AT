@@ -7,6 +7,7 @@ import {
 import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketApi'
 import GlobalStockSearch from './components/GlobalStockSearch'
 import MarketRankings from './components/MarketRankings'
+import './components/Dashboard.css'
 import { getPublicNews } from './services/newsApi'
 import TradingViewChart from './components/TradingViewChart'
 import LabChartPanel from './components/LabChartPanel'
@@ -421,7 +422,7 @@ function App() {
         <div className={`content guest-content ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
           {activePage === 'dashboard' ? <>
           <section className="welcome guest-welcome">
-            <div><p>{today}</p><h1>실시간 시장을 확인하세요</h1><span>{currentUser && integrationStatus.kiwoomConfigured ? '저장한 사용자 키움 API로 시세와 계좌를 조회합니다.' : '비로그인 상태에서는 공개 시세만 제공되며 주문과 계좌 조회는 차단됩니다.'}</span></div>
+            <div><p>{today}</p><h1>통합 대시보드</h1><span>시장 순위와 뉴스를 살펴보고, 관심 있는 종목의 차트를 확인하세요.</span></div>
             <div className="guest-access-badge"><ShieldCheck/><div><strong>{currentUser && integrationStatus.kiwoomConfigured ? '개인 API 모드' : '읽기 전용 모드'}</strong><small>{currentUser && integrationStatus.kiwoomConfigured ? '사용자 키는 VPS에서 복호화 후 사용' : '운영자 키는 VPS에서만 사용'}</small></div></div>
           </section>
 
@@ -429,17 +430,26 @@ function App() {
             <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={chooseStock}/>
 
             <StockChartPanel stock={selected} period={period} onPeriodChange={setPeriod} credentialScope={currentUser && integrationStatus.kiwoomConfigured ? `user:${currentUser.id}` : 'operator'}/>
-          </section>
-
-          <section className="lower-grid guest-lower-grid">
-            <article className="panel holdings dashboard-holdings"><div className="panel-head dashboard-holdings-head"><div><h2>보유종목</h2></div><div className="holdings-broker-tabs" aria-label="보유종목 증권사 선택"><button className={dashboardHoldingsBroker === 'kiwoom' ? 'active kiwoom' : ''} onClick={() => setDashboardHoldingsBroker('kiwoom')}>키움</button><button className={dashboardHoldingsBroker === 'toss' ? 'active toss' : ''} onClick={() => setDashboardHoldingsBroker('toss')}>토스</button></div></div><DashboardHoldingsTable currentUser={currentUser} broker={dashboardHoldingsBroker} configured={dashboardHoldingsBroker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured} accountSummary={dashboardHoldingsBroker === 'toss' ? tossDashboardSummary : accountSummary} accountLoading={dashboardHoldingsBroker === 'toss' ? tossDashboardLoading : accountLoading} accountError={dashboardHoldingsBroker === 'toss' ? tossDashboardError : accountError}/></article>
-            <article className="panel news-panel">
+            <article className="panel news-panel dashboard-news">
               <div className="panel-head"><div><h2>주요 뉴스</h2></div><small>NAVER</small></div>
               <div className="news-list">
                 {news.map((item, index) => <a className="news-item" href={item.link || item.naverLink} target="_blank" rel="noreferrer" key={`${item.link}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>{item.source} · {new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(item.publishedAt))}</small></div></a>)}
                 {newsLoading && <div className="data-message"><span className="loading-ring"/></div>}
                 {!newsLoading && newsError && <div className="data-message error">{newsError}</div>}
                 {!newsLoading && !newsError && news.length === 0 && <div className="data-message">표시할 뉴스가 없습니다.</div>}
+              </div>
+            </article>
+          </section>
+
+          <section className="lower-grid guest-lower-grid dashboard-account-grid">
+            <article className="panel holdings dashboard-holdings"><div className="panel-head dashboard-holdings-head"><div><h2>보유종목</h2></div><div className="holdings-broker-tabs" aria-label="보유종목 증권사 선택"><button className={dashboardHoldingsBroker === 'kiwoom' ? 'active kiwoom' : ''} onClick={() => setDashboardHoldingsBroker('kiwoom')}>키움</button><button className={dashboardHoldingsBroker === 'toss' ? 'active toss' : ''} onClick={() => setDashboardHoldingsBroker('toss')}>토스</button></div></div><DashboardHoldingsTable currentUser={currentUser} broker={dashboardHoldingsBroker} configured={dashboardHoldingsBroker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured} accountSummary={dashboardHoldingsBroker === 'toss' ? tossDashboardSummary : accountSummary} accountLoading={dashboardHoldingsBroker === 'toss' ? tossDashboardLoading : accountLoading} accountError={dashboardHoldingsBroker === 'toss' ? tossDashboardError : accountError}/></article>
+            <article className="panel dashboard-recent-orders">
+              <div className="panel-head"><div><h2>최근 주문 · 체결 내역</h2></div><small>준비 중</small></div>
+              <div className="dashboard-orders-scroll">
+                <table className="dashboard-orders-table" aria-label="최근 주문 및 체결 내역">
+                  <thead><tr><th scope="col">시간</th><th scope="col">구분</th><th scope="col">종목명</th><th scope="col">주문가</th><th scope="col">수량</th><th scope="col">상태</th></tr></thead>
+                  <tbody><tr><td colSpan={6}><div className="data-message">주문·체결 내역 조회 기능을 준비하고 있습니다.</div></td></tr></tbody>
+                </table>
               </div>
             </article>
           </section>
