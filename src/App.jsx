@@ -422,8 +422,7 @@ function App() {
         <div className={`content guest-content ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
           {activePage === 'dashboard' ? <>
           <section className="welcome guest-welcome">
-            <div><p>{today}</p><h1>통합 대시보드</h1><span>시장 순위와 뉴스를 살펴보고, 관심 있는 종목의 차트를 확인하세요.</span></div>
-            <div className="guest-access-badge"><ShieldCheck/><div><strong>{currentUser && integrationStatus.kiwoomConfigured ? '개인 API 모드' : '읽기 전용 모드'}</strong><small>{currentUser && integrationStatus.kiwoomConfigured ? '사용자 키는 VPS에서 복호화 후 사용' : '운영자 키는 VPS에서만 사용'}</small></div></div>
+            <div><p>{today}</p><h1>통합 대시보드</h1></div>
           </section>
 
           <section className="dashboard-market-summary" aria-label="시장 지표">
