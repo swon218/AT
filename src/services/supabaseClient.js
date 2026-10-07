@@ -1,4 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
+import { readRecoveryRequest } from './passwordRecovery'
+
+export const initialRecoveryRequest = readRecoveryRequest(window.location.href)
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()

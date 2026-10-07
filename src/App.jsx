@@ -16,7 +16,8 @@ import OrderEntryPanel from './components/OrderEntryPanel'
 import AuthModal from './components/AuthModal'
 import AccountSettingsModal from './components/AccountSettingsModal'
 import ConfirmDialog from './components/ConfirmDialog'
-import { supabase } from './services/supabaseClient'
+import { initialRecoveryRequest, supabase } from './services/supabaseClient'
+import { clearRecoveryUrl, initializePasswordRecovery, RECOVERY_LINK_ERROR } from './services/passwordRecovery'
 import { getIntegrationSettings } from './services/accountSettingsApi'
 import { getBrokerAccountSummary, getKiwoomAccountSummary } from './services/kiwoomAccountApi'
 import useIndicatorDraft from './hooks/useIndicatorDraft'
@@ -146,7 +147,8 @@ function App() {
   const [newsLoading, setNewsLoading] = useState(true)
   const [newsError, setNewsError] = useState('')
 
-  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [authModalOpen, setAuthModalOpen] = useState(initialRecoveryRequest.requested)
+  const [passwordRecovery, setPasswordRecovery] = useState(initialRecoveryRequest.requested ? { status: 'checking' } : null)
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
@@ -194,7 +196,15 @@ function App() {
     setMobileNav(false)
   }
 
-  const closeAuthModal = useCallback(() => setAuthModalOpen(false), [])
+  const closeAuthModal = useCallback(() => {
+    setAuthModalOpen(false)
+    setPasswordRecovery(null)
+    window.history.replaceState(window.history.state, '', clearRecoveryUrl(window.location.href))
+  }, [])
+  const finishPasswordRecovery = useCallback(() => {
+    setPasswordRecovery(null)
+    window.history.replaceState(window.history.state, '', clearRecoveryUrl(window.location.href))
+  }, [])
   const closeAccountSettings = useCallback(() => setAccountSettingsOpen(false), [])
 
   const loadNickname = useCallback(async (user) => {
@@ -227,18 +237,32 @@ function App() {
   }
 
   useEffect(() => {
-    if (!supabase) return undefined
-    supabase.auth.getSession().then(({ data }) => {
-      const user = data.session?.user ?? null
+    if (!supabase) {
+      if (initialRecoveryRequest.requested) setPasswordRecovery({ status: 'error', message: 'Supabase 환경 설정을 확인해 주세요.' })
+      return undefined
+    }
+    let active = true
+    initializePasswordRecovery(supabase.auth, initialRecoveryRequest).then(({ session, recovery }) => {
+      if (!active) return
+      const user = session?.user ?? null
       setCurrentUser(user)
       loadNickname(user)
+      if (recovery) setPasswordRecovery(recovery)
+    }).catch(() => {
+      if (active && initialRecoveryRequest.requested) setPasswordRecovery({ status: 'error', message: RECOVERY_LINK_ERROR })
     })
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       const user = session?.user ?? null
       setCurrentUser(user)
       window.setTimeout(() => loadNickname(user), 0)
+      if (event === 'PASSWORD_RECOVERY' && session && !initialRecoveryRequest.failed) {
+        setPasswordRecovery({ status: 'ready' })
+        setAuthModalOpen(true)
+      } else if (!session) {
+        setPasswordRecovery(current => current ? { status: 'error', message: RECOVERY_LINK_ERROR } : null)
+      }
     })
-    return () => authListener.subscription.unsubscribe()
+    return () => { active = false; authListener.subscription.unsubscribe() }
   }, [loadNickname])
 
   useEffect(() => {
@@ -460,7 +484,7 @@ function App() {
         </div>
       </main>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
-      <AuthModal open={authModalOpen} onClose={closeAuthModal}/>
+      <AuthModal open={authModalOpen} onClose={closeAuthModal} recovery={passwordRecovery} onRecoveryFinished={finishPasswordRecovery}/>
       <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange}/>
       <ConfirmDialog open={logoutConfirmOpen} pending={loggingOut} onCancel={() => setLogoutConfirmOpen(false)} onConfirm={confirmLogout}/>
     </div>
