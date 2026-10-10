@@ -8,8 +8,9 @@ import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketA
 import GlobalStockSearch from './components/GlobalStockSearch'
 import MarketRankings from './components/MarketRankings'
 import DashboardWelcome from './components/DashboardWelcome'
+import MarketIndexChart from './components/MarketIndexChart'
+import DashboardNews from './components/DashboardNews'
 import './components/Dashboard.css'
-import { getPublicNews } from './services/newsApi'
 import TradingViewChart from './components/TradingViewChart'
 import LabChartPanel from './components/LabChartPanel'
 import OrderEntryPanel from './components/OrderEntryPanel'
@@ -131,7 +132,6 @@ function App() {
   const [activePage, setActivePage] = useState('dashboard')
   const brokerageDataEnabled = activePage !== 'lab'
   const [selected, setSelected] = useState(defaultStock)
-  const [period, setPeriod] = useState('15분')
   const [orderPeriod, setOrderPeriod] = useState('15분')
   const selectionVersion = useRef(0)
   const [selectionRevision, setSelectionRevision] = useState(0)
@@ -143,9 +143,6 @@ function App() {
   const [rankingLoading, setRankingLoading] = useState(false)
   const [rankingAvailable, setRankingAvailable] = useState(false)
   const [rankingError, setRankingError] = useState('')
-  const [news, setNews] = useState([])
-  const [newsLoading, setNewsLoading] = useState(true)
-  const [newsError, setNewsError] = useState('')
 
   const [authModalOpen, setAuthModalOpen] = useState(initialRecoveryRequest.requested)
   const [passwordRecovery, setPasswordRecovery] = useState(initialRecoveryRequest.requested ? { status: 'checking' } : null)
@@ -396,15 +393,6 @@ function App() {
     return () => { active = false }
   }, [brokerageDataEnabled, rankingType, currentUser, integrationStatus.kiwoomConfigured, integrationVersion])
 
-  useEffect(() => {
-    let active = true
-    getPublicNews('국내 증시', 6)
-      .then((items) => active && setNews(items))
-      .catch((error) => active && setNewsError(error.message))
-      .finally(() => active && setNewsLoading(false))
-    return () => { active = false }
-  }, [])
-
   return (
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''} ${activePage === 'lab' ? 'lab-mode' : ''}`}>
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileNav ? 'open' : ''}`}>
@@ -456,16 +444,8 @@ function App() {
           <section className="trading-grid dashboard-market-grid">
             <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={chooseStock}/>
 
-            <StockChartPanel stock={selected} period={period} onPeriodChange={setPeriod} credentialScope={currentUser && integrationStatus.kiwoomConfigured ? `user:${currentUser.id}` : 'operator'}/>
-            <article className="panel news-panel dashboard-news">
-              <div className="panel-head"><div><h2>주요 뉴스</h2></div><small>NAVER</small></div>
-              <div className="news-list">
-                {news.map((item, index) => <a className="news-item" href={item.link || item.naverLink} target="_blank" rel="noreferrer" key={`${item.link}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>{item.source} · {new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(item.publishedAt))}</small></div></a>)}
-                {newsLoading && <div className="data-message"><span className="loading-ring"/></div>}
-                {!newsLoading && newsError && <div className="data-message error">{newsError}</div>}
-                {!newsLoading && !newsError && news.length === 0 && <div className="data-message">표시할 뉴스가 없습니다.</div>}
-              </div>
-            </article>
+            <MarketIndexChart credentialScope={searchCredentialScope}/>
+            <DashboardNews/>
           </section>
 
           <section className="lower-grid guest-lower-grid dashboard-account-grid">

@@ -30,6 +30,10 @@ export function getKiwoomStockQuote(symbol, signal) {
   return readMarketData('/api/public/market/kiwoom/quote', { symbol }, signal)
 }
 
+export function getKiwoomIndex(symbol, period, signal) {
+  return readMarketData('/api/public/market/kiwoom/indices', { symbol, period }, signal)
+}
+
 // 게스트는 VPS 운영자 키를, 로그인 후 개인 키움 키를 저장한 사용자는 본인 키를 사용합니다.
 // 주문과 계좌 조회는 별도의 인증 필수 경로로 분리합니다.
 export function getKiwoomRankings(type = 'realtime', limit = 20) {
