@@ -55,6 +55,7 @@ async function getAccessToken({ appKey, secretKey }) {
   const promise = (async () => {
     const response = await fetch(`${config.kiwoomHost}/oauth2/token`, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: { 'Content-Type': 'application/json;charset=UTF-8' },
       body: JSON.stringify({
         grant_type: 'client_credentials',
@@ -78,11 +79,18 @@ async function getAccessToken({ appKey, secretKey }) {
   }
 }
 
-export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false }) {
+// Server-side only: the token is sent to Kiwoom, never to a browser response.
+export async function getKiwoomRealtimeAuth({ appKey = config.kiwoomAppKey, secretKey = config.kiwoomSecretKey } = {}) {
+  const { token, cacheKey } = await getAccessToken({ appKey, secretKey })
+  return { token, invalidate: () => { if (tokenCache.get(cacheKey)?.token === token) tokenCache.delete(cacheKey) } }
+}
+
+export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false, timeoutMs }) {
   const { token, cacheKey } = await getAccessToken({ appKey, secretKey })
   try {
     const response = await fetch(`${config.kiwoomHost}${endpoint}`, {
       method: 'POST',
+      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
       headers: {
         'Content-Type': 'application/json;charset=UTF-8',
         authorization: `Bearer ${token}`,
@@ -99,7 +107,7 @@ export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, e
 
     const cached = tokenCache.get(cacheKey)
     if (cached?.token === token) tokenCache.delete(cacheKey)
-    return requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry: false, contYn, nextKey, returnPage })
+    return requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry: false, contYn, nextKey, returnPage, timeoutMs })
   }
 }
 

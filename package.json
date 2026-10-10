@@ -24,7 +24,8 @@
     "react": "latest",
     "react-dom": "latest",
     "typescript": "latest",
-    "vite": "latest"
+    "vite": "latest",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8"

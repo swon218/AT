@@ -14,6 +14,8 @@ import { getTossAccountSummary } from './tossAccount.js'
 import { placeTossOrder } from './tossOrders.js'
 import { registerLabRoutes } from './lab.js'
 import { registerMarketIndexRoutes } from './marketIndices.js'
+import { registerMarketSummaryRoutes } from './marketSummary.js'
+import { createMarketSessions } from './marketSession.js'
 
 const app = Fastify({ logger: true })
 await app.register(cors, {
@@ -26,6 +28,7 @@ app.get('/api/health', async () => ({ ok: true, ...publicConfigurationStatus() }
 registerLabRoutes(app)
 registerStockSearchRoutes(app)
 registerMarketIndexRoutes(app)
+registerMarketSummaryRoutes(app, { sessions: createMarketSessions() })
 
 async function tossMarketCredentials(request) {
   const authorization = request.headers.authorization || ''

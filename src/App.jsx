@@ -9,6 +9,7 @@ import GlobalStockSearch from './components/GlobalStockSearch'
 import MarketRankings from './components/MarketRankings'
 import DashboardWelcome from './components/DashboardWelcome'
 import MarketIndexChart from './components/MarketIndexChart'
+import MarketSummary from './components/MarketSummary'
 import DashboardNews from './components/DashboardNews'
 import './components/Dashboard.css'
 import TradingViewChart from './components/TradingViewChart'
@@ -435,11 +436,7 @@ function App() {
           {activePage === 'dashboard' ? <>
           <DashboardWelcome/>
 
-          <section className="dashboard-market-summary" aria-label="시장 지표">
-            {['코스피', '코스닥', '원/달러', '장 상태', '거래대금', '상승·하락 종목 수'].map((title) => (
-              <article className="panel dashboard-summary-card" key={title}><h2>{title}</h2></article>
-            ))}
-          </section>
+          <MarketSummary credentialScope={searchCredentialScope}/>
 
           <section className="trading-grid dashboard-market-grid">
             <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={chooseStock}/>

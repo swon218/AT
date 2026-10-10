@@ -10,8 +10,36 @@
   gap: 14px;
   margin-bottom: 14px;
 }
-.dashboard-summary-card { min-width: 0; min-height: 108px; padding: 16px; }
+.dashboard-summary-card { min-width: 0; min-height: 170px; padding: 13px 13px 9px; display: flex; flex-direction: column; background: linear-gradient(145deg, #0b2132, #0b192a); border-color: #1b364b; }
 .dashboard-summary-card h2 { margin: 0; color: #9cb9d9; font-size: 12px; font-weight: 500; line-height: 1.5; }
+.summary-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 20px; }
+.summary-card-heading > small { font-size: 9px; color: #6d8ba5; white-space: nowrap; }
+.summary-market-values { display: flex; flex-direction: column; justify-content: center; gap: 12px; flex: 1; padding: 14px 0; }
+.summary-market-values > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 3px 5px; }
+.summary-market-values > div > span { color: #85a4c0; font-size: 10px; }
+.summary-market-values strong { font-size: 17px; color: #e5f0ff; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.summary-market-values strong small { font-size: 9px; font-weight: 400; color: #7897b3; }
+.summary-card-footer { margin-top: auto; border-top: 1px solid #1a3348; padding-top: 7px; display: flex; justify-content: space-between; align-items: center; gap: 3px; color: #6f91ad; font-size: 9px; min-height: 20px; }
+.summary-warning { color: #efb587; }
+.summary-card-footer button { display: inline-flex; background: transparent; border: 0; padding: 1px; color: inherit; cursor: pointer; }
+.summary-card-footer button:focus-visible { outline: 2px solid #6fc8ff; outline-offset: 2px; }
+.summary-session-state { display: flex; align-items: center; gap: 7px; color: #afc4d7; margin-top: 18px; }
+.summary-session-state strong { font-size: 17px; line-height: 1.5; }
+.session-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.summary-session-state.open { color: #00d9a7; }
+.summary-session-state.auction, .summary-session-state.after-hours { color: #eac16a; }
+.summary-session-state.stale { color: #eead7b; }
+.summary-session-detail { color: #7897b3; font-size: 10px; line-height: 1.6; margin: 8px 0 12px; }
+.summary-fx-value { color: #48637e; font-size: 25px; padding: 20px 0; font-weight: 500; }
+.summary-breadth-legend { display: flex; justify-content: flex-end; gap: 7px; font-size: 8px; color: #90a1b6; margin: 3px 0 7px; }
+.summary-breadth-values { display: flex; flex-direction: column; gap: 9px; flex: 1; padding-bottom: 10px; }
+.summary-breadth-label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 3px; font-size: 9px; color: #85a4c0; font-variant-numeric: tabular-nums; }
+.summary-breadth-label b { font-size: 10px; font-weight: 500; }
+.summary-breadth-label i { font-style: normal; color: #415a73; }
+.summary-breadth-bar { display: flex; height: 5px; border-radius: 4px; background: #1d3247; overflow: hidden; margin-top: 5px; }
+.summary-breadth-bar .rising { background: #ff4a64; }
+.summary-breadth-bar .unchanged { background: #68819a; }
+.summary-breadth-bar .falling { background: #258efa; }
 .guest-content .trading-grid.dashboard-market-grid {
   grid-template-columns: minmax(0, .38fr) minmax(0, .29fr) minmax(0, .33fr);
   align-items: stretch;
@@ -105,7 +133,7 @@
   .dashboard-clock strong { font-size: 16px; }
   .dashboard-clock small { font-size: 10px; }
   .dashboard-market-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .dashboard-summary-card { min-height: 90px; padding: 13px; }
+  .dashboard-summary-card { min-height: 165px; padding: 12px 10px 8px; }
 }
 @media (max-width: 540px) {
   .dashboard-market-grid .dashboard-index-panel { height: 480px; }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { requestKiwoomWithCredentials } from './kiwoomClient.js'
+import { requestKiwoomWithCredentials, getKiwoomRealtimeAuth } from './kiwoomClient.js'
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -77,4 +77,28 @@ test('동시에 요청해도 같은 자격 증명의 토큰은 한 번만 발급
   ])
 
   assert.equal(tokenRequests, 1)
+})
+
+test('실시간 인증이 REST 토큰을 재사용하고 이전 연결의 무효화가 새 토큰을 지우지 않는다', async t => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  let tokenRequests = 0
+  globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/oauth2/token')) {
+      assert.equal(JSON.parse(options.body).appkey, 'ws-personal-key')
+      return jsonResponse({ token: `ws-token-${++tokenRequests}`, expires_dt: '20991231235959' })
+    }
+    assert.equal(options.headers.authorization, 'Bearer ws-token-1')
+    return jsonResponse({ return_code: 0 })
+  }
+  const credentials = { appKey: 'ws-personal-key', secretKey: 'ws-personal-secret' }
+  const first = await getKiwoomRealtimeAuth(credentials)
+  await requestKiwoomWithCredentials({ ...credentials, apiId: 'test', endpoint: '/test', body: {} })
+  assert.equal(tokenRequests, 1)
+  first.invalidate()
+  const second = await getKiwoomRealtimeAuth(credentials)
+  assert.equal(second.token, 'ws-token-2')
+  first.invalidate()
+  assert.equal((await getKiwoomRealtimeAuth(credentials)).token, second.token)
+  assert.equal(tokenRequests, 2)
 })
