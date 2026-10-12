@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { getBroker } from '../utils/brokers'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -53,6 +54,10 @@ export function getKiwoomCandles(symbol, interval = '일', limit = 200) {
 }
 
 export function getBrokerCandles(broker, symbol, interval = '일', limit = 200) {
-  const selectedBroker = broker === 'toss' ? 'toss' : 'kiwoom'
+  const selectedBroker = getBroker(broker).id
   return getPublicMarketData(`/api/public/market/${selectedBroker}/candles`, { symbol, interval, limit: String(limit) })
+}
+
+export function getBrokerCandleResponse(broker, symbol, interval = '일', limit = 200) {
+  return readMarketData(`/api/public/market/${getBroker(broker).id}/candles`, { symbol, interval, limit: String(limit) })
 }

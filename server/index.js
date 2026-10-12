@@ -16,6 +16,7 @@ import { registerLabRoutes } from './lab.js'
 import { registerMarketIndexRoutes } from './marketIndices.js'
 import { registerMarketSummaryRoutes } from './marketSummary.js'
 import { createMarketSessions } from './marketSession.js'
+import { registerAddedBrokerRoutes } from './addedBrokers.js'
 
 const app = Fastify({ logger: true })
 await app.register(cors, {
@@ -29,6 +30,7 @@ registerLabRoutes(app)
 registerStockSearchRoutes(app)
 registerMarketIndexRoutes(app)
 registerMarketSummaryRoutes(app, { sessions: createMarketSessions() })
+registerAddedBrokerRoutes(app)
 
 async function tossMarketCredentials(request) {
   const authorization = request.headers.authorization || ''

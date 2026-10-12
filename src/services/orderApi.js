@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { getBroker } from '../utils/brokers'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -11,7 +12,7 @@ export async function placeBrokerOrder(broker, order) {
   const accessToken = data.session?.access_token
   if (!accessToken) throw new Error('로그인이 필요합니다.')
 
-  const selectedBroker = broker === 'toss' ? 'toss' : 'kiwoom'
+  const selectedBroker = getBroker(broker).id
   const response = await fetch(`${API_BASE_URL}/api/orders/${selectedBroker}`, {
     method: 'POST',
     headers: {

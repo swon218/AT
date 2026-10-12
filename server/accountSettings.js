@@ -23,6 +23,10 @@ const credentialFields = [
   'kiwoomSecretKey',
   'tossApiKey',
   'tossSecretKey',
+  'nhAppKey',
+  'nhSecretKey',
+  'kbAppKey',
+  'kbSecretKey',
   'telegramBotToken',
 ]
 
@@ -57,15 +61,17 @@ function configuredStatus(row) {
   return {
     kiwoomConfigured: Boolean(row?.kiwoom_configured),
     tossConfigured: Boolean(row?.toss_configured),
+    nhConfigured: Boolean(row?.nh_configured),
+    kbConfigured: Boolean(row?.kb_configured),
     telegramConfigured: Boolean(row?.telegram_configured),
   }
 }
 
-export async function getAccountSettings(request) {
-  const user = await authenticateAccountRequest(request)
-  const { data, error } = await adminClient
+export async function getAccountSettings(request, { client = adminClient, authenticate = authenticateAccountRequest } = {}) {
+  const user = await authenticate(request)
+  const { data, error } = await client
     .from('user_integrations')
-    .select('kiwoom_configured,toss_configured,telegram_configured')
+    .select('kiwoom_configured,toss_configured,nh_configured,kb_configured,telegram_configured')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -73,8 +79,8 @@ export async function getAccountSettings(request) {
   return configuredStatus(data)
 }
 
-export async function updateAccountSettings(request) {
-  const user = await authenticateAccountRequest(request)
+export async function updateAccountSettings(request, { client = adminClient, authenticate = authenticateAccountRequest } = {}) {
+  const user = await authenticate(request)
   const input = request.body && typeof request.body === 'object' ? request.body : {}
   const replacements = Object.fromEntries(
     credentialFields
@@ -88,7 +94,7 @@ export async function updateAccountSettings(request) {
     throw error
   }
 
-  const { data: existing, error: readError } = await adminClient
+  const { data: existing, error: readError } = await client
     .from('user_integrations')
     .select('credentials_ciphertext,credentials_iv,credentials_auth_tag')
     .eq('user_id', user.id)
@@ -111,25 +117,27 @@ export async function updateAccountSettings(request) {
     credentials_auth_tag: encrypted.authTag,
     kiwoom_configured: Boolean(credentials.kiwoomAppKey && credentials.kiwoomSecretKey),
     toss_configured: Boolean(credentials.tossApiKey && credentials.tossSecretKey),
+    nh_configured: Boolean(credentials.nhAppKey && credentials.nhSecretKey),
+    kb_configured: Boolean(credentials.kbAppKey && credentials.kbSecretKey),
     telegram_configured: Boolean(credentials.telegramBotToken),
     updated_at: new Date().toISOString(),
   }
 
-  const { data, error } = await adminClient
+  const { data, error } = await client
     .from('user_integrations')
     .upsert(row, { onConflict: 'user_id' })
-    .select('kiwoom_configured,toss_configured,telegram_configured')
+    .select('kiwoom_configured,toss_configured,nh_configured,kb_configured,telegram_configured')
     .single()
   if (error) throw error
 
   return configuredStatus(data)
 }
 
-export async function getAuthenticatedCredentials(request) {
-  const user = await authenticateAccountRequest(request)
-  const { data, error } = await adminClient
+export async function getAuthenticatedCredentials(request, { client = adminClient, authenticate = authenticateAccountRequest } = {}) {
+  const user = await authenticate(request)
+  const { data, error } = await client
     .from('user_integrations')
-    .select('credentials_ciphertext,credentials_iv,credentials_auth_tag,kiwoom_configured,toss_configured,telegram_configured')
+    .select('credentials_ciphertext,credentials_iv,credentials_auth_tag,kiwoom_configured,toss_configured,nh_configured,kb_configured,telegram_configured')
     .eq('user_id', user.id)
     .maybeSingle()
 

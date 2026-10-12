@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { INDICATOR_CATALOG } from '../utils/indicators'
 import { placeBrokerOrder } from '../services/orderApi'
+import { BROKERS, getBroker, isBrokerConfigured } from '../utils/brokers'
 
 const onlyNumber = (value) => value.replace(/[^0-9]/g, '')
 
@@ -22,10 +23,10 @@ function StepInput({ value, onChange, placeholder, unit }) {
 }
 
 function OrderAccessNotice({ authenticated, broker, brokerConfigured }) {
-  const brokerName = broker === 'toss' ? '토스증권' : '키움증권'
+  const brokerName = getBroker(broker).name
   if (!authenticated) return <p className="order-login-warning"><LogIn/>로그인 후 본인의 {brokerName} API 키를 등록하면 주문할 수 있습니다.</p>
-  if (!brokerConfigured) return <p className="order-login-warning"><KeyRound/>운영자 {brokerName} API로 차트만 표시됩니다. 개인 설정에서 {brokerName} API를 저장하면 계좌 조회와 주문을 이용할 수 있습니다.</p>
-  return <p className="order-login-warning ready"><CheckCircle2/>사용자 {brokerName} API가 연결되었습니다. 실제 주문 전 종목, 가격, 수량을 반드시 확인하세요.</p>
+  if (!brokerConfigured) return <p className="order-login-warning"><KeyRound/>{broker === 'kb' ? '개인 API 등록 전에는 공용 시세로 차트를 표시합니다.' : `운영자 ${brokerName} API로 차트만 표시됩니다.`} 개인 설정에서 {brokerName} API를 저장하면 계좌 조회와 주문을 이용할 수 있습니다.</p>
+  return <p className="order-login-warning ready"><CheckCircle2/>사용자 {brokerName} API가 저장되어 있습니다. 실제 주문 전 종목, 가격, 수량을 반드시 확인하세요.</p>
 }
 
 function OrderConfirmDialog({ draft, stock, broker, pending, error, onCancel, onConfirm }) {
@@ -41,13 +42,14 @@ function OrderConfirmDialog({ draft, stock, broker, pending, error, onCancel, on
         <span className={`order-confirm-icon ${draft.side}`}><AlertTriangle/></span>
         <h2 id="order-confirm-title">실제 {sideLabel} 주문을 전송할까요?</h2>
         <dl>
-          <div><dt>증권사</dt><dd>{broker === 'toss' ? '토스증권' : '키움증권'}</dd></div>
+          <div><dt>증권사</dt><dd>{getBroker(broker).name}</dd></div>
+          {draft.accountLabel && <div><dt>계좌</dt><dd>{draft.accountLabel}</dd></div>}
           <div><dt>종목</dt><dd>{stock?.name || '-'} ({draft.symbol})</dd></div>
           <div><dt>구분</dt><dd>{sideLabel}</dd></div>
           <div><dt>가격</dt><dd>{priceLabel}</dd></div>
           <div><dt>수량</dt><dd>{Number(draft.quantity).toLocaleString('ko-KR')}주</dd></div>
         </dl>
-        <p>확인을 누르면 저장된 본인의 {broker === 'toss' ? '토스증권' : '키움증권'} API 키로 실제 주문이 전송됩니다.</p>
+        <p>확인을 누르면 저장된 본인의 {getBroker(broker).name} API 키로 실제 주문이 전송됩니다.</p>
         {error && <p className="order-submit-message error" role="alert">{error}</p>}
         <div className="order-confirm-actions"><button type="button" onClick={onCancel} disabled={pending}>취소</button><button type="button" className={draft.side} onClick={onConfirm} disabled={pending}>{pending ? '전송 중...' : `${sideLabel} 주문 확정`}</button></div>
       </section>
@@ -68,22 +70,22 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
   const [submitMessage, setSubmitMessage] = useState('')
   const [validationMessage, setValidationMessage] = useState('')
   const total = useMemo(() => Number(price || 0) * Number(quantity || 0), [price, quantity])
-  const ready = authenticated && brokerConfigured
+  const ready = authenticated && brokerConfigured && (!['nh', 'kb'].includes(broker) || (accountSummary?.broker === broker && !accountLoading && !accountError && !accountSummary.accountRequired))
   const needsLimitPrice = orderSession === 'regular' && priceType === 'limit'
   const selectedHolding = accountSummary?.holdings?.find((item) => item.code === stock?.code)
   const validStock = /^[0-9][0-9A-Z]{5}$/.test(stock?.code || '')
-  const validQuantity = Number(quantity) > 0
+  const validQuantity = Number.isSafeInteger(Number(quantity)) && Number(quantity) > 0
   const validPrice = !needsLimitPrice || Number(price) > 0
   const canSubmit = ready && validStock && validQuantity && validPrice
   const capacityWarning = accountSummary && validQuantity
-    ? side === 'buy' && needsLimitPrice && total > Number(accountSummary.orderableAmount || 0)
+    ? side === 'buy' && needsLimitPrice && accountSummary.orderableAmount != null && total > Number(accountSummary.orderableAmount)
       ? `입력한 주문금액이 조회된 주문 가능 금액 ${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원을 초과합니다. 최종 가능 여부는 증권사에서 확인합니다.`
-      : side === 'sell' && Number(quantity) > Number(selectedHolding?.tradableQuantity || 0)
+      : side === 'sell' && selectedHolding?.tradableQuantity != null && Number(quantity) > Number(selectedHolding.tradableQuantity)
         ? `입력한 수량이 조회된 매도 가능 수량 ${Number(selectedHolding?.tradableQuantity || 0).toLocaleString('ko-KR')}주를 초과합니다. 최종 가능 여부는 증권사에서 확인합니다.`
         : ''
     : ''
   const orderButtonGuide = !ready
-    ? '로그인 후 선택한 증권사 API를 연결해 주세요.'
+    ? !authenticated || !brokerConfigured ? '로그인 후 선택한 증권사 API를 연결해 주세요.' : accountSummary?.accountRequired ? '주문 계좌를 선택해 주세요.' : '계좌 조회가 완료되면 주문할 수 있습니다.'
     : !validStock
       ? '주문할 종목을 선택해 주세요.'
       : !validQuantity
@@ -114,6 +116,8 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
     setDraft({
       side,
       symbol: stock.code,
+      accountId: accountSummary?.selectedAccountId || '',
+      accountLabel: accountSummary?.accounts?.find(item => item.id === accountSummary.selectedAccountId)?.label || '',
       exchange: ['KRX', 'NXT', 'SOR'].includes(stock.market) ? stock.market : 'KRX',
       session: orderSession,
       priceType,
@@ -124,7 +128,7 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
   }
 
   const submitOrder = async () => {
-    if (!draft || pending) return
+    if (!draft || pending || !ready) return
     setPending(true)
     setSubmitError('')
     try {
@@ -144,7 +148,7 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
   if (side === 'open') return (
     <>
       <div className="side-tabs"><button onClick={() => setSide('buy')}>매수</button><button onClick={() => setSide('sell')}>매도</button><button className="active open" onClick={() => setSide('open')}>미체결</button></div>
-      <div className="unfilled-empty"><Info/><span>{broker === 'toss' ? '토스증권' : '키움증권'} 미체결 주문 조회는 다음 단계에서 연결됩니다.</span></div>
+      <div className="unfilled-empty"><Info/><span>{getBroker(broker).name} 미체결 주문 조회는 다음 단계에서 연결됩니다.</span></div>
       <OrderAccessNotice authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured}/>
     </>
   )
@@ -153,7 +157,7 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
     <>
       <div className="side-tabs"><button className={side === 'buy' ? 'active buy' : ''} onClick={() => setSide('buy')}>매수</button><button className={side === 'sell' ? 'active sell' : ''} onClick={() => setSide('sell')}>매도</button><button onClick={() => setSide('open')}>미체결</button></div>
       <div className="trade-form">
-        <FieldRow label="주문 유형"><select className="trade-input" value={orderSession} onChange={(event) => { const next = event.target.value; setOrderSession(next); if (next !== 'regular') { setPriceType('market'); setPrice('') } }}><option value="regular">정규장 주문</option>{broker === 'kiwoom' && <><option value="pre">장전 시간외</option><option value="post">장후 시간외</option></>}</select></FieldRow>
+        <FieldRow label="주문 유형"><select className="trade-input" value={orderSession} onChange={(event) => { const next = event.target.value; setOrderSession(next); if (next !== 'regular') { setPriceType('market'); setPrice('') } }}><option value="regular">정규장 주문</option>{getBroker(broker).afterHours && <><option value="pre">장전 시간외</option><option value="post">장후 시간외</option></>}</select></FieldRow>
         <FieldRow label="주문 가격">
           <div className="price-type-tabs"><button disabled={orderSession !== 'regular'} className={priceType === 'limit' ? 'active' : ''} onClick={() => setPriceType('limit')}>지정가</button><button disabled={orderSession !== 'regular'} className={priceType === 'market' ? 'active' : ''} onClick={() => { setPriceType('market'); setPrice('') }}>시장가</button></div>
           {priceType === 'limit' && <StepInput value={price} onChange={setPrice} placeholder="가격 입력" unit="원"/>}
@@ -161,31 +165,29 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
         <FieldRow label="주문수량"><StepInput value={quantity} onChange={setQuantity} placeholder="수량 입력" unit="주"/></FieldRow>
         <FieldRow label="총 주문 금액"><div className="trade-input readonly"><span>{needsLimitPrice ? `${total.toLocaleString('ko-KR')}원` : '시장가 주문'}</span></div></FieldRow>
         {side === 'buy'
-          ? <FieldRow label="주문 가능 금액"><div className="trade-input readonly"><span>{!ready ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary ? `${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원` : '조회 실패'}</span></div></FieldRow>
-          : <SellAccountPreview ready={ready} loading={accountLoading} holding={selectedHolding}/>}
+          ? <FieldRow label="주문 가능 금액"><div className="trade-input readonly"><span>{!authenticated || !brokerConfigured ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountError ? '조회 실패' : accountSummary?.accountRequired ? '계좌 선택 필요' : accountSummary?.orderableAmount != null ? `${Number(accountSummary.orderableAmount).toLocaleString('ko-KR')}원` : '조회 필요'}</span></div></FieldRow>
+          : <SellAccountPreview ready={ready} loading={accountLoading} holding={selectedHolding} error={accountError}/>}
       </div>
       <button className={`order-execute ${side}`} disabled={!ready || pending} onClick={openConfirmation}>{side === 'buy' ? '매수 주문하기' : '매도 주문하기'}</button>
       {orderButtonGuide && <p className="order-button-guide">{orderButtonGuide}</p>}
       {validationMessage && <p className="order-submit-message error" role="alert">{validationMessage}</p>}
       {capacityWarning && <p className="order-capacity-warning"><AlertTriangle/>{capacityWarning}</p>}
       {submitMessage && <p className="order-submit-message success" role="status">{submitMessage}</p>}
-      {ready && accountError && <p className="order-submit-message error" role="alert">계좌 조회 실패: {accountError}</p>}
+      {authenticated && brokerConfigured && accountError && <p className="order-submit-message error" role="alert">계좌 조회 실패: {accountError}</p>}
       <OrderAccessNotice authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured}/>
       <OrderConfirmDialog draft={draft} stock={stock} broker={broker} pending={pending} error={submitError} onCancel={() => { if (!pending) { setDraft(null); setSubmitError('') } }} onConfirm={submitOrder}/>
     </>
   )
 }
 
-function SellAccountPreview({ ready, loading, holding }) {
+function SellAccountPreview({ ready, loading, holding, error }) {
+  const value = (field, unit) => holding ? holding[field] == null ? '조회 필요' : `${Number(holding[field]).toLocaleString('ko-KR')}${unit}` : `0${unit}`
   const values = [
-    holding ? `${Number(holding.averagePrice || 0).toLocaleString('ko-KR')}원` : '0원',
-    holding ? `${Number(holding.quantity || 0).toLocaleString('ko-KR')}주` : '0주',
-    holding ? `${Number(holding.purchaseAmount || 0).toLocaleString('ko-KR')}원` : '0원',
-    holding ? `${Number(holding.evaluationProfit || 0).toLocaleString('ko-KR')}원` : '0원',
+    value('averagePrice', '원'), value('quantity', '주'), value('purchaseAmount', '원'), value('evaluationProfit', '원'),
   ]
   return (
     <div className="sell-account-preview">
-      {['평균 매입단가', '보유수량', '총 매입금액', '평가손익'].map((label, index) => <div key={label}><small>{label}</small><span>{!ready ? 'API 연결 필요' : loading ? '조회 중...' : values[index]}</span></div>)}
+      {['평균 매입단가', '보유수량', '총 매입금액', '평가손익'].map((label, index) => <div key={label}><small>{label}</small><span>{loading ? '조회 중...' : error ? '조회 실패' : !ready ? '계좌 연결 필요' : values[index]}</span></div>)}
     </div>
   )
 }
@@ -196,7 +198,7 @@ function AutoTrade({ authenticated, brokerConfigured, accountSummary, accountLoa
     <>
       <div className="trade-form auto-trade-form">
         <FieldRow label="저장 전략"><select className="trade-input"><option>전략 선택</option></select></FieldRow>
-        <FieldRow label="주문가능금액"><div className="trade-input readonly"><span>{!authenticated || !brokerConfigured ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary ? `${Number(accountSummary.orderableAmount || 0).toLocaleString('ko-KR')}원` : '조회 실패'}</span></div></FieldRow>
+        <FieldRow label="주문가능금액"><div className="trade-input readonly"><span>{!authenticated || !brokerConfigured ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary?.orderableAmount != null ? `${Number(accountSummary.orderableAmount).toLocaleString('ko-KR')}원` : '조회 필요'}</span></div></FieldRow>
         <FieldRow label="주문수량"><StepInput value={quantity} onChange={setQuantity} placeholder="수량 입력" unit="주"/></FieldRow>
         <FieldRow label="매수 상한가"><div className="trade-input"><input inputMode="numeric" placeholder="상한가 입력"/></div></FieldRow>
         <FieldRow label="매수 하한가"><div className="trade-input"><input inputMode="numeric" placeholder="하한가 입력"/></div></FieldRow>
@@ -340,17 +342,18 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
   )
 }
 
-export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, strategyStorage }) {
+export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, onAccountChange, accountId = '', accountOptions = [], accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, strategyStorage }) {
   const [mainTab, setMainTab] = useState('order')
   const [mode, setMode] = useState('general')
-  const brokerConfigured = Boolean(broker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured)
+  const brokerConfigured = isBrokerConfigured(integrationStatus, broker)
   return (
     <section className="atlas-order-entry" aria-label={indicatorsOnly ? '실험실 지표 설정' : '주식 주문 입력'}>
       <div className={`order-main-tabs${indicatorsOnly ? ' indicators-only' : ''}`}>{!indicatorsOnly && <button className={mainTab === 'order' ? 'active' : ''} onClick={() => setMainTab('order')}>주문</button>}<button className={indicatorsOnly || mainTab === 'indicator' ? 'active' : ''} onClick={() => setMainTab('indicator')}>지표 설정</button></div>
-      {!indicatorsOnly && <div className="broker-select-tabs" aria-label="주문 증권사 선택"><button className={broker === 'kiwoom' ? 'active kiwoom' : ''} onClick={() => onBrokerChange?.('kiwoom')}><span>키움증권</span><small>{integrationStatus.kiwoomConfigured ? '내 API' : '차트 전용'}</small></button><button className={broker === 'toss' ? 'active toss' : ''} onClick={() => onBrokerChange?.('toss')}><span>토스증권</span><small>{integrationStatus.tossConfigured ? '내 API' : '차트 전용'}</small></button></div>}
+      {!indicatorsOnly && <div className="broker-select-tabs" aria-label="주문 증권사 선택">{BROKERS.map(item => <button key={item.id} className={broker === item.id ? `active ${item.id}` : ''} onClick={() => onBrokerChange?.(item.id)}><span>{item.name}</span><small>{authenticated && isBrokerConfigured(integrationStatus, item.id) ? '내 API' : '차트 전용'}</small></button>)}</div>}
+      {!indicatorsOnly && broker === 'nh' && authenticated && brokerConfigured && accountOptions.length > 0 && <label className="broker-account-select">주문 계좌<select value={accountId || (accountOptions.length === 1 ? accountOptions[0].id : '')} onChange={event => onAccountChange?.(event.target.value)} disabled={accountLoading}><option value="" disabled>계좌 선택</option>{accountOptions.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}</select></label>}
       {indicatorsOnly || mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/> : <>
         <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
-        {mode === 'general' ? <GeneralOrder stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/>}
+        {mode === 'general' ? <GeneralOrder key={`${broker}:${accountId}`} stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/>}
       </>}
     </section>
   )

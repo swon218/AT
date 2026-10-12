@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { getBroker } from '../utils/brokers'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -6,14 +7,14 @@ export async function getKiwoomAccountSummary() {
   return getBrokerAccountSummary('kiwoom')
 }
 
-export async function getBrokerAccountSummary(broker, symbol = '') {
+export async function getBrokerAccountSummary(broker, symbol = '', accountId = '') {
   if (!supabase) throw new Error('Supabase 환경 설정을 확인해 주세요.')
   const { data } = await supabase.auth.getSession()
   const accessToken = data.session?.access_token
   if (!accessToken) throw new Error('로그인이 필요합니다.')
 
-  const selectedBroker = broker === 'toss' ? 'toss' : 'kiwoom'
-  const query = selectedBroker === 'toss' && symbol ? `?${new URLSearchParams({ symbol })}` : ''
+  const selectedBroker = getBroker(broker).id
+  const query = `?${new URLSearchParams({ symbol, ...(accountId ? { accountId } : {}) })}`
   const response = await fetch(`${API_BASE_URL}/api/account/${selectedBroker}/summary${query}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })

@@ -15,6 +15,7 @@ import './components/Dashboard.css'
 import TradingViewChart from './components/TradingViewChart'
 import LabChartPanel from './components/LabChartPanel'
 import OrderEntryPanel from './components/OrderEntryPanel'
+import { getBroker, isBrokerConfigured } from './utils/brokers'
 import AuthModal from './components/AuthModal'
 import AccountSettingsModal from './components/AccountSettingsModal'
 import ConfirmDialog from './components/ConfirmDialog'
@@ -49,6 +50,8 @@ function LoginNotice({ text }) {
 
 function StockChartPanel({ stock, period, onPeriodChange, indicators = [], orderMode = false, credentialScope = 'guest', broker = 'kiwoom' }) {
   const [minuteMenuOpen, setMinuteMenuOpen] = useState(false)
+  const [sourceBroker, setSourceBroker] = useState(broker)
+  useEffect(() => setSourceBroker(broker), [broker, credentialScope])
   const minutePeriods = ['1분', '5분', '10분', '15분', '30분', '60분']
   const selectedMinute = minutePeriods.includes(period) ? period : '15분'
   return (
@@ -63,19 +66,19 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], order
           {minuteMenuOpen && <div className="minute-period-menu" role="menu">{minutePeriods.map((item) => <button type="button" role="menuitem" className={period === item ? 'selected' : ''} onClick={() => { onPeriodChange(item); setMinuteMenuOpen(false) }} key={item}>{item}</button>)}</div>}
         </div>
         {['일','주','월'].map((item) => <button type="button" className={period === item ? 'active' : ''} onClick={() => { onPeriodChange(item); setMinuteMenuOpen(false) }} key={item}>{item}</button>)}
-      </></div><span>{broker === 'toss' ? '토스' : '키움'} 캔들 데이터</span></div>
-      <div className="main-chart tradingview-host"><TradingViewChart stock={stock} period={period} indicators={indicators} credentialScope={credentialScope} broker={broker}/></div>
+      </></div><span>{getBroker(sourceBroker).shortName} 캔들 데이터{sourceBroker !== broker ? ' · 대체 시세' : ''}</span></div>
+      <div className="main-chart tradingview-host"><TradingViewChart stock={stock} period={period} indicators={indicators} credentialScope={credentialScope} broker={broker} onSourceChange={setSourceBroker}/></div>
     </article>
   )
 }
 
-function ChartWorkspace({ selected, period, onPeriodChange, currentUser, integrationStatus = {}, broker, onBrokerChange, accountSummary, accountLoading, accountError, onAccountRefresh, indicatorsOnly = false, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, strategyStorage }) {
-  const configured = broker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured
-  const credentialScope = currentUser && configured ? `${broker}:user:${currentUser.id}` : `${broker}:operator`
+function ChartWorkspace({ selected, period, onPeriodChange, currentUser, integrationStatus = {}, broker, onBrokerChange, accountSummary, accountLoading, accountError, onAccountRefresh, onAccountChange, accountId = '', accountOptions = [], integrationVersion = 0, indicatorsOnly = false, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, strategyStorage }) {
+  const configured = !indicatorsOnly && isBrokerConfigured(integrationStatus, broker)
+  const credentialScope = `${broker}:${currentUser?.id || 'guest'}:${configured}:${integrationVersion}`
   return (
     <section className="preview-grid order-preview-grid" aria-label={indicatorsOnly ? '실험실' : '주식 주문'}>
       {indicatorsOnly ? <LabChartPanel indicators={indicatorConfigs} strategyName={strategyName} settings={backtestSettings} onSettingsChange={onBacktestSettingsChange}/> : <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} orderMode credentialScope={credentialScope} broker={broker}/>}
-      <article className="panel preview-order"><OrderEntryPanel indicatorsOnly={indicatorsOnly} stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} broker={broker} onBrokerChange={onBrokerChange} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/></article>
+      <article className="panel preview-order"><OrderEntryPanel key={`${currentUser?.id || 'guest'}:${broker}:${integrationVersion}`} onAccountChange={onAccountChange} accountId={accountId} accountOptions={accountOptions} indicatorsOnly={indicatorsOnly} stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} broker={broker} onBrokerChange={onBrokerChange} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/></article>
     </section>
   )
 }
@@ -155,16 +158,22 @@ function App() {
   const orderDraft = useIndicatorDraft(currentUser?.id, strategies)
   const labDraft = useIndicatorDraft(currentUser?.id, strategies)
   const [nickname, setNickname] = useState('')
-  const [integrationStatus, setIntegrationStatus] = useState({ kiwoomConfigured: false, tossConfigured: false, telegramConfigured: false })
+  const [integrationStatus, setIntegrationStatus] = useState({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false })
   const [accountSummary, setAccountSummary] = useState(null)
   const [accountLoading, setAccountLoading] = useState(false)
   const [accountError, setAccountError] = useState('')
   const [accountRefreshVersion, setAccountRefreshVersion] = useState(0)
   const [orderBroker, setOrderBroker] = useState('kiwoom')
+  const [orderAccountId, setOrderAccountId] = useState('')
   const [orderAccountSummary, setOrderAccountSummary] = useState(null)
   const [orderAccountLoading, setOrderAccountLoading] = useState(false)
   const [orderAccountError, setOrderAccountError] = useState('')
   const [orderAccountRefreshVersion, setOrderAccountRefreshVersion] = useState(0)
+  const [orderAccountOptions, setOrderAccountOptions] = useState(null)
+  const orderAccountOwner = `${currentUser?.id || ''}:${orderBroker}:${integrationVersion}`
+  const currentOrderAccountOptions = orderAccountOptions?.owner === orderAccountOwner ? orderAccountOptions.accounts : []
+  const orderAccountScope = JSON.stringify([currentUser?.id, orderBroker, orderAccountId, selected?.code, integrationVersion, orderAccountRefreshVersion])
+  const currentOrderAccountSummary = orderAccountSummary?.requestScope === orderAccountScope ? orderAccountSummary : null
   const [dashboardHoldingsBroker, setDashboardHoldingsBroker] = useState('kiwoom')
   const [tossDashboardSummary, setTossDashboardSummary] = useState(null)
   const [tossDashboardLoading, setTossDashboardLoading] = useState(false)
@@ -179,7 +188,6 @@ function App() {
   const searchCredentialScope = `${currentUser?.id || 'guest'}:${integrationStatus.kiwoomConfigured}:${integrationVersion}`
   const chooseSearchStock = (stock) => {
     chooseStock(stock)
-    setOrderBroker('kiwoom')
     setActivePage('order')
     setMobileNav(false)
   }
@@ -266,7 +274,9 @@ function App() {
   useEffect(() => {
     if (activePage !== 'order') return
     setOrderBroker('kiwoom')
-  }, [activePage, currentUser?.id, integrationStatus.kiwoomConfigured, integrationStatus.tossConfigured])
+  }, [activePage, currentUser?.id])
+
+  useEffect(() => { setOrderAccountId('') }, [orderBroker, currentUser?.id, integrationVersion])
 
   useEffect(() => {
     if (activePage !== 'order' || !selected?.code) return
@@ -292,12 +302,12 @@ function App() {
   useEffect(() => {
     let active = true
     if (!currentUser) {
-      setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, telegramConfigured: false })
+      setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false })
       return () => { active = false }
     }
     getIntegrationSettings()
       .then((status) => active && setIntegrationStatus(status))
-      .catch(() => active && setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, telegramConfigured: false }))
+      .catch(() => active && setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false }))
     return () => { active = false }
   }, [currentUser])
 
@@ -324,7 +334,7 @@ function App() {
 
   useEffect(() => {
     let active = true
-    const configured = orderBroker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured
+    const configured = isBrokerConfigured(integrationStatus, orderBroker)
     if (activePage !== 'order' || !currentUser || !configured) {
       setOrderAccountSummary(null)
       setOrderAccountLoading(false)
@@ -334,8 +344,12 @@ function App() {
     setOrderAccountSummary(null)
     setOrderAccountLoading(true)
     setOrderAccountError('')
-    getBrokerAccountSummary(orderBroker, selected?.code || '')
-      .then((summary) => active && setOrderAccountSummary(summary))
+    getBrokerAccountSummary(orderBroker, selected?.code || '', orderBroker === 'nh' ? orderAccountId : '')
+      .then((summary) => {
+        if (!active) return
+        setOrderAccountSummary({ ...summary, requestScope: orderAccountScope })
+        setOrderAccountOptions({ owner: orderAccountOwner, accounts: summary.accounts || [] })
+      })
       .catch((error) => {
         if (!active) return
         setOrderAccountSummary(null)
@@ -343,7 +357,7 @@ function App() {
       })
       .finally(() => active && setOrderAccountLoading(false))
     return () => { active = false }
-  }, [activePage, currentUser, integrationStatus.kiwoomConfigured, integrationStatus.tossConfigured, orderBroker, selected?.code, orderAccountRefreshVersion])
+  }, [activePage, currentUser, integrationStatus.kiwoomConfigured, integrationStatus.tossConfigured, integrationStatus.nhConfigured, integrationStatus.kbConfigured, orderBroker, orderAccountId, selected?.code, orderAccountRefreshVersion, integrationVersion])
 
   useEffect(() => {
     let active = true
@@ -457,7 +471,7 @@ function App() {
               </div>
             </article>
           </section>
-          </> : activePage === 'order' ? <ChartWorkspace key="order" selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={orderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPreview currentUser={currentUser} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/>}
+          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPreview currentUser={currentUser} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/>}
         </div>
       </main>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 

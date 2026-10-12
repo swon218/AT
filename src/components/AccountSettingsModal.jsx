@@ -8,12 +8,18 @@ const emptyCredentials = {
   kiwoomSecretKey: '',
   tossApiKey: '',
   tossSecretKey: '',
+  nhAppKey: '',
+  nhSecretKey: '',
+  kbAppKey: '',
+  kbSecretKey: '',
   telegramBotToken: '',
 }
 
 const emptyStatus = {
   kiwoomConfigured: false,
   tossConfigured: false,
+  nhConfigured: false,
+  kbConfigured: false,
   telegramConfigured: false,
 }
 
@@ -143,12 +149,16 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
           </section>
 
           <section className="account-section">
-            <div className="account-section-head"><div><KeyRound/><span><strong>증권사 API</strong><small>새 값을 입력한 항목만 교체됩니다.</small></span></div><div className="integration-badges"><b className={status.kiwoomConfigured ? 'ready' : ''}>{status.kiwoomConfigured ? <CheckCircle2/> : null}키움</b><b className={status.tossConfigured ? 'ready' : ''}>{status.tossConfigured ? <CheckCircle2/> : null}토스</b></div></div>
+            <div className="account-section-head"><div><KeyRound/><span><strong>증권사 API</strong><small>새 값을 입력한 항목만 교체됩니다.</small></span></div><div className="integration-badges"><b className={status.kiwoomConfigured ? 'ready' : ''}>{status.kiwoomConfigured ? <CheckCircle2/> : null}키움</b><b className={status.nhConfigured ? 'ready' : ''}>{status.nhConfigured ? <CheckCircle2/> : null}NH</b><b className={status.kbConfigured ? 'ready' : ''}>{status.kbConfigured ? <CheckCircle2/> : null}KB</b><b className={status.tossConfigured ? 'ready' : ''}>{status.tossConfigured ? <CheckCircle2/> : null}토스</b></div></div>
             <div className="account-field-grid">
               <SecretField label="키움 App Key" value={credentials.kiwoomAppKey} placeholder={status.kiwoomConfigured ? '저장됨 · 변경할 때만 입력' : '키움 App Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('kiwoomAppKey', value)}/>
               <SecretField label="키움 Secret Key" value={credentials.kiwoomSecretKey} placeholder={status.kiwoomConfigured ? '저장됨 · 변경할 때만 입력' : '키움 Secret Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('kiwoomSecretKey', value)}/>
               <SecretField label="토스 Client ID" value={credentials.tossApiKey} placeholder={status.tossConfigured ? '저장됨 · 변경할 때만 입력' : '토스 Client ID'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('tossApiKey', value)}/>
               <SecretField label="토스 Client Secret" value={credentials.tossSecretKey} placeholder={status.tossConfigured ? '저장됨 · 변경할 때만 입력' : '토스 Client Secret'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('tossSecretKey', value)}/>
+              <SecretField label="NH투자증권 App Key" value={credentials.nhAppKey} placeholder={status.nhConfigured ? '저장됨 · 변경할 때만 입력' : '나무 PLUG App Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('nhAppKey', value)}/>
+              <SecretField label="NH투자증권 Secret Key" value={credentials.nhSecretKey} placeholder={status.nhConfigured ? '저장됨 · 변경할 때만 입력' : '나무 PLUG App Secret'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('nhSecretKey', value)}/>
+              <SecretField label="KB증권 App Key" value={credentials.kbAppKey} placeholder={status.kbConfigured ? '저장됨 · 변경할 때만 입력' : 'KB증권 App Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('kbAppKey', value)}/>
+              <SecretField label="KB증권 Secret Key" value={credentials.kbSecretKey} placeholder={status.kbConfigured ? '저장됨 · 변경할 때만 입력' : 'KB증권 App Secret'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('kbSecretKey', value)}/>
             </div>
           </section>
 

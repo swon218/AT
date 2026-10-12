@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, createChart,
 } from 'lightweight-charts'
-import { getBrokerCandles } from '../services/kiwoomMarketApi'
+import { getBrokerCandleResponse } from '../services/kiwoomMarketApi'
 import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma, indicatorDisplayName } from '../utils/indicators'
 import { gapSafeSeries, isQuarantined } from '../utils/dataQuality'
 
@@ -30,7 +30,7 @@ function normalizeCandles(rows) {
     .sort((a, b) => String(a.time).localeCompare(String(b.time), undefined, { numeric: true }))
 }
 
-export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange }) {
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
@@ -39,6 +39,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
   const [data, setData] = useState([])
   const [legend, setLegend] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [manualExtraHeight, setManualExtraHeight] = useState(null)
   const indicatorKey = JSON.stringify(indicators)
   const lowerIndicatorCount = indicators.filter((config) => config.id === 'rsi' || config.id === 'macd').length
@@ -72,6 +73,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     let active = true
     setData([])
     setLegend(null)
+    setError('')
     if (suppliedCandles !== undefined) {
       const candles = normalizeCandles(suppliedCandles)
       setData(candles)
@@ -82,18 +84,20 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     if (!stock?.code) return () => { active = false }
 
     setLoading(true)
-    getBrokerCandles(broker, stock.code, period, 200)
-      .then((rows) => {
+    getBrokerCandleResponse(broker, stock.code, period, 200)
+      .then((payload) => {
         if (!active) return
+        const rows = Array.isArray(payload) ? payload : payload.items || []
+        onSourceChange?.(payload.sourceBroker || broker)
         const candles = normalizeCandles(rows)
         setData(candles)
         setLegend(candles.at(-1) ?? null)
       })
-      .catch(() => active && setData([]))
+      .catch(error => { if (active) { setData([]); setError(error.message) } })
       .finally(() => active && setLoading(false))
 
     return () => { active = false }
-  }, [stock?.code, period, credentialScope, broker, suppliedCandles])
+  }, [stock?.code, period, credentialScope, broker, suppliedCandles, onSourceChange])
 
   useEffect(() => {
     const container = containerRef.current
@@ -330,6 +334,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
 
   if (!stock) return <div className="chart-empty"/>
   if (loading) return <div className="chart-empty"><span className="loading-ring"/></div>
+  if (error) return <div className="chart-empty data-message error" role="alert">{error}</div>
   if (data.length === 0) return <div className="chart-empty"/>
 
   return (
