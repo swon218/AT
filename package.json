@@ -10,6 +10,7 @@
     "start:api": "node server/index.js",
     "test:server": "node --test server/*.test.js",
     "test:strategies": "node --test tests/strategies*.test.js",
+    "test:agent": "node --test tests/agentWorkspace.test.js",
     "build": "vite build",
     "preview": "vite preview"
   },

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, Bell, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
+  Activity, Bell, Bot, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
   LockKeyhole, LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen,
   ShieldCheck, Star, WalletCards, X,
 } from 'lucide-react'
@@ -25,6 +25,8 @@ import { getIntegrationSettings } from './services/accountSettingsApi'
 import { getBrokerAccountSummary, getKiwoomAccountSummary } from './services/kiwoomAccountApi'
 import useIndicatorDraft from './hooks/useIndicatorDraft'
 import useStrategies from './hooks/useStrategies'
+import useAgentWorkspace from './hooks/useAgentWorkspace'
+import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
 const defaultStock = {
@@ -134,7 +136,7 @@ function AssetsPreview({ currentUser, integrationStatus, accountSummary, account
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
-  const brokerageDataEnabled = activePage !== 'lab'
+  const brokerageDataEnabled = activePage !== 'lab' && activePage !== 'agent'
   const [selected, setSelected] = useState(defaultStock)
   const [orderPeriod, setOrderPeriod] = useState('15분')
   const selectionVersion = useRef(0)
@@ -154,6 +156,8 @@ function App() {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
+  const [authReady, setAuthReady] = useState(!supabase)
+  const agent = useAgentWorkspace(currentUser?.id, authReady)
   const strategies = useStrategies(currentUser?.id)
   const orderDraft = useIndicatorDraft(currentUser?.id, strategies)
   const labDraft = useIndicatorDraft(currentUser?.id, strategies)
@@ -256,10 +260,13 @@ function App() {
       if (recovery) setPasswordRecovery(recovery)
     }).catch(() => {
       if (active && initialRecoveryRequest.requested) setPasswordRecovery({ status: 'error', message: RECOVERY_LINK_ERROR })
+    }).finally(() => {
+      if (active) setAuthReady(true)
     })
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       const user = session?.user ?? null
       setCurrentUser(user)
+      setAuthReady(true)
       window.setTimeout(() => loadNickname(user), 0)
       if (event === 'PASSWORD_RECOVERY' && session && !initialRecoveryRequest.failed) {
         setPasswordRecovery({ status: 'ready' })
@@ -423,6 +430,7 @@ function App() {
           <button className={`nav-link ${activePage === 'dashboard' ? 'active' : ''}`} onClick={() => openPage('dashboard')}><LayoutDashboard/><span>대시보드</span></button>
           <button className={`nav-link ${activePage === 'order' ? 'active' : ''}`} onClick={() => openPage('order')}><LineChart/><span>주식 주문</span></button>
           <button className={`nav-link ${activePage === 'lab' ? 'active' : ''}`} onClick={() => openPage('lab')}><FlaskConical/><span>실험실</span></button>
+          <button className={`nav-link ${activePage === 'agent' ? 'active' : ''}`} onClick={() => openPage('agent')}><Bot/><span>AI 에이전트</span></button>
           <button className={`nav-link ${activePage === 'assets' ? 'active' : ''}`} onClick={() => openPage('assets')}><WalletCards/><span>자산 현황</span></button>
           <p>MARKET</p>
           <a><Newspaper/><span>마켓 뉴스</span></a>
@@ -442,12 +450,12 @@ function App() {
       <main>
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
-          {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title"><FlaskConical/><span>실험실 · 백테스팅</span></div>}
+          {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
           <div className="header-actions">{brokerageDataEnabled && <span className="market-open"><i/>시장 조회</span>}<button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
-        <div className={`content guest-content ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
-          {activePage === 'dashboard' ? <>
+        <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
+          {activePage === 'agent' ? <AgentWorkspace key={currentUser?.id || 'guest'} agent={agent} onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('dashboard') }}/> : activePage === 'dashboard' ? <>
           <DashboardWelcome/>
 
           <MarketSummary credentialScope={searchCredentialScope}/>
@@ -474,6 +482,7 @@ function App() {
           </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPreview currentUser={currentUser} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/>}
         </div>
       </main>
+      <FloatingAgent agent={agent} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal} recovery={passwordRecovery} onRecoveryFinished={finishPasswordRecovery}/>
       <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange}/>
