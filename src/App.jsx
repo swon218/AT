@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity, Bell, Bot, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
-  LockKeyhole, LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen,
-  ShieldCheck, Star, WalletCards, X,
+  LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen,
+  Star, WalletCards, X,
 } from 'lucide-react'
 import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketApi'
 import GlobalStockSearch from './components/GlobalStockSearch'
@@ -27,6 +27,7 @@ import useIndicatorDraft from './hooks/useIndicatorDraft'
 import useStrategies from './hooks/useStrategies'
 import useAgentWorkspace from './hooks/useAgentWorkspace'
 import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
+import SidebarFooter from './components/SidebarFooter'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
 const defaultStock = {
@@ -436,15 +437,7 @@ function App() {
           <a><Newspaper/><span>마켓 뉴스</span></a>
           <a><CircleDollarSign/><span>시세 분석</span></a>
         </nav>
-        {brokerageDataEnabled && <div className="connection-card guest-connection">
-          <div className="connection-title"><ShieldCheck/><span>{currentUser ? '사용자 API 범위' : '게스트 API 범위'}</span></div>
-          <div><span><i className="dot kiwoom"/>{currentUser && integrationStatus.kiwoomConfigured ? '개인 키움 API' : '키움 공개시세'}</span><b>{currentUser && integrationStatus.kiwoomConfigured ? '연결됨' : '읽기전용'}</b></div>
-          <div><span><LockKeyhole/>주문·계좌</span><b className={currentUser && integrationStatus.kiwoomConfigured ? '' : 'blocked'}>{currentUser && integrationStatus.kiwoomConfigured ? '사용가능' : '차단'}</b></div>
-        </div>}
-        <div className="account-profile">
-          <button type="button" className="account-profile-main" onClick={openProfileOrLogin} title={currentUser ? '개인 설정' : '로그인'}><span>{nickname?.charAt(0).toUpperCase() || currentUser?.email?.charAt(0).toUpperCase() || 'G'}</span><div><strong>{currentUser ? nickname || '사용자' : '게스트'}</strong><small>{currentUser?.email ?? '로그인 후 개인 기능 사용'}</small></div></button>
-          <button type="button" className="account-session-button" onClick={openLoginOrLogoutConfirm} title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'}>{currentUser ? <LogOut/> : <LogIn/>}</button>
-        </div>
+        <SidebarFooter user={currentUser} nickname={nickname} integrationStatus={integrationStatus} onProfileClick={openProfileOrLogin} onSessionClick={openLoginOrLogoutConfirm}/>
       </aside>
 
       <main>
