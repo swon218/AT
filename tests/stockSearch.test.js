@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createStockCatalogCache } from '../src/utils/stockCatalogCache.js'
-import { indexStockCatalog, searchStockCatalog, STOCK_CATALOG_MAX_AGE } from '../src/utils/stockSearch.js'
+import { indexStockCatalog, nextStockSearchIndex, searchStockCatalog, STOCK_CATALOG_MAX_AGE } from '../src/utils/stockSearch.js'
 
 const stocks = [
   { code: '000660', name: 'SK하이닉스', market: 'KOSPI' },
@@ -32,6 +32,19 @@ test('all matches remain searchable past the initial 50 results', () => {
   assert.equal(searchStockCatalog(index, 's').total, 150)
   assert.equal(searchStockCatalog(index, 's', 100).items.length, 100)
   assert.equal(searchStockCatalog(index, 'S종목149').items[0].code, '000149')
+})
+
+test('laboratory keyboard navigation skips uncollected stocks and keeps quarantined histories selectable', () => {
+  const items = [{ bars: 0 }, { bars: 1200 }, { bars: 0 }, { bars: 0, quarantined: 2 }]
+  const selectable = stock => stock.bars > 0 || stock.quarantined > 0
+  assert.equal(nextStockSearchIndex(items, -1, 1, selectable), 1)
+  assert.equal(nextStockSearchIndex(items, 1, 1, selectable), 3)
+  assert.equal(nextStockSearchIndex(items, 3, 1, selectable), 1)
+  assert.equal(nextStockSearchIndex(items, 1, -1, selectable), 3)
+  assert.equal(nextStockSearchIndex([{ bars: 0 }], -1, 1, selectable), -1)
+  assert.equal(nextStockSearchIndex([], -1, 1, selectable), -1)
+  const many = Array.from({ length: 120 }, () => ({ bars: 1 }))
+  assert.equal(nextStockSearchIndex(many, 49, 1, selectable), 50)
 })
 
 test('prefetch is deduplicated and repeated typing needs no network requests', async () => {

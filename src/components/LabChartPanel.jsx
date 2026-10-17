@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FlaskConical, RefreshCw, Search } from 'lucide-react'
+import { FlaskConical, RefreshCw } from 'lucide-react'
 import TradingViewChart from './TradingViewChart'
 import LabBacktestPanel from './LabBacktestPanel'
+import StockSearch from './StockSearch'
 import { getLabCandles, getLabSymbols } from '../services/labApi'
 import { validateIndicators } from '../utils/backtest'
 import '../lab.css'
 
 const EMPTY = []
+const isSelectable = stock => stock.bars > 0 || stock.quarantined > 0
+const optionNote = stock => stock.quarantined ? `오류 ${stock.quarantined}일` : stock.bars ? `일봉 ${stock.bars.toLocaleString()}개` : '미수집'
 
 export default function LabChartPanel({ indicators, strategyName, settings, onSettingsChange }) {
   const [catalog, setCatalog] = useState(null)
   const [catalogError, setCatalogError] = useState('')
-  const [query, setQuery] = useState('')
   const [symbol, setSymbol] = useState(settings.symbol || '005930')
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -22,6 +24,7 @@ export default function LabChartPanel({ indicators, strategyName, settings, onSe
     const controller = new AbortController()
     setCatalogError('')
     getLabSymbols(controller.signal).then(value => {
+      if (controller.signal.aborted) return
       setCatalog(value)
       setSymbol(current => value.items.some(s => s.code === current && (s.bars > 0 || s.quarantined)) ? current : value.items.find(s => s.bars > 0 || s.quarantined)?.code || '')
     }).catch(err => { if (err.name !== 'AbortError') { setCatalogError(err.message); setLoading(false) } })
@@ -31,7 +34,7 @@ export default function LabChartPanel({ indicators, strategyName, settings, onSe
   useEffect(() => {
     const controller = new AbortController()
     setPayload(null); setError(''); setLoading(Boolean(symbol))
-    if (symbol) getLabCandles(symbol, controller.signal).then(setPayload)
+    if (symbol) getLabCandles(symbol, controller.signal).then(value => { if (!controller.signal.aborted) setPayload(value) })
       .catch(err => { if (err.name !== 'AbortError') setError(err.message) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
@@ -41,15 +44,20 @@ export default function LabChartPanel({ indicators, strategyName, settings, onSe
   const quality = payload?.quality
   const activeSymbol = payload?.symbol
   const indicatorError = useMemo(() => { try { validateIndicators(indicators); return '' } catch (err) { return err.message } }, [indicators])
-  const filtered = (catalog?.items || []).filter(s => `${s.code} ${s.name}`.toLowerCase().includes(query.trim().toLowerCase()))
   const last = candles.at(-1)
+  const selectSymbol = stock => {
+    setPayload(null); setError(''); setLoading(true)
+    setSymbol(stock.code)
+    onSettingsChange(previous => ({ ...previous, symbol: stock.code, start: '', end: '' }))
+    if (stock.code === symbol) setRefresh(value => value + 1)
+  }
 
   return <article className="panel chart-panel lab-chart-panel" aria-label="백테스팅 차트">
     <div className="lab-heading"><div><span className="lab-eyebrow"><FlaskConical/> STRATEGY LAB</span><h2>{activeSymbol?.name || '전략 실험실'} <small>{activeSymbol?.code}</small></h2></div><span className="lab-daily-badge">일봉 · 최대 5년</span></div>
-    <div className="lab-symbol-controls"><label className="lab-search"><Search/><input aria-label="실험실 종목 검색" placeholder="저장된 종목명 또는 코드 검색" value={query} onChange={e => setQuery(e.target.value)}/></label><select aria-label="실험실 종목 선택" value={symbol} onChange={e => { const code = e.target.value; setSymbol(code); onSettingsChange(previous => ({ ...previous, symbol: code, start: '', end: '' })) }}>
-      {!filtered.some(s => s.code === symbol) && <option value={symbol}>{activeSymbol?.name || '종목 선택'}</option>}
-      {filtered.map(s => <option key={s.code} value={s.code} disabled={!s.bars && !s.quarantined}>{s.name} · {s.code}{s.quarantined ? ` (오류 ${s.quarantined}일)` : !s.bars ? ' (미수집)' : ''}</option>)}
-    </select><button type="button" title="데이터 다시 확인 (최대 1분 캐시)" aria-label="실험실 데이터 새로고침" onClick={() => setRefresh(v => v + 1)}><RefreshCw size={16}/></button></div>
+    <div className="lab-symbol-controls"><StockSearch className="lab-stock-search" inputLabel="실험실 종목 검색" listLabel="실험실 종목 검색 결과" placeholder="종목명 또는 종목코드 검색"
+      catalogItems={catalog?.items || EMPTY} ready={Boolean(catalog)} error={catalogError} onRetry={() => setRefresh(value => value + 1)}
+      isSelectable={isSelectable} getOptionNote={optionNote} onSelect={selectSymbol}/>
+      <button type="button" title="데이터 다시 확인 (최대 1분 캐시)" aria-label="실험실 데이터 새로고침" onClick={() => setRefresh(v => v + 1)}><RefreshCw size={16}/></button></div>
     {catalogError && <p className="lab-error" role="alert">{catalogError}</p>}
     {!catalogError && catalog && !catalog.ready && <p className="lab-warning">{catalog.message || '수집된 일봉이 없습니다. VPS 초기 수집 결과를 확인하세요.'}</p>}
     {catalog?.run?.failed > 0 && <p className="lab-warning">최근 수집: 성공 {catalog.run.succeeded}개 · 실패/미완료 {catalog.run.failed}개. 기존에 저장된 일봉을 표시합니다.{catalog.run.message && ` ${catalog.run.message}`}</p>}

@@ -27,3 +27,12 @@ export function searchStockCatalog(index, query, limit = 50) {
   }
   return { items: buckets.flat().slice(0, limit), total }
 }
+
+export function nextStockSearchIndex(items, currentIndex, direction, isSelectable = () => true) {
+  if (!items.length) return -1
+  for (let step = 1; step <= items.length; step++) {
+    const index = ((currentIndex + step * direction) % items.length + items.length) % items.length
+    if (isSelectable(items[index])) return index
+  }
+  return -1
+}
