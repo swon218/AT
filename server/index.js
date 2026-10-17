@@ -8,7 +8,7 @@ import { getAccountSettings, getAuthenticatedCredentials, updateAccountSettings 
 import { placeKiwoomOrder } from './orders.js'
 import { getKiwoomAccountSummary } from './kiwoomAccount.js'
 import { marketRequestContext } from './marketContext.js'
-import { registerStockSearchRoutes } from './stockSearch.js'
+import { registerStockSearchRoutes, warmStockSearchCatalog } from './stockSearch.js'
 import { getTossCandles } from './tossCharts.js'
 import { getTossAccountSummary } from './tossAccount.js'
 import { placeTossOrder } from './tossOrders.js'
@@ -152,6 +152,7 @@ app.post('/api/orders/toss', async (request, reply) => {
 
 try {
   await app.listen({ port: config.port, host: config.host })
+  void warmStockSearchCatalog().catch(error => app.log.warn({ error: error.message }, 'Stock catalog warmup failed; next catalog request will retry'))
 } catch (error) {
   app.log.error(error)
   process.exit(1)

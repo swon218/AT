@@ -1,8 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { marketRequestContext } from './marketContext.js'
+import { indexStockCatalog, isStockCatalog, normalizeStockQuery, searchStockCatalog, STOCK_CATALOG_MAX_AGE, STOCK_CATALOG_TTL } from '../src/utils/stockSearch.js'
 
 const markets = [['0', 'KOSPI'], ['10', 'KOSDAQ']]
-const normalize = (value) => String(value ?? '').normalize('NFKC').replace(/\s+/g, '').toUpperCase()
 const validCode = (code) => /^[0-9][0-9A-Z]{5}$/.test(code)
 const numeric = (value) => {
   if (value === undefined || value === null || value === '') return null
@@ -11,13 +14,38 @@ const numeric = (value) => {
 }
 const httpError = (message, statusCode = 502) => Object.assign(new Error(message), { statusCode })
 
-export function createStockSearch({ now = Date.now, pause = delay, ttl = 30 * 60_000, maxScopes = 50 } = {}) {
+export function createStockSearch({ now = Date.now, pause = delay, ttl = STOCK_CATALOG_TTL, maxScopes = 50, snapshotPath = null, onError = () => {} } = {}) {
   const catalogs = new Map()
   const pending = new Map()
+  let restored
 
-  async function loadCatalog({ requester, cacheScope }) {
-    const cached = catalogs.get(cacheScope)
-    if (cached && cached.expires > now()) return cached.items
+  function remember(cacheScope, catalog) {
+    if (catalogs.size >= maxScopes && !catalogs.has(cacheScope)) catalogs.delete(catalogs.keys().next().value)
+    const entry = { ...catalog, index: indexStockCatalog(catalog.items) }
+    catalogs.set(cacheScope, entry)
+    return entry
+  }
+
+  async function restoreSnapshot() {
+    if (!snapshotPath) return
+    try {
+      const catalog = JSON.parse(await readFile(snapshotPath, 'utf8'))
+      if (isStockCatalog(catalog) && now() - catalog.updatedAt <= STOCK_CATALOG_MAX_AGE && catalog.updatedAt <= now()) remember('operator', catalog)
+    } catch (error) { if (error.code !== 'ENOENT') onError(error) }
+  }
+
+  async function saveSnapshot(catalog) {
+    if (!snapshotPath) return
+    const temporary = `${snapshotPath}.${process.pid}.tmp`
+    try {
+      await mkdir(dirname(snapshotPath), { recursive: true })
+      await writeFile(temporary, JSON.stringify(catalog), { mode: 0o600 })
+      await rename(temporary, snapshotPath)
+    } catch (error) { onError(error) }
+    finally { await rm(temporary, { force: true }).catch(() => {}) }
+  }
+
+  async function refreshCatalog({ requester, cacheScope }) {
     if (pending.has(cacheScope)) return pending.get(cacheScope)
     if (pending.size >= 4) throw httpError('종목 목록을 준비 중입니다. 잠시 후 다시 검색해 주세요.', 503)
     const promise = (async () => {
@@ -42,26 +70,41 @@ export function createStockSearch({ now = Date.now, pause = delay, ttl = 30 * 60
         }
       }
       if (!stocks.size) throw httpError('검색 가능한 종목이 없습니다.')
-      const items = [...stocks.values()]
-      for (const [key, value] of catalogs) if (value.expires <= now()) catalogs.delete(key)
-      if (catalogs.size >= maxScopes) catalogs.delete(catalogs.keys().next().value)
-      catalogs.set(cacheScope, { items, expires: now() + ttl })
-      return items
+      const catalog = { items: [...stocks.values()], updatedAt: now() }
+      for (const [key, value] of catalogs) if (now() - value.updatedAt > STOCK_CATALOG_MAX_AGE) catalogs.delete(key)
+      // Persist only the operator's public catalog, never personal scopes or keys.
+      if (cacheScope === 'operator') await saveSnapshot(catalog)
+      return remember(cacheScope, catalog)
     })()
     pending.set(cacheScope, promise)
     try { return await promise } finally { pending.delete(cacheScope) }
   }
 
-  return async (query, context) => {
-    const term = normalize(query)
+  async function loadCatalog(context) {
+    if (context.cacheScope === 'operator') await (restored ??= restoreSnapshot())
+    const cached = catalogs.get(context.cacheScope)
+    if (cached && now() - cached.updatedAt <= STOCK_CATALOG_MAX_AGE) {
+      if (now() - cached.updatedAt >= ttl && now() >= (cached.retryAt || 0)) {
+        // Keep the last complete list available during refresh and transient failures.
+        void refreshCatalog(context).catch(error => { cached.retryAt = now() + 30_000; onError(error) })
+      }
+      return cached
+    }
+    return refreshCatalog(context)
+  }
+
+  const search = async (query, context) => {
+    const term = normalizeStockQuery(query)
     if (!term) return { items: [], total: 0 }
     if (term.length > 40) throw httpError('검색어는 40자 이내로 입력해 주세요.', 400)
-    const items = await loadCatalog(context)
-    const score = (stock) => stock.code === term ? 0 : normalize(stock.name) === term ? 1 : normalize(stock.name).startsWith(term) ? 2 : stock.code.startsWith(term) ? 3 : 4
-    const matches = items.filter(stock => normalize(stock.name).includes(term) || stock.code.includes(term))
-      .sort((a, b) => score(a) - score(b) || a.name.localeCompare(b.name, 'ko') || a.code.localeCompare(b.code))
-    return { items: matches.slice(0, 50), total: matches.length }
+    const catalog = await loadCatalog(context)
+    return searchStockCatalog(catalog.index, term)
   }
+  search.catalog = async context => {
+    const { items, updatedAt } = await loadCatalog(context)
+    return { items, updatedAt, stale: now() - updatedAt >= ttl }
+  }
+  return search
 }
 
 export async function getStockQuote(symbol, { requester }) {
@@ -73,8 +116,21 @@ export async function getStockQuote(symbol, { requester }) {
   return { code, name: body.stk_nm, price: price === null ? null : Math.abs(price), change: numeric(body.flu_rt) }
 }
 
-const searchStocks = createStockSearch()
-export function registerStockSearchRoutes(app, { context = marketRequestContext, search = searchStocks, quote = getStockQuote } = {}) {
+const searchStocks = createStockSearch({
+  snapshotPath: fileURLToPath(new URL('../data/stock-catalog.json', import.meta.url)),
+  onError: error => console.warn('Stock catalog refresh/cache failed:', error.message),
+})
+
+export async function warmStockSearchCatalog() {
+  return searchStocks.catalog(await marketRequestContext({ headers: {} }))
+}
+
+export function registerStockSearchRoutes(app, { context = marketRequestContext, search = searchStocks, catalog = search.catalog, quote = getStockQuote } = {}) {
+  app.get('/api/public/market/kiwoom/catalog', async (request, reply) => {
+    reply.header('Cache-Control', 'private, no-store')
+    try { return await catalog(await context(request)) }
+    catch (error) { return reply.code(error.statusCode >= 400 ? error.statusCode : 502).send({ error: error.message }) }
+  })
   const options = { schema: { querystring: { type: 'object', required: ['q'], properties: { q: { type: 'string', minLength: 1, maxLength: 40 } }, additionalProperties: false } } }
   app.get('/api/public/market/kiwoom/search', options, async (request, reply) => {
     reply.header('Cache-Control', 'private, no-store')

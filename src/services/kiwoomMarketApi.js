@@ -27,6 +27,10 @@ export function searchKiwoomStocks(q, signal) {
   return readMarketData('/api/public/market/kiwoom/search', { q }, signal)
 }
 
+export function getKiwoomStockCatalog(signal) {
+  return readMarketData('/api/public/market/kiwoom/catalog', {}, signal)
+}
+
 export function getKiwoomStockQuote(symbol, signal) {
   return readMarketData('/api/public/market/kiwoom/quote', { symbol }, signal)
 }
