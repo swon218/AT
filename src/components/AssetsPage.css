@@ -1,0 +1,43 @@
+.asset-welcome { gap: 12px; }
+.asset-refresh { display: flex; align-items: center; gap: 6px; border: 1px solid #2a405d; border-radius: 7px; padding: 8px 12px; background: #102138; color: #a9bdd8; font-size: 12px; cursor: pointer; }
+.asset-refresh:disabled { opacity: .5; cursor: default; }
+.asset-broker-picker { margin-bottom: 16px; }
+.asset-broker-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.asset-broker-button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 9px 16px; border: 1px solid #2a3d56; border-radius: 8px; background: #0b1828; color: #8295ae; font-size: 13px; cursor: pointer; }
+.asset-broker-button.selected { color: #e5efff; background: #173357; border-color: #4b86ff; }
+.asset-broker-button:disabled { cursor: default; }
+.asset-broker-button:focus-visible, .asset-refresh:focus-visible { outline: 2px solid #8eb7ff; outline-offset: 3px; }
+.asset-broker-check { display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid #526b8a; border-radius: 4px; }
+.selected .asset-broker-check { background: #4b86ff; border-color: #4b86ff; color: white; }
+.asset-broker-picker p { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; color: #91a4bd; font-size: 12px; line-height: 1.6; }
+.asset-broker-status { display: grid; gap: 9px; margin-bottom: 18px; padding: 14px 16px; border: 1px solid #1d2e44; border-radius: 10px; background: #0b1828; }
+.asset-status-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; font-size: 12px; }
+.asset-status-row > strong { width: 80px; font-weight: 500; }
+.asset-status { font-size: 11px; color: #91a4bd; }
+.asset-status.ready { color: #35cf9c; }
+.asset-status.error, .asset-error { color: #ff8993; }
+.asset-status-row small { color: #91a4bd; line-height: 1.5; overflow-wrap: anywhere; }
+.asset-status-row small.asset-error { color: #ff8993; }
+.asset-account-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #91a4bd; }
+.asset-account-picker select { max-width: 100%; padding: 5px 8px; border: 1px solid #2a405d; border-radius: 5px; background: #102138; color: #dbe7fb; }
+.asset-metric-note { display: block; margin-top: 10px; color: #91a4bd; font-size: 11px; line-height: 1.5; }
+.asset-holdings { min-width: 0; overflow: hidden; }
+.asset-holdings-scroll { overflow: auto; max-height: 400px; scrollbar-width: thin; scrollbar-color: #29415f #0b1929; }
+.asset-holdings-table { width: 100%; min-width: 650px; border-collapse: collapse; white-space: nowrap; font-size: 12px; }
+.asset-holdings-table th, .asset-holdings-table td { padding: 13px 12px; border-bottom: 1px solid #17283d; text-align: right; }
+.asset-holdings-table th { position: sticky; top: 0; z-index: 1; background: #0d1a2b; color: #91a4bd; font-size: 11px; font-weight: 500; }
+.asset-holdings-table th:nth-child(-n+2), .asset-holdings-table td:nth-child(-n+2) { text-align: left; }
+.asset-holdings-table td strong, .asset-holdings-table td small { display: block; }
+.asset-holdings-table td small { margin-top: 3px; color: #75869f; font-size: 10px; }
+.asset-broker-tag { display: inline-block; padding: 4px 7px; border-radius: 5px; background: #173357; color: #9cc1ff; font-size: 10px; }
+.asset-broker-tag.toss { background: #302d66; color: #b5b0ff; }
+.asset-broker-tag.nh { background: #173e38; color: #85dbc4; }
+.asset-broker-tag.kb { background: #493c1e; color: #f4d17f; }
+.asset-breakdown { display: grid; gap: 16px; padding: 18px; }
+.asset-breakdown > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; font-size: 12px; }
+.asset-breakdown small { grid-column: 1 / -1; color: #91a4bd; font-size: 11px; }
+@media (max-width: 540px) {
+  .asset-broker-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .asset-broker-button { padding: 10px; }
+  .asset-status-row > small, .asset-account-picker { flex-basis: 100%; }
+}

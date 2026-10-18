@@ -9,6 +9,7 @@
     "dev:api": "node --watch server/index.js",
     "start:api": "node server/index.js",
     "test:server": "node --test server/*.test.js",
+    "test:assets": "node --test tests/assetSummary.test.js",
     "test:strategies": "node --test tests/strategies*.test.js",
     "test:agent": "node --test tests/agentWorkspace.test.js",
     "test:search": "node --test tests/stockSearch.test.js server/stockSearch.test.js",

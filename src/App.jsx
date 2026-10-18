@@ -18,6 +18,7 @@ import OrderEntryPanel from './components/OrderEntryPanel'
 import { getBroker, isBrokerConfigured } from './utils/brokers'
 import AuthModal from './components/AuthModal'
 import AccountSettingsModal from './components/AccountSettingsModal'
+import AssetsPage from './components/AssetsPage'
 import ConfirmDialog from './components/ConfirmDialog'
 import { initialRecoveryRequest, supabase } from './services/supabaseClient'
 import { clearRecoveryUrl, initializePasswordRecovery, RECOVERY_LINK_ERROR } from './services/passwordRecovery'
@@ -86,19 +87,6 @@ function ChartWorkspace({ selected, period, onPeriodChange, currentUser, integra
   )
 }
 
-function HoldingsTable({ currentUser, kiwoomConfigured, accountSummary, accountLoading, accountError }) {
-  if (!currentUser) return <div className="empty-panel-body"><LoginNotice text="로그인 시 보유종목이 표시됩니다."/></div>
-  if (!kiwoomConfigured) return <div className="empty-panel-body"><LoginNotice text="개인 설정에서 키움 API 키를 저장해 주세요."/></div>
-  if (accountLoading) return <div className="data-message"><span className="loading-ring"/></div>
-  if (accountError) return <div className="data-message error">{accountError}</div>
-  const holdings = accountSummary?.holdings || []
-  if (holdings.length === 0) return <div className="data-message">보유종목이 없습니다.</div>
-  return <div className="account-holdings-table">
-    <div className="account-holding-row head"><span>종목</span><span>보유수량</span><span>평균단가</span><span>평가금액</span><span>수익률</span></div>
-    <div className="account-holding-scroll">{holdings.map((item) => <div className="account-holding-row" key={item.code}><span><strong>{item.name}</strong><small>{item.code}</small></span><span>{won(item.quantity)}주</span><span>{won(item.averagePrice)}원</span><span>{won(item.evaluationAmount)}원</span><span className={item.profitRate >= 0 ? 'up' : 'down'}>{item.profitRate >= 0 ? '+' : ''}{item.profitRate}%</span></div>)}</div>
-  </div>
-}
-
 function DashboardHoldingsTable({ currentUser, broker, configured, accountSummary, accountLoading, accountError }) {
   const brokerName = broker === 'toss' ? '토스' : '키움'
   if (!currentUser) return <div className="empty-panel-body"><LoginNotice text="로그인 시 보유종목이 표시됩니다."/></div>
@@ -116,23 +104,6 @@ function DashboardHoldingsTable({ currentUser, broker, configured, accountSummar
       return <div className="dashboard-holding-row" key={`${broker}-${item.code}`}><span><span className={`broker-holding-badge ${broker}`}>{brokerName}</span><strong>{item.name}</strong><small>{item.code}</small></span><span>{won(item.quantity)}주</span><span className={profitRate >= 0 ? 'up' : 'down'}>{profitRate >= 0 ? '+' : ''}{profitRate.toFixed(2)}%</span><span className={direction}>{evaluationProfit >= 0 ? '+' : '-'}{won(Math.abs(evaluationProfit))}원</span></div>
     })}</div>
   </div>
-}
-
-function AssetsPreview({ currentUser, integrationStatus, accountSummary, accountLoading, accountError }) {
-  const accountReady = currentUser && integrationStatus.kiwoomConfigured && accountSummary
-  return (
-    <>
-      <section className="welcome preview-welcome"><div><p>{currentUser ? 'KIWOOM ACCOUNT' : 'GUEST PREVIEW'}</p><h1>자산 현황</h1><span>{accountReady ? '저장한 키움 API로 조회한 계좌 현황입니다.' : '로그인하고 키움 API를 저장하면 계좌를 조회합니다.'}</span></div>{!currentUser && <LoginNotice text="로그인 후 내 자산을 확인할 수 있습니다."/>}</section>
-      <section className="asset-summary-preview">
-        {[['총 자산', 'estimatedAssets'], ['평가손익', 'totalEvaluationProfit'], ['주문가능금액', 'orderableAmount']].map(([label, key]) => <article className="panel" key={label}><small>{label}</small>{accountLoading ? <div className="masked-value"/> : <strong className="asset-summary-value">{accountReady ? `${won(accountSummary[key] || 0)}원` : '-'}</strong>}</article>)}
-      </section>
-      <section className="preview-grid asset-preview-grid">
-        <article className="panel"><div className="panel-head"><div><h2>보유종목</h2></div></div><HoldingsTable currentUser={currentUser} kiwoomConfigured={integrationStatus.kiwoomConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/></article>
-        <article className="panel"><div className="panel-head"><div><h2>자산 구성</h2></div></div><div className="preview-chart-space"><LoginNotice text="로그인 시 표시됩니다."/></div></article>
-        <article className="panel preview-wide"><div className="panel-head"><div><h2>거래 내역</h2></div></div><div className="preview-table-head"><span>일자</span><span>종목</span><span>구분</span><span>수량</span><span>금액</span></div><div className="preview-empty-space"/></article>
-      </section>
-    </>
-  )
 }
 
 function App() {
@@ -321,7 +292,7 @@ function App() {
 
   useEffect(() => {
     let active = true
-    if (!brokerageDataEnabled || !currentUser || !integrationStatus.kiwoomConfigured) {
+    if (activePage !== 'dashboard' || !currentUser || !integrationStatus.kiwoomConfigured) {
       setAccountSummary(null)
       setAccountLoading(false)
       setAccountError('')
@@ -338,7 +309,7 @@ function App() {
       })
       .finally(() => active && setAccountLoading(false))
     return () => { active = false }
-  }, [brokerageDataEnabled, currentUser, integrationStatus.kiwoomConfigured, accountRefreshVersion])
+  }, [activePage, currentUser, integrationStatus.kiwoomConfigured, accountRefreshVersion, integrationVersion])
 
   useEffect(() => {
     let active = true
@@ -472,7 +443,7 @@ function App() {
               </div>
             </article>
           </section>
-          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPreview currentUser={currentUser} integrationStatus={integrationStatus} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError}/>}
+          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}/>}
         </div>
       </main>
       <FloatingAgent agent={agent} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
