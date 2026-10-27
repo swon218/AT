@@ -1,14 +1,21 @@
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-import exchange_calendars as xcals
+from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
 import pandas as pd
+from .krx_closures import CLOSURES, VERSION
 
 KST = timezone(timedelta(hours=9))
 
 
+class ReviewedXKRX(XKRXExchangeCalendar):
+    @property
+    def adhoc_holidays(self):
+        return list(pd.DatetimeIndex(super().adhoc_holidays).union(pd.DatetimeIndex(list(CLOSURES))))
+
+
 @lru_cache(maxsize=1)
 def calendar():
-    return xcals.get_calendar('XKRX', start='2000-01-01', end='2027-12-31')
+    return ReviewedXKRX(start='2000-01-01', end='2027-12-31')
 
 
 def market_context(now, through):
@@ -28,7 +35,7 @@ def market_context(now, through):
             'is_trading_day': cal.is_session(day), 'latest_completed': str(latest.date()),
             'overnight': {'start': prev_close.astimezone(KST).isoformat(), 'end': min(now, opening).astimezone(KST).isoformat()},
             'today': {'start': now.astimezone(KST).replace(hour=0, minute=0, second=0, microsecond=0).isoformat(), 'end': now.isoformat()},
-            'market_open': opening.astimezone(KST).isoformat(), 'calendar_source': 'exchange_calendars:XKRX:4.13.2',
+            'market_open': opening.astimezone(KST).isoformat(), 'calendar_source': 'exchange_calendars:XKRX:4.13.2+' + VERSION,
             'calendar_verified_through': through,
             'warning': '정규장 달력 기준. 임시 휴장/일정 변경은 운영자가 확인해야 합니다.'}
 

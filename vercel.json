@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/agent/:atlas_route*",
+      "destination": "/api/agent-proxy?__atlas_route=:atlas_route*"
+    }
+  ]
+}

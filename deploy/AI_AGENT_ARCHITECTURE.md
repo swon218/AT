@@ -4,7 +4,7 @@
 
 ## 실행과 권한
 
-React의 두 채팅 화면은 `useServerAgentWorkspace` 한 인스턴스를 공유한다. AI API는 기존 `VITE_API_BASE_URL`과 무관하게 `/api/agent` 동일 출처를 사용한다. Vite는 개발 프록시, Vercel은 `api/agent/[...path].js`의 서버 프록시를 사용한다. Vercel 서버 환경변수 `ATLAS_API_ORIGIN`은 실제 HTTPS VPS API origin이다.
+React의 두 채팅 화면은 `useServerAgentWorkspace` 한 인스턴스를 공유한다. AI API는 기존 `VITE_API_BASE_URL`과 무관하게 `/api/agent` 동일 출처를 사용한다. Vite는 개발 프록시, Vercel은 `vercel.json`의 명시적 wildcard rewrite와 `api/agent-proxy.js`의 정적 서버 함수를 사용한다. 방 ID와 messages/requests가 포함된 중첩 경로도 같은 제한 프록시로 전달한다. 전달 경로와 query parameter를 allowlist로 검사하고 내부 routing parameter는 제거한다. 본문 없는 GET/DELETE에는 JSON Content-Type을 붙이지 않는다. Vercel 서버 환경변수 `ATLAS_API_ORIGIN`은 실제 HTTPS VPS API origin이다.
 
 Node는 Supabase Auth의 `getUser(token)`으로 로그인만 검증한다. `accountSettings.js`의 기존 브로커 암호화 필수 검사는 그대로 유지했다. 로그인에 브로커 키를 요구하지 않는다. 잘못된 Bearer는 401이며 guest로 전환하지 않는다. guest는 `/status`에서만 서명된 HttpOnly/SameSite=Lax 쿠키를 발급한다. 나머지 API는 쿠키 누락 시 거부한다. 만료/위조 쿠키를 새 방문자로 자동 대체하지 않는다. 쿠키 삭제/다른 브라우저의 동일인 완벽 식별은 보장하지 않는다. IP를 사용자로 사용하지 않는다. production 쿠키는 Secure + `__Host-` 접두사다. Origin과 Sec-Fetch-Site를 검증한다. 프록시를 통한 동일 출처 쿠키이므로 제3자 쿠키에 의존하지 않는다.
 
@@ -28,7 +28,9 @@ FastAPI는 loopback 8010 + 최소 32자 내부 비밀로 보호한다. Node와 �
 
 RSI는 기존 `calculateRsi`와 같은 초기 평균 및 Wilder 평활, 보합=50, 상승만=100 규칙이다. 기존 SQLite 스키마의 symbols/candles/current_candle_quality를 읽기 전용 트랜잭션으로 조회한다. 저장된 최대 2,000봉을 사용하고 최신 확정 거래일보다 오래됨, 거래일 누락, 준비 봉 부족, 격리 OHLC, 품질 기록 없음, 유효하지 않은 봉을 제외·공개한다. 전체 국내 시장 목록이 아니라 실제 수집 universe를 보고한다. 이전 검색의 result_sets/코드/수치/기준일은 서버 답변과 함께 저장해 후속 질문의 문맥으로 전달한다.
 
-거래일은 exchange_calendars 4.13.2 XKRX를 사용하고 검증 허용 범위를 기본 2026-12-31까지로 제한한다. 해당 범위를 넘어선 확정적 판단은 거부한다. 운영자는 임시 휴장/거래시간 변경을 확인한 뒤 달력 패키지와 범위를 갱신해야 한다. 밤사이는 직전 거래일 실제 정규장 마감부터 해당 거래일 정규장 시작까지이며 현재 시각을 넘지 않는다. 휴일에는 다음 거래일을 대상으로 현재까지 자료라는 범위를 공개한다. today와 overnight 기간을 구분하며 기사에도 overnight/intraday 구분을 기록한다.
+거래일은 exchange_calendars 4.13.2 XKRX와 `ai_agent/krx_closures.py`의 검토된 휴장일을 함께 사용하고 검증 허용 범위를 기본 2026-12-31까지로 제한한다. 패키지가 누락한 2026-06-03 지방선거일과 2026-07-17 제헌절만 중앙 달력 계층에 반영한다. [KRX KIND 휴장 공시](https://kind.krx.co.kr/external/2026/05/20/000110/20260520000197/32154.htm)는 코넥스 대상이며, [KRX 전체 시장 발표 보도](https://www.yna.co.kr/view/AKR20260520064251008)도 교차 확인했다. source에 보정 버전을 공개하며 실제 거래일 누락 검사는 유지한다. 해당 범위를 넘어선 확정적 판단은 거부한다. 운영자는 임시 휴장/거래시간 변경을 확인한 뒤 달력 패키지와 범위를 갱신해야 한다. 밤사이는 직전 거래일 실제 정규장 마감부터 해당 거래일 정규장 시작까지이며 현재 시각을 넘지 않는다. 휴일에는 다음 거래일을 대상으로 현재까지 자료라는 범위를 공개한다. today와 overnight 기간을 구분하며 기사에도 overnight/intraday 구분을 기록한다.
+
+RSI 검색은 64종목씩 읽기 전용 snapshot에서 조회하며 OHLC 유효성/원자료와 품질 기록의 연결/격리 여부를 검사한다. 계산된 공개 종목 지표와 부분 검색 진행 상태를 최대 60초 캐시한다(최대 DB 4개, DB당 검색 8개). 같은 persistent 읽기 전용 연결의 SQLite `PRAGMA data_version`으로 다른 connection의 commit/WAL 갱신을 감지하고, 파일 교체·TTL·시장·기준일·달력 버전·종목 제한도 구분한다. 스캔 도중 commit/파일 교체를 감지하면 결과와 진행 상태를 폐기하고 `screen_data_changed`를 반환한다. 부분 결과는 `cache_hit=false`와 실제 미검색 수를 유지하며, 같은 버전의 다음 분석에서만 이어받는다. 같은 분석 안의 페이지는 검사 범위와 순위를 고정한다. 재개 시에도 첫 조회의 TTL을 연장하지 않는다. 끝까지 확인한 결과만 전체 검색 캐시 hit로 표시한다. 임계값은 반올림 전 지표에, 표시는 반올림된 값에 적용하며 사용자 문맥/답변은 공유하지 않는다. `data_read_at`, `data_version`, `cache_hit`, `resumed`를 coverage에 공개한다. SQLite 페이지는 최대 1GiB의 읽기 전용 가상 매핑(지원되지 않으면 일반 읽기), 배치 정렬은 메모리를 사용한다. 기존 12초 도구 한도와 약 11초 검색 예산, 최대 2,000봉 및 품질 제외 정책은 유지한다. 첫 검색이 끝나지 못하면 실제 `not_scanned`를 계속 표시한다.
 
 Naver legacy는 기존 `https://openapi.naver.com/v1/search/news.json`, HUB는 `https://naverapihub.apigw.ntruss.com/search/v1/news`를 사용한다. AI env의 전용 이름은 `AI_NAVER_MODE=legacy|hub`, `AI_NAVER_CLIENT_ID`, `AI_NAVER_CLIENT_SECRET`이다. 기존 Node 뉴스는 기존 설정과 경로를 그대로 보존했다. HUB에는 새 NCP 키가 필요하고 기존 키와 교환 사용할 수 없다. API HUB는 2026-06-25 개시, 기존 개발자센터 신규 신청은 2026-07-31 차단, 이전 신청분 지원은 2027-06-30 종료라는 공지를 확인했다. 운영 계정 이관 및 실제 호출은 미검증이다.
 

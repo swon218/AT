@@ -1,20 +1,19 @@
 import asyncio
-from collections import Counter
 from contextlib import closing
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 import hashlib
 import html
 import json
-import math
 from pathlib import Path
 import re
 import sqlite3
 import time
 from urllib.parse import urlsplit, urlunsplit
 import httpx
-from .market import KST, market_context, expected_sessions, wilder_rsi
+from .market import KST, market_context
 from .schemas import TOOL_MODELS
+from .screener import SCREENER, ScanBusy, ScanChanged
 
 PROMPT_VERSION = 'atlas-research-v1'
 
@@ -113,10 +112,12 @@ class NewsSource:
 
 
 class ResearchTools:
-    def __init__(self, settings, news=None, now=None, context=None):
+    def __init__(self, settings, news=None, now=None, context=None, screener=None):
         self.settings, self.news = settings, news or NewsSource(settings)
         self.now = now or datetime.now(KST)
         self.budget = Budget(settings)
+        self.screener = screener or SCREENER
+        self.rsi_snapshots = {}
         self.evidence, self.resolved, self.coverage, self.result_sets = {}, {}, [], []
         # Only server-owned messages of this room are passed here. Historical sources remain dated.
         for message in context or []:
@@ -199,60 +200,41 @@ class ResearchTools:
     async def screen_rsi(self, args):
         ctx = market_context(self.now, self.settings.calendar_through)
         cutoff = ctx['latest_completed']
-        with closing(self.connect()) as db:
-            where, params = ('active=1', ()) if args.market == 'ALL' else ('active=1 AND market=?', (args.market,))
-            total = db.execute('SELECT count(*) FROM symbols WHERE ' + where, params).fetchone()[0]
-            rows = db.execute('SELECT code,name,market FROM symbols WHERE ' + where + ' ORDER BY code LIMIT ?', (*params, self.settings.screen_symbols)).fetchall()
-            quality_ready = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='current_candle_quality' AND type='view'").fetchone())
-            matches, excluded, valid, scanned = [], Counter(), 0, 0
-            started = time.monotonic()
-            for symbol in rows:
-                if time.monotonic() - started > self.settings.tool_seconds - 1:
-                    break
-                scanned += 1
-                code = symbol['code']
-                candles = db.execute('SELECT * FROM (SELECT * FROM candles WHERE code=? AND date<=? ORDER BY date DESC LIMIT 2000) ORDER BY date', (code, cutoff)).fetchall()
-                reason = None
-                if not candles or len(candles) < 15:
-                    reason = 'insufficient_warmup'
-                elif candles[-1]['date'] != cutoff:
-                    reason = 'stale_data'
-                elif not quality_ready:
-                    reason = 'quality_records_missing'
-                else:
-                    qualities = db.execute('SELECT date,status FROM current_candle_quality WHERE code=? AND date BETWEEN ? AND ?', (code, candles[0]['date'], cutoff)).fetchall()
-                    qm = {q['date']: q['status'] for q in qualities}
-                    if any(q == 'quarantined' for q in qm.values()):
-                        reason = 'quarantined_ohlc'
-                    elif any(c['date'] not in qm for c in candles):
-                        reason = 'quality_records_missing'
-                    elif [c['date'] for c in candles] != expected_sessions(candles[0]['date'], cutoff):
-                        reason = 'missing_sessions'
-                    elif any(not c['tradable'] or not all(math.isfinite(c[x]) and c[x] > 0 for x in ('open', 'high', 'low', 'close')) or c['low'] > min(c['open'], c['close']) or c['high'] < max(c['open'], c['close']) for c in candles):
-                        reason = 'invalid_ohlc'
-                if reason:
-                    excluded[reason] += 1
-                    continue
-                valid += 1
-                rsi = wilder_rsi([c['close'] for c in candles])
-                if rsi <= args.threshold:
-                    item = {**dict(symbol), 'rsi': round(rsi, 4), 'date': cutoff, 'bars': len(candles),
-                            'source': 'lab.sqlite / Wilder RSI(14)', 'as_of': cutoff, 'queried_at': self.now.isoformat()}
-                    item['excerpt'] = f"{item['name']}({code}) RSI(14)={item['rsi']}, 확정 일봉 {cutoff}"
-                    item['id'] = stable_id('r_', item)
-                    matches.append(item)
-            matches.sort(key=lambda r: (r['rsi'], r['code']))
+        try:
+            key = (args.market, cutoff)
+            # Keep pagination/ranking stable within one analysis. A new analysis can
+            # resume public partial progress, but page 2 must not silently rerank page 1.
+            if key not in self.rsi_snapshots:
+                self.rsi_snapshots[key] = await asyncio.to_thread(self.screener.scan, self.settings, args.market, cutoff)
+            scan = self.rsi_snapshots[key]
+        except ScanBusy:
+            raise ToolError('screen_busy', True)
+        except ScanChanged:
+            raise ToolError('screen_data_changed', True)
+        except FileNotFoundError:
+            raise ToolError('lab_data_not_ready')
+        matches = []
+        for row in scan['items']:
+            if row['rsi'] <= args.threshold:
+                item = {**row, 'rsi': round(row['rsi'], 4), 'date': cutoff, 'source': 'lab.sqlite / Wilder RSI(14)', 'as_of': cutoff,
+                        'queried_at': self.now.isoformat(), 'data_read_at': scan['data_read_at'], 'data_version': scan['data_version']}
+                item['excerpt'] = f"{item['name']}({item['code']}) RSI(14)={item['rsi']}, 확정 일봉 {cutoff}"
+                item['id'] = stable_id('r_', item)
+                matches.append(item)
+        matches.sort(key=lambda row: (row['rsi'], row['code']))
         page = matches[(args.page - 1) * args.page_size:args.page * args.page_size]
         for item in page:
             self.remember(item)
             self.resolved[item['code']] = item
-        coverage = {'kind': 'rsi', 'market': args.market, 'universe': total, 'scanned': scanned,
-                    'valid': valid, 'excluded': dict(excluded), 'not_scanned': total - scanned,
+        coverage = {'kind': 'rsi', 'market': args.market, 'universe': scan['universe'], 'scanned': scan['scanned'],
+                    'valid': scan['valid'], 'excluded': scan['excluded'], 'not_scanned': scan['universe'] - scan['scanned'],
                     'matches': len(matches), 'page': args.page, 'page_size': args.page_size,
-                    'returned': len(page), 'as_of': cutoff, 'sort': 'RSI ascending, code ascending'}
+                    'returned': len(page), 'as_of': cutoff, 'sort': 'RSI ascending, code ascending',
+                    'data_version': scan['data_version'], 'data_read_at': scan['data_read_at'],
+                    'calendar_source': ctx['calendar_source'], 'cache_hit': scan['cache_hit'], 'resumed': scan.get('resumed', 0)}
         self.coverage.append(coverage)
         self.result_sets.append({'id': stable_id('s_', [coverage, [x['id'] for x in page]]), 'items': page, 'coverage': coverage})
-        return {'status': 'partial' if excluded or total > scanned else 'success' if page else 'empty',
+        return {'status': 'partial' if scan['excluded'] or coverage['not_scanned'] else 'success' if page else 'empty',
                 'result_id': stable_id('s_', [coverage, [x['id'] for x in page]]), 'items': page,
                 'coverage': coverage, 'as_of': cutoff, 'source': 'lab.sqlite / Wilder RSI(14)',
                 'warnings': ['수집된 일부 종목 대상, 실시간 지표 아님. 저장된 최대 2,000봉 전체로 Wilder 초기화.', ctx['warning']]}
