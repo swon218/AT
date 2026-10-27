@@ -242,6 +242,7 @@ async def test_sdk_parameters_real_official_sdk_and_reasoning_call_continuity(se
     assert result['status'] == 'completed'
     assert requests[0]['model'] == 'gpt-6-luna' and requests[0]['store'] is False
     assert requests[0]['text']['format']['type'] == 'json_schema'
+    assert all(set(t['parameters']['required']) == set(t['parameters']['properties']) for t in requests[0]['tools'])
     inputs = requests[1]['input']
     assert any(i.get('encrypted_content') == 'opaque-not-chain-of-thought' for i in inputs)
     assert any(i.get('call_id') == 'call_1' and i['type'] == 'function_call_output' for i in inputs)

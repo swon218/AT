@@ -44,8 +44,13 @@ DESCRIPTIONS = {
 
 
 def tools_schema():
-    return [dict(type='function', name=name, description=DESCRIPTIONS[name],
-                 parameters=model.model_json_schema(), strict=True) for name, model in TOOL_MODELS.items()]
+    tools = []
+    for name, model in TOOL_MODELS.items():
+        parameters = model.model_json_schema()
+        # Include an explicit empty required list for the zero-argument context tool too.
+        parameters.setdefault('required', list(parameters.get('properties', {})))
+        tools.append(dict(type='function', name=name, description=DESCRIPTIONS[name], parameters=parameters, strict=True))
+    return tools
 
 
 class Claim(Strict):
