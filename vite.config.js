@@ -6,6 +6,6 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
-    proxy: { '/api': 'http://127.0.0.1:3000' },
+    proxy: { '/api': process.env.ATLAS_DEV_API_TARGET || 'http://127.0.0.1:3000' },
   },
 })

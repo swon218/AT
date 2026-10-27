@@ -1,0 +1,27 @@
+[Unit]
+Description=ATLAS read-only AI research service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=atlas-ai
+Group=atlas-ai
+WorkingDirectory=/opt/atlas
+EnvironmentFile=/etc/atlas/ai.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=NODE_ENV=production
+ExecStart=/opt/atlas/.venv-ai/bin/python -m uvicorn ai_agent.app:app --host 127.0.0.1 --port 8010 --workers 1 --no-access-log
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=140
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

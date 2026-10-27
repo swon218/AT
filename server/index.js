@@ -17,11 +17,12 @@ import { registerMarketIndexRoutes } from './marketIndices.js'
 import { registerMarketSummaryRoutes } from './marketSummary.js'
 import { createMarketSessions } from './marketSession.js'
 import { registerAddedBrokerRoutes } from './addedBrokers.js'
+import { registerAgentRoutes } from './agent.js'
 
 const app = Fastify({ logger: true })
 await app.register(cors, {
   origin: config.frontendOrigin,
-  methods: ['GET', 'POST', 'PUT'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 })
 
@@ -31,6 +32,7 @@ registerStockSearchRoutes(app)
 registerMarketIndexRoutes(app)
 registerMarketSummaryRoutes(app, { sessions: createMarketSessions() })
 registerAddedBrokerRoutes(app)
+registerAgentRoutes(app)
 
 async function tossMarketCredentials(request) {
   const authorization = request.headers.authorization || ''

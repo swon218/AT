@@ -1,0 +1,14 @@
+[Unit]
+Description=ATLAS AI guest and execution retention cleanup
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=atlas
+WorkingDirectory=/opt/atlas
+EnvironmentFile=/etc/atlas/atlas.env
+ExecStart=/usr/bin/node /opt/atlas/deploy/ai_maintenance.js
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

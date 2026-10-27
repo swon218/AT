@@ -1,5 +1,7 @@
 # ATLAS AI 에이전트 채팅 공간
 
+> 아래는 과거 **UI만 추가했을 당시**의 기록이다. 2026-10-28 실제 에이전트 구현에는 VPS/FastAPI/DB 설정이 필요하다. 현재 안내는 [AI_AGENT_VPS_HERMES.md](AI_AGENT_VPS_HERMES.md)와 [AI_AGENT_ARCHITECTURE.md](AI_AGENT_ARCHITECTURE.md)를 따른다. 아래의 “VPS 작업 불필요”는 과거 UI 변경에만 해당한다.
+
 이번 변경은 React 프런트엔드의 채팅 UI만 추가한다. LLM, FastAPI, 에이전트용 Node.js API, 증권사 주문/조회 도구는 연결하지 않는다.
 
 ## 포함 기능
