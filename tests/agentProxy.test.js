@@ -21,9 +21,15 @@ test('Vercel wildcard rewrite and static function preserve all supported nesting
     assert.equal(proxyTarget(`/api/agent/${route}`), `/api/agent/${route}`)
     assert.equal(proxyTarget(rewritten(route)), `/api/agent/${route}`)
     assert.equal(proxyTarget(rewritten(encodeURIComponent(route))), `/api/agent/${route}`)
+    assert.equal(proxyTarget('/api/agent-proxy', { __atlas_route: route }), `/api/agent/${route}`)
+    assert.equal(proxyTarget('/api/agent-proxy.js', { __atlas_route: route, atlas_route: route }), `/api/agent/${route}`)
   }
   assert.equal(proxyTarget(rewritten(`rooms/${ID}/messages`) + '&before=123'), `/api/agent/rooms/${ID}/messages?before=123`)
   assert.equal(proxyTarget(rewritten('rooms') + '&search=test'), '/api/agent/rooms?search=test')
+  assert.equal(proxyTarget('/api/agent-proxy', { __atlas_route: 'rooms', search: 'test' }), '/api/agent/rooms?search=test')
+  assert.equal(proxyTarget(rewritten('rooms'), { __atlas_route: 'status' }), null)
+  assert.equal(proxyTarget('/api/agent-proxy', { __atlas_route: ['rooms', 'status'] }), null)
+  assert.equal(proxyTarget('/api/agent-proxy', { __atlas_route: 'rooms', atlas_route: 'status' }), null)
   for (const path of [rewritten('orders'), rewritten('../internal/agent/events'), rewritten('https://evil.example/'),
     rewritten('rooms') + '&__atlas_route=status', '/api/agent/rooms?__atlas_route=status',
     rewritten('rooms') + '&user_id=other', rewritten('rooms') + '&search=x&search=y',

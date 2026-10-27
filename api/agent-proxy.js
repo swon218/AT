@@ -4,8 +4,18 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const ROUTE = new RegExp(`^(?:status|rooms(?:/${UUID}(?:/(?:messages|requests))?)?|requests/${UUID})$`)
 const RESERVED = '__atlas_route'
 
-export function proxyTarget(requestUrl) {
+export function proxyTarget(requestUrl, parsedQuery = {}) {
   const url = new URL(requestUrl, 'https://atlas.invalid')
+  // The Node runtime can expose rewrite parameters in req.query while req.url
+  // contains only the function pathname. Merge without accepting conflicting values.
+  for (const [key, raw] of Object.entries(parsedQuery || {})) {
+    const values = Array.isArray(raw) ? raw : [raw]
+    if (!values.every(value => typeof value === 'string')) return null
+    const present = url.searchParams.getAll(key)
+    if (present.length) {
+      if (present.length !== values.length || present.some((value, i) => value !== values[i])) return null
+    } else for (const value of values) url.searchParams.append(key, value)
+  }
   // Vercel can expose either the original path or its rewritten destination to Node.
   // Consume the routing parameter once; never forward it or allow it to replace an original path.
   const routingValues = url.searchParams.getAll(RESERVED)
@@ -14,11 +24,16 @@ export function proxyTarget(requestUrl) {
   if (url.pathname.startsWith('/api/agent/')) {
     route = url.pathname.slice('/api/agent/'.length)
     if (routingValues.length && routingValues[0] !== route) return null
-  } else if (url.pathname === '/api/agent-proxy' && routingValues.length === 1) {
+  } else if (['/api/agent-proxy', '/api/agent-proxy.js'].includes(url.pathname) && routingValues.length === 1) {
     route = routingValues[0]
   } else return null
   if (!ROUTE.test(route)) return null
   url.searchParams.delete(RESERVED)
+  // Some routing runtimes also attach the source wildcard's named parameter.
+  if (url.searchParams.has('atlas_route')) {
+    if (url.searchParams.getAll('atlas_route').length !== 1 || url.searchParams.get('atlas_route') !== route) return null
+    url.searchParams.delete('atlas_route')
+  }
   // Cursor/search are the only public query parameters. No unknown routing knobs pass upstream.
   const permitted = route === 'rooms' ? ['search'] : route.endsWith('/messages') ? ['before'] : []
   for (const key of url.searchParams.keys()) {
@@ -36,7 +51,7 @@ export default async function handler(req, res) {
   try { origin = new URL(base) } catch { return res.status(503).json({ error: 'invalid_agent_proxy_origin' }) }
   if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) return res.status(503).json({ error: 'invalid_agent_proxy_origin' })
   let path
-  try { path = proxyTarget(req.url) } catch { /* Malformed request URLs are rejected. */ }
+  try { path = proxyTarget(req.url, req.query) } catch { /* Malformed request URLs are rejected. */ }
   if (!path) return res.status(404).json({ error: 'agent_route_not_found' })
   if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method)) return res.status(405).json({ error: 'method_not_allowed' })
   try {
