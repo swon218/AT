@@ -2,6 +2,16 @@
 
 ATLAS `main`에서 사용자가 전달한 최종 커밋 해시를 확인한 뒤 다음 범위만 반영해 주세요. 키 없이 실행하며 유료 모델 호출은 0건을 유지합니다. 이 문서는 최초 설치 절차를 다시 실행하라는 뜻이 아닙니다.
 
+## SQLite 3.37.2 롤백 이후 재배포 게이트
+
+이전 `8da3780`은 운영 SQLite의 읽기 연결 수명에 따른 data_version 변화로 롤백됐습니다. 이번 수정은 버전 확인과 검색에 동일한 persistent 읽기 전용 연결 하나만 사용하고, snapshot을 고정한 뒤 버전을 확인합니다. 모든 경로에서 snapshot을 해제한 다음 버전을 다시 확인하므로 실제 WAL commit 감지는 유지합니다. mtime/크기만으로 변경 여부를 판단하거나 버전 차이를 무시하지 않습니다. 읽기 전용 연결 종료 증상은 주입 회귀 모델로 검사했으며, 모든 SQLite 3.37.2 환경에서 동일한 엔진 현상을 직접 재현했다는 의미는 아닙니다.
+
+1. 현재 롤백 상태와 기존 비공개 백업을 보존하세요. 원격 main에 있는 **사용자가 전달한 새 수정 해시**를 격리 worktree에서 먼저 검증하세요. 운영 SQLite/서비스를 새 worktree로 옮기거나 DB를 복사·초기화하지 마세요. 별도 worktree의 코드와 기존 Python 환경을 사용하되 현재 디렉터리/모듈 경로가 새 코드인지 확인하세요.
+2. Python 전체 테스트 33개, 기존 통합 테스트, 아래 읽기 전용 운영 성능 명령을 **운영 checkout을 갱신하기 전에** 실행하세요. 수집이 실행 중이면 기록하고 유휴 시간에 다시 gate를 확인하세요. 실제 commit 때문에 생긴 ScanChanged를 우회하거나 무조건 성공 처리하지 마세요.
+3. 첫 cold 검색부터 예외 없이 실제 scanned/not_scanned를 출력하고, 동일 DB 버전의 다음 검색에서 이어받기와 전체 cache hit가 정상인지 확인하세요. 매 실행 후 `reader.in_transaction=false`여야 합니다. 데이터가 갱신되면 캐시 무효화/새 검색으로 동작해야 합니다. WAL writer 검증은 운영 DB에 UPDATE하지 않고 회귀 테스트용 DB에서만 수행하세요.
+4. gate를 통과한 뒤에만 운영 checkout을 해당 새 해시로 fast-forward하고 `atlas-ai.service`만 재시작하세요. 적용 후 같은 gate와 health를 다시 확인하세요. 실패하면 기존 롤백 정책을 유지하고 재현 값·runtime·수집 실행 여부를 보고하세요. Node/Vercel 경로는 이미 실제 CRUD 검증을 통과했으므로 이번 배포를 위해 Node 설정이나 서비스를 바꾸지 마세요.
+5. 운영 SQLite 라이브러리 업그레이드, Supabase SQL 재실행, 시간 한도/품질 정책 변경, OpenAI 키 설정·유료 호출은 하지 마세요. 로컬 격리 DLL은 운영에 복사하지 않습니다.
+
 ## 반영 범위
 
 1. Vercel: `vercel.json`에서 `/api/agent/:atlas_route*`를 정적 함수 `api/agent-proxy.js`로 rewrite합니다. 허용된 방/메시지/요청 경로만 전달하며 내부 routing parameter는 제거합니다. 본문 없는 DELETE에는 JSON Content-Type을 보내지 않습니다. 기존 `ATLAS_API_ORIGIN=https://srv1826612.tail6bd3f3.ts.net`을 유지합니다.
@@ -42,6 +52,7 @@ try:
         begin = time.monotonic()
         result = scanner.scan(s, 'ALL', ctx['latest_completed'])
         print(json.dumps({'run': run, 'seconds': round(time.monotonic()-begin, 4),
+                          'snapshot_released': not next(iter(scanner.entries.values()))['reader'].in_transaction,
                           **{k:v for k,v in result.items() if k != 'items'}}))
 finally:
     scanner.close()
@@ -57,3 +68,5 @@ PY
 45종목 quarantine의 운영 DB 재수집·보정·삭제, nonzero exit 정책 변경, 검증 범위 연장, OpenAI 키 설정·유료 호출은 수행하지 마세요. 복제 SQLite에서의 재수집 진단은 별도 작업입니다. 이번 수정으로 `atlas-lab-collect.service`의 정책적 exit 1이 자동으로 없어졌다고 보고하지 마세요.
 
 대규모 로컬 합성 성능 재현은 `python -m ai_agent.tests.benchmark_rsi --symbols 2715 --bars 1250 --profile-queries`입니다. 실제 lab 스키마를 쓰는 새 임시 DB만 생성·정리합니다. cold와 재개 두 번의 제한된 검색까지 합쳐도 끝내지 못하면 종료 코드가 1이며 측정 결과를 출력합니다. 실제 운영 DB 경로를 인자로 받지 않습니다.
+
+2GiB 이상 파일 크기 조건을 포함한 합성 검증은 `--raw-padding 400 --max-scans 3`을 추가합니다. raw JSON에 합성 padding을 넣은 유효한 임시 SQLite이며, 운영 데이터의 복제본은 아닙니다. `reader_probe`는 이 임시 DB에서 이전 두 연결 방식의 native data_version 변화를 출력합니다. 환경에 따라 false가 나올 수 있으며, 이를 운영 gate 통과 증거로 대신하지 않습니다. 각 검색은 여전히 기본 12초 한도 내에서 수행합니다.

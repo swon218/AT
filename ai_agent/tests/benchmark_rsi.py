@@ -20,9 +20,13 @@ def main():
     args.add_argument('--symbols', type=int, default=2715)
     args.add_argument('--bars', type=int, default=1250)
     args.add_argument('--profile-queries', action='store_true')
+    args.add_argument('--raw-padding', type=int, default=0, help='Synthetic raw JSON padding to exercise large files')
+    args.add_argument('--max-scans', type=int, default=2, help='Bounded scans before checking the completed cache')
     options = args.parse_args()
     if not 51 <= options.symbols <= 3000 or not 15 <= options.bars <= 2000:
         args.error('symbols must be 51..3000; bars must be 15..2000')
+    if not 0 <= options.raw_padding <= 1024 or not 1 <= options.max_scans <= 4:
+        args.error('raw-padding must be 0..1024; max-scans must be 1..4')
     parent = Path(tempfile.gettempdir()).resolve()
     temp = tempfile.TemporaryDirectory(prefix='atlas-rsi-benchmark-', dir=parent)
     root = Path(temp.name).resolve()
@@ -64,7 +68,8 @@ def main():
                        990+d.i,1000+d.i,100,1 FROM symbols s CROSS JOIN days d
                        WHERE CAST(s.code AS INTEGER)<? OR d.i>=?''',
                        (options.symbols - 5, options.bars - 10))
-            db.execute('''INSERT INTO raw_candles SELECT code,date,?,'fixture','{}',date,date FROM candles''', (SOURCE,))
+            payload = json.dumps({'synthetic_padding': 'x' * options.raw_padding}) if options.raw_padding else '{}'
+            db.execute('''INSERT INTO raw_candles SELECT code,date,?,'fixture',?,date,date FROM candles''', (SOURCE, payload))
             db.execute('''INSERT INTO candle_quality_versions
                        SELECT code,date,?,'fixture',?,
                        CASE WHEN CAST(code AS INTEGER)<45 AND date=? THEN 'quarantined' ELSE 'original' END,
@@ -76,18 +81,35 @@ def main():
             db.close()
         fixture_seconds = time.perf_counter() - started
         settings = Settings(lab_path=str(path))
+        # Diagnostic old topology, on this disposable DB only. Native behavior can
+        # differ by VFS/DB state; the regression suite separately injects the VPS symptom.
+        watch = scanner._connect(path)
+        try:
+            before = watch.execute('PRAGMA data_version').fetchone()[0]
+            temporary = scanner._connect(path)
+            try:
+                temporary.execute('SELECT count(*) FROM symbols').fetchone()
+            finally:
+                temporary.close()
+            after = watch.execute('PRAGMA data_version').fetchone()[0]
+        finally:
+            watch.close()
+        reader_probe = {'before': before, 'after': after, 'changed_without_writer': before != after}
         results = []
-        for _ in range(3):
+        for _ in range(options.max_scans + 1):
             started = time.perf_counter()
             result = scanner.scan(settings, 'ALL', dates[-1])
             results.append({k: v for k, v in result.items() if k != 'items'} | {'seconds': round(time.perf_counter() - started, 4)})
-        print(json.dumps({'synthetic': True, 'symbols': options.symbols, 'bars': options.bars,
+        print(json.dumps({'synthetic': True, 'sqlite_version': sqlite3.sqlite_version,
+                          'reader_probe': reader_probe, 'symbols': options.symbols, 'bars': options.bars,
+                          'raw_padding': options.raw_padding,
                           'fixture_seconds': round(fixture_seconds, 2), 'db_mb': round(path.stat().st_size / 1024**2, 1),
                           'tool_seconds': settings.tool_seconds, 'query_seconds': timings, 'results': results}, ensure_ascii=False), flush=True)
-        assert results[1]['scanned'] == options.symbols, 'Cold plus resumed scan did not complete in two bounded runs'
-        assert results[1]['valid'] == options.symbols - 50
-        assert results[1]['excluded'] == {'quarantined_ohlc': 45, 'insufficient_warmup': 5}
-        assert results[2]['cache_hit']
+        complete = results[options.max_scans - 1]
+        assert complete['scanned'] == options.symbols, 'Bounded cold/resumed scans did not complete'
+        assert complete['valid'] == options.symbols - 50
+        assert complete['excluded'] == {'quarantined_ohlc': 45, 'insufficient_warmup': 5}
+        assert results[-1]['cache_hit']
     finally:
         scanner.close()
         # Only the verified, freshly created benchmark directory is removed.

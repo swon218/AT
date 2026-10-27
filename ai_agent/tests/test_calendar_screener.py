@@ -114,19 +114,83 @@ def test_commit_during_scan_discards_results_instead_of_mixing_versions(tmp_path
     class ChangingScanner(RsiScreener):
         change = True
         def _scan(self, *args):
-            result = super()._scan(*args)
             if self.change:
+                reader = args[0]
+                old_name = reader.execute("SELECT name FROM symbols WHERE code='005930'").fetchone()[0]
                 with sqlite3.connect(path) as writer: writer.execute("UPDATE symbols SET name='Changed' WHERE code='005930'")
+                # The writer commits while the scan's real read transaction is pinned.
+                assert reader.execute("SELECT name FROM symbols WHERE code='005930'").fetchone()[0] == old_name
                 self.change = False
-            return result
+            return super()._scan(*args)
     scanner = ChangingScanner()
     try:
         with pytest.raises(ScanChanged): scanner.scan(Settings(lab_path=str(path)), 'ALL', '2026-10-27')
         assert not next(iter(scanner.entries.values()))['results']
+        assert not next(iter(scanner.entries.values()))['reader'].in_transaction
         result = scanner.scan(Settings(lab_path=str(path)), 'ALL', '2026-10-27')
         assert result['valid'] == 3 and not result['cache_hit']
         assert next(r['name'] for r in result['items'] if r['code'] == '005930') == 'Changed'
     finally: scanner.close()
+
+
+def test_reader_close_pager_invalidation_does_not_break_own_scan(tmp_path):
+    """Model the reported production runtime, not a claim all 3.37.2 builds do this.
+
+    A second read-only connection's close changes the persistent reader's version
+    without a writer. The old watch+temporary-scan topology fails this condition.
+    Actual SQLite WAL versions are still included, so real writes stay detectable.
+    """
+    path = tmp_path / 'reader-lifecycle.sqlite'; make_lab(path)
+    runtime = {'open': set(), 'opened': 0, 'close_bumps': 0}
+
+    class VersionRow:
+        def __init__(self, value): self.value = value
+        def fetchone(self): return (self.value,)
+
+    class Reader:
+        def __init__(self, db):
+            self.db = db
+            runtime['open'].add(self)
+            runtime['opened'] += 1
+        def __getattr__(self, name): return getattr(self.db, name)
+        def __enter__(self): self.db.__enter__(); return self
+        def __exit__(self, *args): return self.db.__exit__(*args)
+        def execute(self, sql, *args):
+            row = self.db.execute(sql, *args)
+            if sql == 'PRAGMA data_version':
+                return VersionRow(row.fetchone()[0] + runtime['close_bumps'])
+            return row
+        def close(self):
+            self.db.close()
+            runtime['open'].remove(self)
+            if runtime['open']: runtime['close_bumps'] += 1
+
+    class LegacyRuntimeScanner(RsiScreener):
+        def _connect(self, path): return Reader(super()._connect(path))
+
+    scanner = LegacyRuntimeScanner()
+    settings = Settings(lab_path=str(path))
+    try:
+        # Reproduce the operator's minimal sequence in the injected lifecycle model.
+        watch = scanner._connect(path.resolve())
+        before = watch.execute('PRAGMA data_version').fetchone()[0]
+        temporary = scanner._connect(path.resolve())
+        temporary.execute('SELECT count(*) FROM candles').fetchone(); temporary.close()
+        assert watch.execute('PRAGMA data_version').fetchone()[0] != before
+        watch.close()
+        opened_before = runtime['opened']
+        cold = scanner.scan(settings, 'ALL', '2026-10-27')
+        cached = scanner.scan(settings, 'ALL', '2026-10-27')
+        assert cold['valid'] == 3 and not cold['cache_hit'] and cached['cache_hit']
+        assert runtime['opened'] - opened_before == 1  # No second scan reader, even on cache hit.
+        reader = next(iter(scanner.entries.values()))['reader']
+        assert not reader.in_transaction
+        with sqlite3.connect(path) as writer:
+            writer.execute("UPDATE candles SET close=close+2 WHERE code='005930' AND date='2026-10-27'")
+        changed = scanner.scan(settings, 'ALL', '2026-10-27')
+        assert not changed['cache_hit'] and changed['data_version'] != cold['data_version']
+    finally: scanner.close()
+    assert not runtime['open']
 
 
 def test_scan_is_readonly_preserves_invalid_bar_and_deadline_exclusions(tmp_path):
