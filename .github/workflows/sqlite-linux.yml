@@ -18,6 +18,8 @@ jobs:
         run: |
           /usr/bin/python3 -c "import sqlite3,sys; print(sys.version,sqlite3.sqlite_version); assert sys.version_info[:2]==(3,10); assert sqlite3.sqlite_version=='3.37.2'"
           /usr/bin/python3 -m venv /tmp/atlas-ci-venv
-          /tmp/atlas-ci-venv/bin/python -m pip install --require-hashes -r ai_agent/requirements.lock
+          /tmp/atlas-ci-venv/bin/python -m pip install --require-hashes -r ai_agent/requirements-test.lock
+      - name: Disposable WAL lifecycle diagnosis
+        run: /tmp/atlas-ci-venv/bin/python -m ai_agent.tests.diagnose_lifecycle
       - name: Real Linux regression suite
         run: /tmp/atlas-ci-venv/bin/python -m pytest ai_agent/tests -q --tb=short
