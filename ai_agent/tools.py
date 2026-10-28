@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 from .market import KST, market_context
 from .schemas import TOOL_MODELS
-from .screener import SCREENER, ScanBusy, ScanChanged
+from .screener import SCREENER, ScanBusy, ScanChanged, FingerprintUnavailable
 
 PROMPT_VERSION = 'atlas-research-v1'
 
@@ -211,6 +211,8 @@ class ResearchTools:
             raise ToolError('screen_busy', True)
         except ScanChanged:
             raise ToolError('screen_data_changed', True)
+        except FingerprintUnavailable:
+            raise ToolError('screen_snapshot_unverified', True)
         except FileNotFoundError:
             raise ToolError('lab_data_not_ready')
         matches = []

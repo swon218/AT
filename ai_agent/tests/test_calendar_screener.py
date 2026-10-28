@@ -193,6 +193,126 @@ def test_reader_close_pager_invalidation_does_not_break_own_scan(tmp_path):
     assert not runtime['open']
 
 
+def test_snapshot_lifecycle_version_2_4_5_is_not_a_commit(tmp_path):
+    """Reproduce the second VPS report's observable counter behavior by injection."""
+    path = tmp_path / 'lifecycle-2-4-5.sqlite'; make_lab(path)
+
+    class VersionRow:
+        def __init__(self, value): self.value = value
+        def fetchone(self): return (self.value,)
+
+    class Reader:
+        def __init__(self, db): self.db, self.version, self.pinned = db, 2, False
+        def __getattr__(self, name): return getattr(self.db, name)
+        def execute(self, sql, *args):
+            if sql == 'PRAGMA data_version': return VersionRow(self.version)
+            result = self.db.execute(sql, *args)
+            if sql == 'BEGIN': self.pinned = False
+            if sql.startswith('SELECT rootpage') and not self.pinned:
+                self.version += 2; self.pinned = True
+            return result
+        def rollback(self):
+            if self.db.in_transaction: self.version += 1
+            self.db.rollback()
+
+    class Runtime(RsiScreener):
+        def _connect(self, path): return Reader(super()._connect(path))
+
+    scanner = Runtime()
+    try:
+        # Establish the reported failure condition before testing the new algorithm.
+        reader = scanner._connect(path.resolve())
+        before = reader.execute('PRAGMA data_version').fetchone()[0]
+        reader.execute('BEGIN'); reader.execute('SELECT rootpage FROM sqlite_master LIMIT 1').fetchone()
+        inside = reader.execute('PRAGMA data_version').fetchone()[0]
+        reader.rollback()
+        after = reader.execute('PRAGMA data_version').fetchone()[0]
+        assert (before, inside, after) == (2, 4, 5)
+        reader.close()
+        settings = Settings(lab_path=str(path))
+        cold = scanner.scan(settings, 'ALL', '2026-10-27')
+        cached = scanner.scan(settings, 'ALL', '2026-10-27')
+        assert cold['valid'] == 3 and cached['cache_hit'] and cold['data_version'] == cached['data_version']
+        with sqlite3.connect(path) as writer:
+            writer.execute("UPDATE symbols SET name='Actual writer' WHERE code='005930'")
+        changed = scanner.scan(settings, 'ALL', '2026-10-27')
+        assert not changed['cache_hit'] and changed['data_version'] != cold['data_version']
+        assert next(r['name'] for r in changed['items'] if r['code'] == '005930') == 'Actual writer'
+    finally: scanner.close()
+
+
+def test_commit_between_stamp_and_snapshot_pin_is_rejected(tmp_path, monkeypatch):
+    import ai_agent.screener as module
+    path = tmp_path / 'pin-race.sqlite'; make_lab(path)
+    scanner = RsiScreener()
+    original = module.fingerprint
+    calls = 0
+    def commit_after_probe(path, **kwargs):
+        nonlocal calls
+        token = original(path, **kwargs)
+        calls += 1
+        if calls == 1:
+            with sqlite3.connect(path) as writer:
+                writer.execute("UPDATE symbols SET name='New snapshot' WHERE code='005930'")
+        return token
+    monkeypatch.setattr(module, 'fingerprint', commit_after_probe)
+    try:
+        with pytest.raises(ScanChanged): scanner.scan(Settings(lab_path=str(path)), 'ALL', '2026-10-27')
+        entry = next(iter(scanner.entries.values()))
+        assert not entry['results'] and not entry['reader'].in_transaction
+    finally: scanner.close()
+
+
+def test_real_readers_are_stable_and_same_size_wal_commit_invalidates(tmp_path):
+    import os
+    from ai_agent.snapshot_fingerprint import fingerprint
+    path = tmp_path / 'same-size.sqlite'; make_lab(path)
+    writer = sqlite3.connect(path)
+    scanner = RsiScreener()
+    try:
+        writer.execute('PRAGMA wal_autocheckpoint=0')
+        writer.execute('CREATE TABLE padding(payload BLOB)')
+        writer.execute('INSERT INTO padding VALUES(zeroblob(1048576))'); writer.commit()
+        assert writer.execute('PRAGMA wal_checkpoint(RESTART)').fetchone()[0] == 0
+        writer.execute("UPDATE symbols SET name='Baseline' WHERE code='005930'"); writer.commit()
+        before = fingerprint(path)
+        with scanner._connect(path.resolve()) as reader:
+            reader.execute('BEGIN')
+            reader.execute('SELECT count(*) FROM candles').fetchone()
+            reader.rollback()
+        reader.close()
+        assert fingerprint(path) == before  # Reader marks/lifetimes are not commits.
+        settings = Settings(lab_path=str(path))
+        cold = scanner.scan(settings, 'ALL', '2026-10-27')
+        assert scanner.scan(settings, 'ALL', '2026-10-27')['cache_hit']
+        wal = path.with_name(path.name + '-wal')
+        stamp = wal.stat()
+        writer.execute("UPDATE candles SET close=close+2 WHERE code='005930' AND date='2026-10-27'"); writer.commit()
+        assert wal.stat().st_size == stamp.st_size
+        os.utime(wal, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        assert wal.stat().st_mtime_ns == stamp.st_mtime_ns
+        assert fingerprint(path) != before
+        changed = scanner.scan(settings, 'ALL', '2026-10-27')
+        assert not changed['cache_hit'] and changed['data_version'] != cold['data_version']
+        assert next(r['rsi'] for r in changed['items'] if r['code'] == '005930') > 0
+    finally:
+        scanner.close(); writer.close()
+
+
+def test_unverified_fingerprint_never_serves_old_cache(tmp_path, monkeypatch):
+    import ai_agent.screener as module
+    from ai_agent.snapshot_fingerprint import FingerprintUnavailable
+    path = tmp_path / 'unverified.sqlite'; make_lab(path)
+    scanner = RsiScreener()
+    try:
+        scanner.scan(Settings(lab_path=str(path)), 'ALL', '2026-10-27')
+        def unavailable(*args, **kwargs): raise FingerprintUnavailable('test_unverified')
+        monkeypatch.setattr(module, 'fingerprint', unavailable)
+        with pytest.raises(FingerprintUnavailable): scanner.scan(Settings(lab_path=str(path)), 'ALL', '2026-10-27')
+        assert not next(iter(scanner.entries.values()))['reader'].in_transaction
+    finally: scanner.close()
+
+
 def test_scan_is_readonly_preserves_invalid_bar_and_deadline_exclusions(tmp_path):
     path = tmp_path / 'readonly.sqlite'; make_lab(path)
     scanner = RsiScreener(); settings = Settings(lab_path=str(path))
@@ -255,3 +375,15 @@ async def test_threshold_uses_unrounded_rsi_before_display_rounding():
     assert result['items'][0]['rsi'] == 30.0 and result['coverage']['cache_hit']
     await tools.screen_rsi(Screen(threshold=100.0, market='ALL', page=2, page_size=1))
     assert fixture.calls == 1  # One analysis's pages use the same coverage and ranking.
+
+
+@pytest.mark.asyncio
+async def test_unverified_snapshot_is_a_structured_tool_error():
+    import json
+    from ai_agent.snapshot_fingerprint import FingerprintUnavailable
+    class Unverified:
+        def scan(self, *args): raise FingerprintUnavailable('private diagnostics must not be returned')
+    tools = ResearchTools(Settings(), now=NOW, screener=Unverified())
+    result = await tools.execute('screen_rsi', json.dumps({'threshold': 30, 'market': 'ALL', 'page': 1, 'page_size': 20}))
+    assert result['status'] == 'error' and result['code'] == 'screen_snapshot_unverified'
+    assert result['retryable'] and 'private diagnostics' not in json.dumps(result)

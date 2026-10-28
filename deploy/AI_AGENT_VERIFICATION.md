@@ -5,7 +5,7 @@
 ## 통과
 
 - 기존 서버·자산·전략·검색·비밀번호 복구·기존 에이전트 로컬 기록 테스트와 후속 프록시 테스트를 포함한 Node 테스트 115개.
-- Python 에이전트 테스트 33개. 최초 22개에서 후속 달력/배치 검색 및 읽기 연결 수명 회귀 검증을 추가했다. 실제 실행 루프/Pydantic/공식 SDK HTTP mock/실제 읽기 전용 SQLite 도구를 통과한다. fixture 결과가 달라지면 다음 모델 턴의 뉴스 페이지 선택과 답변 내용이 달라짐을 검증했다. 복합 질문에서는 실제 RSI 결과에 있던 코드만 후속 뉴스 인자가 된다.
+- Python 에이전트 테스트 38개. 최초 22개에서 후속 달력/배치 검색·읽기 연결 수명·물리적 커밋 검증 회귀 테스트를 추가했다. 실제 실행 루프/Pydantic/공식 SDK HTTP mock/실제 읽기 전용 SQLite 도구를 통과한다. fixture 결과가 달라지면 다음 모델 턴의 뉴스 페이지 선택과 답변 내용이 달라짐을 검증했다. 복합 질문에서는 실제 RSI 결과에 있던 코드만 후속 뉴스 인자가 된다.
 - 실제 localhost HTTP 통합 테스트 1개. Node → 내부 FastAPI → 테스트 모델의 실제 function_call/call_id → SQLite/Naver transport fixture → 도구 결과를 다음 모델 입력에 전달 → SQL 예약·단계·대화 저장 → API 재조회. 복합 질문에서 모델 4왕복/뉴스 2종목, 누적 토큰 100 input/80 output/16 reasoning을 확인했다. reasoning은 output 포함이며 이중 합산하지 않는다. 중복 전송 뒤 request 1개, 다른 사용자 접근 404를 확인했다.
 - SQL 신규 설치/재실행/의도한 schema drift 실패, RLS/직접 접근/RPC 권한, FK/UNIQUE/CHECK, guest 1·2회/3회 거부, 실패 복구, 삭제 후 사용량 유지, 로그인 3회 이상, 경쟁 예약, KST 날짜별 원장, 메시지 cursor, lease 만료 후 unknown, 기존 확인 토큰 보존, late completion 취소를 PGlite에서 실행했다. migration과 SQL Editor 파일은 byte 동일함을 자동 검사한다.
 - API 키 없이 ASGI 정상 기동, 내부 인증 필요, 키 미설정 503, Node에서 미차감, production fixture 차단, AI 환경으로 broker 키 유입 차단.
@@ -51,7 +51,7 @@ Git 커밋/원격 push 결과와 최종 배포 대상 해시는 최종 사용자
 - Windows/Python 3.10/SQLite 3.35.5, 실제 lab 스키마의 합성 2,715종목·최대 1,250봉·990.6MiB 임시 DB: cold 11.1058초/1,472종목(부분 결과), 재개 10.3837초/누적 2,715종목, 전체 캐시 0.0008초. 전체 분류는 valid 2,665/quarantined 45/warmup 5/missing_sessions 0이었다. 첫 검색 한 번의 전체 완료는 달성하지 못했다. 각 검색은 기존 12초 도구 한도 내였으며 두 회의 누적 실측이다. 임시 DB 생성 42.05초는 서비스 조회 시간이 아니다. 같은 분석 안의 페이지들은 검사 범위·정렬을 고정하고 새 분석에서만 부분 진행을 이어받는다.
 - 후속 운영 절차는 `AI_AGENT_FOLLOWUP_HERMES.md`에 있다. Supabase SQL 변경은 없다. 기존 45종목 품질 격리나 수집 exit 1 정책을 변경하지 않는다.
 
-## 운영 롤백 보고 이후 SQLite 연결 수정
+## bb2a1e4의 1차 연결 수정 기록: 운영 gate 미통과
 
 - 헤르메스 보고: 운영 SQLite 3.37.2/약 2.29GB DB에서 두 번째 읽기 전용 연결의 종료만으로 기존 감시 연결의 data_version이 바뀌어 첫 검색이 ScanChanged로 실패했다. 해당 운영 코드는 d794a42로 롤백됐다. 이는 운영자 보고이며 로컬에서 운영 DB를 직접 열어 재현한 결과가 아니다.
 - 검색과 data_version 확인에 DB당 하나의 persistent 읽기 전용 연결을 사용한다. BEGIN 후 실제 schema 읽기로 snapshot을 고정하고 버전을 확인한다. 검색·cache hit·예외 모두 progress handler를 제거하고 ROLLBACK하여 snapshot을 해제한 뒤 같은 연결에서 버전을 다시 확인한다. 버전 변화나 파일 교체 시 결과/진행 상태 폐기 정책은 유지한다.
@@ -60,3 +60,12 @@ Git 커밋/원격 push 결과와 최종 배포 대상 해시는 최종 사용자
 - 시스템 Python 변경 없이 SQLite 공식 3.37.2 Windows x64 DLL을 프로젝트 캐시에 격리해 전체 Python 테스트를 실행한다. 다운로드는 https://www.sqlite.org/2022/sqlite-dll-win64-x64-3370200.zip 이며 archive SHA-256은 456bef46dde6e18e66ca6183a210248286b03196a688de57f3345d7df14c808c였다. 이 테스트 런타임은 운영 배포 파일이나 Python 의존성에 추가하지 않는다.
 - 기본 SQLite 3.35.5와 격리 SQLite 3.37.2에서 Python 33개씩 통과했다. SQLite 3.37.2/Windows에서 합성 raw padding 400/2,715종목/최대 1,250봉/2,640.1MiB DB는 cold 11.0063초/1,600종목, 재개 7.5199초/누적 2,715종목, 캐시 0.0006초였고 ScanChanged는 발생하지 않았다. 분류는 valid 2,665/quarantine 45/warmup 5였다. 기존 두 연결을 사용하는 native reader_probe는 이 Windows 환경에서 2→2로 안정적이었다. 즉 실제 운영 증상은 native 재현되지 않았으며, 별도 주입 모델이 그 증상의 회귀를 검사한다. 파일 크기 유사성만으로 Linux 운영 gate 통과라고 주장하지 않는다.
 - Linux/VFS/운영 DB와 Windows의 차이는 남는다. 새 커밋은 운영 checkout 반영 전에 격리 worktree에서 실제 운영 SQLite를 읽기만 하는 gate를 통과해야 한다. SQL 변경, SQLite 업그레이드, 12초 한도 변경, 키 설정은 필요하지 않다.
+
+## 두 번째 운영 gate 실패 이후 물리적 커밋 검증
+
+- 운영자 보고: 같은 연결에서도 읽기 snapshot 전/중/해제 후 data_version이 2→4→5로 변했고 bb2a1e4는 cold gate를 통과하지 못했다. 운영 d794a42와 서비스는 변경되지 않았다. 앞선 33개 테스트 및 주입 모델 통과는 운영 해결 증거가 아니었다.
+- 현재 screener는 PRAGMA data_version을 변경 감지에 사용하지 않는다. SQLite 문서의 DB header/WAL header/중복 WAL-index header와 checksum/커밋 프레임 salt·checksum·페이지를 읽어 일관된 물리적 fingerprint를 만든다. 두 번의 파일 상태 검증 결과가 같아야 하며, DB 교체·실제 WAL 갱신은 무효화한다. SHM의 read marks/iChange는 fingerprint에서 제외한다. mtime/크기만으로 판단하지 않는다.
+- SQLite 소유 프로세스에서 raw DB fd를 열고 닫아 POSIX 잠금을 해제하지 않도록, SQLite를 import하지 않는 별도 읽기 전용 보조 프로세스를 재사용한다. 비밀 환경변수·사용자 문맥을 전달하지 않는다. 파일 쓰기·checkpoint·권한 변경은 없다. 파일/format/커밋을 확인할 수 없으면 screen_snapshot_unverified로 거부하고 오래된 캐시를 반환하지 않는다.
+- 회귀 검증: (1) 보고된 2→4→5 수명 변화에서 cold/cache 성공, (2) 실제 WAL commit 캐시 폐기, (3) 같은 크기·mtime으로 유지한 WAL 갱신 감지, (4) fingerprint 확인과 snapshot 고정 사이의 실제 쓰기 거부, (5) snapshot 유지 중 쓰기와 결과 폐기, (6) 검증 불가 시 캐시 및 내부 오류 내용 반환 차단. 실제 engine에서 보고된 버전 증가 현상을 native 재현했다고 주장하지 않는다.
+- 새 fingerprint 적용 후 SQLite 3.37.2/Windows/2,640.1MiB 합성 DB 실측은 cold 1,216종목/11.0029초, 재개 누적 2,368종목/10.9979초, 추가 재개 전체 2,715종목/3.0023초, 캐시 0.005초였다. 유효 2,665/격리 45/warmup 5이며 각 검색 후 snapshot 해제를 확인했다. 초기 수집 78.46초는 조회 시간에서 제외했다. 12초 한도를 늘리지 않았으며 첫 검색의 전체 완료나 두 번 안의 완료를 보장하지 않는다. 다른 테스트와 병행한 로컬 합성 측정으로 운영 속도를 대신하지 않는다.
+- 포맷 근거: https://sqlite.org/walformat.html , https://sqlite.org/fileformat.html . POSIX fd 주의 근거: https://sqlite.org/howtocorrupt.html#_posix_advisory_locks_canceled_by_a_separate_thread_doing_close_. Linux 운영 파일/권한/시점에 대한 선행 gate는 여전히 별도로 통과해야 한다.

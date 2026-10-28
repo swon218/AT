@@ -10,6 +10,7 @@ from threading import Lock
 import time
 from .krx_closures import VERSION
 from .market import KST, calendar, expected_sessions, wilder_rsi
+from .snapshot_fingerprint import fingerprint, FingerprintUnavailable
 
 MAX_BARS = 2000
 BATCH_SIZE = 64
@@ -71,17 +72,20 @@ class RsiScreener:
                 self.entries[key] = {'identity': identity, 'reader': self._connect(path), 'results': OrderedDict()}
             self.entries.move_to_end(key)
             entry = self.entries[key]
-            # One persistent reader owns BOTH version checks and all scan queries.
-            # Opening/closing a second reader can invalidate the first reader's pager
-            # on the reported SQLite 3.37.2 deployment, even without a writer commit.
+            # data_version is not used: the deployed reader changes it across read
+            # snapshot lifecycles. Attest actual DB/WAL commit state independently.
             db = entry['reader']
             now = self.clock()
+            version = fingerprint(path)
             db.execute('BEGIN')
             try:
                 # BEGIN is deferred. Pin a real snapshot (and initialize the pager)
-                # before reading its version or choosing partial progress to resume.
+                # before choosing partial progress. A commit between the independent
+                # fingerprint and this snapshot must never reuse older progress.
                 db.execute('SELECT rootpage FROM sqlite_master LIMIT 1').fetchone()
-                version = db.execute('PRAGMA data_version').fetchone()[0]
+                if fingerprint(path) != version:
+                    entry['results'].clear()
+                    raise ScanChanged()
                 cache_key = (version, market, cutoff, settings.screen_symbols, VERSION)
                 for k, (at, _) in list(entry['results'].items()):
                     if now - at >= self.ttl or k[0] != version:
@@ -98,7 +102,7 @@ class RsiScreener:
                 # and retain the collector's WAL indefinitely.
                 db.set_progress_handler(None, 0)
                 db.rollback()
-            final_version = db.execute('PRAGMA data_version').fetchone()[0]
+            final_version = fingerprint(path, timeout=0.65)
             final_stamp = path.stat()
             if version != final_version or identity != (final_stamp.st_dev, final_stamp.st_ino):
                 entry['results'].clear()
@@ -112,7 +116,7 @@ class RsiScreener:
             result['cache_hit'] = False
             result['resumed'] = previous['scanned'] if previous else 0
             # Retain bounded partial progress, never label it complete/cache_hit. Resume
-            # only against the same persistent connection's unchanged commit version.
+            # only against an unchanged, independently verified commit fingerprint.
             # Keep the first read's TTL so repeated calls cannot prolong stale progress.
             if result['scanned']:
                 if len(entry['results']) >= 8:

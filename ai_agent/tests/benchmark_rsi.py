@@ -13,6 +13,7 @@ from lab.store import connect, SOURCE, QUALITY_POLICY
 from ai_agent.config import Settings
 from ai_agent.market import expected_sessions
 from ai_agent.screener import RsiScreener
+from ai_agent.snapshot_fingerprint import FORMAT
 
 
 def main():
@@ -100,7 +101,8 @@ def main():
             started = time.perf_counter()
             result = scanner.scan(settings, 'ALL', dates[-1])
             results.append({k: v for k, v in result.items() if k != 'items'} | {'seconds': round(time.perf_counter() - started, 4)})
-        print(json.dumps({'synthetic': True, 'sqlite_version': sqlite3.sqlite_version,
+            assert not next(iter(scanner.entries.values()))['reader'].in_transaction
+        print(json.dumps({'synthetic': True, 'sqlite_version': sqlite3.sqlite_version, 'fingerprint_format': FORMAT,
                           'reader_probe': reader_probe, 'symbols': options.symbols, 'bars': options.bars,
                           'raw_padding': options.raw_padding,
                           'fixture_seconds': round(fixture_seconds, 2), 'db_mb': round(path.stat().st_size / 1024**2, 1),
