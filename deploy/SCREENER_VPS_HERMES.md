@@ -1,5 +1,7 @@
 # 조건 검색 탭 / 공통 지표 엔진 VPS 전달문
 
+**SQLite/WAL 후속 수정 배포는 `deploy/SCREENER_SQLITE_HERMES.md`를 먼저 읽으세요. 새 owner-side WAL guard 준비와 v2 fingerprint 지침이 이 문서의 이전 절차보다 우선합니다.**
+
 ATLAS 저장소 `swon218/AT`의 **사용자가 전달한 `조건 검색` 커밋 전체 해시**를 대상으로 아래 작업을 진행해 주세요. 원격 main이 이동했으면 해시를 대조하고 예상과 다른 변경은 강제 반영하지 마세요. 최초 설치나 이전 SQL 재실행 요청이 아닙니다.
 
 이번 배포는 **이 문서를 우선**합니다. 이전 `AI_AGENT_FOLLOWUP_HERMES.md`의 “Python만 재시작, Node 유지” 지침은 이전 수정에만 해당합니다. 이번 기능은 Node와 Python 모두 바뀌므로 선행 gate 통과 후 `atlas-ai.service`와 `atlas-api.service` 두 서비스의 재시작이 필요합니다.

@@ -216,3 +216,16 @@ async def test_adaptive_model_uses_actual_shared_engine_evidence(settings, engin
     assert len(result['answer']['sources']) == 2
     assert '조건검색 범위' in result['answer']['content']
     assert '뉴스 흐름' not in result['answer']['content']
+
+
+@pytest.mark.asyncio
+async def test_unreadable_wal_is_service_unavailable_not_empty_results(settings):
+    class Unavailable:
+        def execute(self, *args):
+            raise sqlite3.OperationalError('attempt to write a readonly database /private/fixture-path')
+    app = create_app(settings, screen_engine=Unavailable(), clock=lambda: NOW)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://fixture') as client:
+        reply = await client.post('/screen', headers={'X-Atlas-Internal': settings.internal_secret}, json=query().model_dump())
+        assert reply.status_code == 503
+        assert reply.json() == {'detail': 'screen_data_not_ready'}
+        assert '/private/' not in reply.text
