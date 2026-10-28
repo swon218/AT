@@ -2,6 +2,7 @@
 import os
 import sqlite3
 import stat
+import pytest
 from ai_agent.config import Settings
 from ai_agent.screener import RsiScreener
 from ai_agent.snapshot_fingerprint import fingerprint
@@ -53,6 +54,7 @@ def test_fully_checkpointed_wal_retention_or_removal_is_same_snapshot(tmp_path):
         scanner.close()
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='Windows mandatory WAL locks refuse raw reads during an active writer; reader fails closed')
 def test_wal_allocation_without_commit_does_not_invalidate_a_snapshot(tmp_path):
     path = tmp_path / 'uncommitted.sqlite'; make_lab(path)
     writer = sqlite3.connect(path)

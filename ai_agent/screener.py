@@ -46,12 +46,19 @@ class RsiScreener:
 
     def _connect(self, path):
         db = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=2, check_same_thread=False)
-        db.execute('PRAGMA query_only=ON')
-        # Read-only mapped pages avoid copying each quality/raw B-tree page through
-        # SQLite's tiny default page cache. This is an OS-backed virtual mapping,
-        # not a 1 GiB private allocation; unsupported SQLite builds safely return 0.
-        db.execute('PRAGMA mmap_size=1073741824')
-        db.execute('PRAGMA temp_store=MEMORY')
+        try:
+            db.execute('PRAGMA query_only=ON')
+            # Read-only mapped pages avoid copying each quality/raw B-tree page through
+            # SQLite's tiny default page cache. This is an OS-backed virtual mapping,
+            # not a 1 GiB private allocation; unsupported SQLite builds safely return 0.
+            db.execute('PRAGMA mmap_size=1073741824')
+            db.execute('PRAGMA temp_store=MEMORY')
+            # Complete one initial pager/WAL-index lifecycle before taking the
+            # baseline fingerprint. No data/cache is reused from this warmup.
+            db.execute('SELECT rootpage FROM sqlite_master LIMIT 1').fetchone()
+        except BaseException:
+            db.close()
+            raise
         return db
 
     def scan(self, settings, market, cutoff):

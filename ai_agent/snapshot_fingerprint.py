@@ -140,7 +140,9 @@ def _probe(path):
             first, second = _sample(path), _sample(path)
             if first == second:
                 token = hashlib.sha256(json.dumps([FORMAT, first], separators=(',', ':')).encode()).hexdigest()
-                return {'format': FORMAT, 'token': token, 'wal_committed_frames': first[2][1] if first[2] else 0}
+                parts = {'db_identity': first[0][:3], 'db_mtime': first[0][3], 'db_header': first[1], 'wal_commit': first[2]}
+                return {'format': FORMAT, 'token': token, 'wal_committed_frames': first[2][1] if first[2] else 0,
+                        'components': {k: hashlib.sha256(json.dumps(v).encode()).hexdigest()[:24] for k, v in parts.items()}}
         except FingerprintUnavailable as exc:
             reason = str(exc)
             continue
