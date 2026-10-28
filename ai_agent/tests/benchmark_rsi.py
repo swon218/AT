@@ -23,6 +23,7 @@ def main():
     args.add_argument('--profile-queries', action='store_true')
     args.add_argument('--raw-padding', type=int, default=0, help='Synthetic raw JSON padding to exercise large files')
     args.add_argument('--max-scans', type=int, default=2, help='Bounded scans before checking the completed cache')
+    args.add_argument('--stock-screen', action='store_true', help='Benchmark shared RSI+BB+MA+volume engine, not legacy RSI')
     options = args.parse_args()
     if not 51 <= options.symbols <= 3000 or not 15 <= options.bars <= 2000:
         args.error('symbols must be 51..3000; bars must be 15..2000')
@@ -55,6 +56,19 @@ def main():
             db.execute('PRAGMA temp_store=MEMORY')
             return db
     scanner = BenchScreener() if options.profile_queries else RsiScreener()
+    engine = None
+    if options.stock_screen:
+        from ai_agent.screen_engine import ScreenEngine
+        from ai_agent.screen_models import StockScreen
+        from deploy.screener_gate import metric, condition
+        from datetime import datetime
+        screen_now = datetime.fromisoformat('2026-10-28T08:00:00+09:00')
+        engine = ScreenEngine()
+        volume = condition(metric('volume'), metric('volume_sma', 20))
+        volume['operator'] = 'gte'; volume['right']['factor'] = 2.0
+        screen_query = StockScreen(market='ALL', match='all', sort='code_asc', page=1, page_size=20, snapshot_id=None,
+            conditions=[condition(metric('rsi', 14), None, 30.0), condition(metric('low'), metric('bb_lower', 20, 2.0)),
+                        condition(metric('close'), metric('sma', 20)), volume])
     try:
         path = root / 'synthetic.sqlite'
         started = time.perf_counter()
@@ -99,12 +113,14 @@ def main():
         results = []
         for _ in range(options.max_scans + 1):
             started = time.perf_counter()
-            result = scanner.scan(settings, 'ALL', dates[-1])
+            result = engine.execute(settings, screen_query, screen_now)['coverage'] if engine else scanner.scan(settings, 'ALL', dates[-1])
             results.append({k: v for k, v in result.items() if k != 'items'} | {'seconds': round(time.perf_counter() - started, 4)})
-            assert not next(iter(scanner.entries.values()))['reader'].in_transaction
+            readers = [s for s in engine.scanners.values()] if engine else [scanner]
+            assert all(not e['reader'].in_transaction for s in readers for e in s.entries.values())
         print(json.dumps({'synthetic': True, 'sqlite_version': sqlite3.sqlite_version, 'fingerprint_format': FORMAT,
                           'reader_probe': reader_probe, 'symbols': options.symbols, 'bars': options.bars,
                           'raw_padding': options.raw_padding,
+                          'stock_screen': options.stock_screen,
                           'fixture_seconds': round(fixture_seconds, 2), 'db_mb': round(path.stat().st_size / 1024**2, 1),
                           'tool_seconds': settings.tool_seconds, 'query_seconds': timings, 'results': results}, ensure_ascii=False), flush=True)
         complete = results[options.max_scans - 1]
@@ -114,6 +130,7 @@ def main():
         assert results[-1]['cache_hit']
     finally:
         scanner.close()
+        if engine: engine.close()
         # Only the verified, freshly created benchmark directory is removed.
         temp.cleanup()
 

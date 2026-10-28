@@ -147,10 +147,17 @@ class FingerprintReader:
     def _stop(self):
         process, self.process = self.process, None
         if process is not None:
-            if process.poll() is None:
-                process.kill()
-            process.wait(timeout=0.5)
-            process.stdin.close(); process.stdout.close()
+            try:
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                # Termination can be asynchronous on a busy Windows host. The
+                # helper has already been killed; do not turn bounded teardown
+                # into a raw exception or skip closing its unbuffered pipes.
+                pass
+            finally:
+                process.stdin.close(); process.stdout.close()
 
     def close(self):
         with self.lock:

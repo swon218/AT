@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity, Bell, Bot, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
   LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen,
-  Star, WalletCards, X,
+  Star, WalletCards, X, Filter,
 } from 'lucide-react'
 import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketApi'
 import GlobalStockSearch from './components/GlobalStockSearch'
@@ -29,6 +29,9 @@ import useStrategies from './hooks/useStrategies'
 import useAgentWorkspace from './hooks/useAgentWorkspace'
 import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
 import SidebarFooter from './components/SidebarFooter'
+import ScreenerWorkspace from './components/ScreenerWorkspace'
+import useScreener from './hooks/useScreener'
+import { describeQuery } from './utils/screener'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
 const defaultStock = {
@@ -108,7 +111,7 @@ function DashboardHoldingsTable({ currentUser, broker, configured, accountSummar
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
-  const brokerageDataEnabled = activePage !== 'lab' && activePage !== 'agent'
+  const brokerageDataEnabled = !['lab', 'screen', 'agent'].includes(activePage)
   const [selected, setSelected] = useState(defaultStock)
   const [orderPeriod, setOrderPeriod] = useState('15분')
   const selectionVersion = useRef(0)
@@ -133,6 +136,7 @@ function App() {
   const strategies = useStrategies(currentUser?.id)
   const orderDraft = useIndicatorDraft(currentUser?.id, strategies)
   const labDraft = useIndicatorDraft(currentUser?.id, strategies)
+  const screen = useScreener(currentUser?.id)
   const [nickname, setNickname] = useState('')
   const [integrationStatus, setIntegrationStatus] = useState({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false })
   const [accountSummary, setAccountSummary] = useState(null)
@@ -176,6 +180,15 @@ function App() {
   const openPage = (page) => {
     setActivePage(page)
     setMobileNav(false)
+  }
+  const openScreen = query => { if (screen.open(query)) openPage('screen') }
+  const askScreenAgent = query => {
+    const text = `${describeQuery(query)}인 종목을 검색하고 결과와 데이터 범위를 설명해줘.`
+    const draft = [agent.active.draft, text].filter(Boolean).join('\n\n')
+    if (draft.length > 6000) return false
+    agent.setDraft(draft)
+    openPage('agent')
+    return true
   }
 
   const closeAuthModal = useCallback(() => {
@@ -402,6 +415,7 @@ function App() {
           <button className={`nav-link ${activePage === 'dashboard' ? 'active' : ''}`} onClick={() => openPage('dashboard')}><LayoutDashboard/><span>대시보드</span></button>
           <button className={`nav-link ${activePage === 'order' ? 'active' : ''}`} onClick={() => openPage('order')}><LineChart/><span>주식 주문</span></button>
           <button className={`nav-link ${activePage === 'lab' ? 'active' : ''}`} onClick={() => openPage('lab')}><FlaskConical/><span>실험실</span></button>
+          <button className={`nav-link ${activePage === 'screen' ? 'active' : ''}`} onClick={() => openPage('screen')}><Filter/><span>조건 검색</span></button>
           <button className={`nav-link ${activePage === 'agent' ? 'active' : ''}`} onClick={() => openPage('agent')}><Bot/><span>AI 에이전트</span></button>
           <button className={`nav-link ${activePage === 'assets' ? 'active' : ''}`} onClick={() => openPage('assets')}><WalletCards/><span>자산 현황</span></button>
           <p>MARKET</p>
@@ -414,12 +428,12 @@ function App() {
       <main>
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
-          {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
+          {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : activePage === 'screen' ? <><Filter/><span>조건 검색</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
           <div className="header-actions">{brokerageDataEnabled && <span className="market-open"><i/>시장 조회</span>}<button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
         <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
-          {activePage === 'agent' ? <AgentWorkspace key={currentUser?.id || 'guest'} agent={agent} onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('dashboard') }}/> : activePage === 'dashboard' ? <>
+          {activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenLab={row => { labDraft.onBacktestSettingsChange(previous => ({ ...previous, symbol: row.code, start: '', end: '' })); openPage('lab') }} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }} onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('dashboard') }}/> : activePage === 'dashboard' ? <>
           <DashboardWelcome/>
 
           <MarketSummary credentialScope={searchCredentialScope}/>
@@ -446,7 +460,7 @@ function App() {
           </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}/>}
         </div>
       </main>
-      <FloatingAgent agent={agent} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
+      <FloatingAgent agent={{ ...agent, openScreen }} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal} recovery={passwordRecovery} onRecoveryFinished={finishPasswordRecovery}/>
       <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange}/>

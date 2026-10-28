@@ -14,6 +14,7 @@ import httpx
 from .market import KST, market_context
 from .schemas import TOOL_MODELS
 from .screener import SCREENER, ScanBusy, ScanChanged, FingerprintUnavailable
+from .screen_engine import SCREEN_ENGINE, ScreenSnapshotChanged
 
 PROMPT_VERSION = 'atlas-research-v1'
 
@@ -112,23 +113,24 @@ class NewsSource:
 
 
 class ResearchTools:
-    def __init__(self, settings, news=None, now=None, context=None, screener=None):
+    def __init__(self, settings, news=None, now=None, context=None, screener=None, screen_engine=None):
         self.settings, self.news = settings, news or NewsSource(settings)
         self.now = now or datetime.now(KST)
         self.budget = Budget(settings)
         self.screener = screener or SCREENER
         self.rsi_snapshots = {}
+        self.screen_engine, self.stock_snapshots = screen_engine or SCREEN_ENGINE, {}
         self.evidence, self.resolved, self.coverage, self.result_sets = {}, {}, [], []
         # Only server-owned messages of this room are passed here. Historical sources remain dated.
         for message in context or []:
             for source in (message.get('answer') or {}).get('sources', [])[:60]:
-                if isinstance(source, dict) and str(source.get('id', '')).startswith(('n_', 'r_')):
+                if isinstance(source, dict) and str(source.get('id', '')).startswith(('n_', 'r_', 'f_')):
                     self.evidence[source['id']] = {**source, 'historical': True}
                     if source.get('code') and source.get('name'):
                         self.resolved[source['code']] = {'code': source['code'], 'name': source['name']}
             for result_set in (message.get('answer') or {}).get('result_sets', [])[:3]:
                 for source in result_set.get('items', [])[:20]:
-                    if str(source.get('id', '')).startswith('r_'):
+                    if str(source.get('id', '')).startswith(('r_', 'f_')):
                         self.evidence[source['id']] = {**source, 'historical': True}
                         self.resolved[source['code']] = source
         self.fresh_ids = set()
@@ -240,6 +242,29 @@ class ResearchTools:
                 'result_id': stable_id('s_', [coverage, [x['id'] for x in page]]), 'items': page,
                 'coverage': coverage, 'as_of': cutoff, 'source': 'lab.sqlite / Wilder RSI(14)',
                 'warnings': ['수집된 일부 종목 대상, 실시간 지표 아님. 저장된 최대 2,000봉 전체로 Wilder 초기화.', ctx['warning']]}
+
+    async def screen_stocks(self, args):
+        identity = args.model_dump_json(exclude={'page', 'page_size', 'snapshot_id'})
+        try:
+            if identity not in self.stock_snapshots:
+                self.stock_snapshots[identity] = await asyncio.to_thread(self.screen_engine.scan, self.settings, args, self.now)
+            result = self.screen_engine.execute(self.settings, args, self.now, self.stock_snapshots[identity])
+        except (ScanChanged, ScreenSnapshotChanged):
+            raise ToolError('screen_data_changed', True)
+        except ScanBusy:
+            raise ToolError('screen_busy', True)
+        except FingerprintUnavailable:
+            raise ToolError('screen_snapshot_unverified', True)
+        except FileNotFoundError:
+            raise ToolError('lab_data_not_ready')
+        for item in result['items']:
+            self.remember({k: item[k] for k in ('id', 'code', 'name', 'market', 'excerpt', 'source', 'as_of')})
+            self.resolved[item['code']] = item
+        self.coverage.append(result['coverage'])
+        saved_items = [{k: v for k, v in item.items() if k != 'checks'} for item in result['items']]
+        self.result_sets.append({'id': result['result_id'], 'items': saved_items, 'coverage': result['coverage'],
+                                 'query': result['query'], 'snapshot_id': result['snapshot_id']})
+        return result
 
     async def get_stock_news(self, args):
         if args.code not in self.resolved:

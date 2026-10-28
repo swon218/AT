@@ -79,6 +79,9 @@ class AdaptiveProvider:
         if self.mode == 'concept':
             return answer()
         if not outputs:
+            if self.mode == 'stock_screen':
+                from .test_stock_screen import query, cond
+                return call('screen_stocks', query(cond(), cond('close', 'lte', other='sma')).model_dump())
             return call('resolve_symbol', {'query': '삼성' if self.mode == 'ambiguous' else '삼성전자'}) if self.mode in ('news', 'ambiguous') else call('screen_rsi', {'threshold': 30, 'market': 'ALL', 'page': 1, 'page_size': 20})
         last = outputs[-1]
         if last['status'] == 'error':
@@ -87,8 +90,8 @@ class AdaptiveProvider:
             return answer(final('clarification', '어느 종목을 말씀하셨나요? 정확한 이름이나 코드를 알려 주세요.'))
         if self.mode == 'news' and not last.get('coverage'):
             return call('get_stock_news', {'code': last['items'][0]['code'], 'period': 'overnight', 'page': 1, 'keyword': ''})
-        screen = next((o for o in outputs if o.get('coverage', {}).get('kind') == 'rsi'), None)
-        if self.mode == 'rsi' and screen:
+        screen = next((o for o in outputs if o.get('coverage', {}).get('kind') in ('rsi', 'screen')), None)
+        if self.mode in ('rsi', 'stock_screen') and screen:
             claims = [{'text': row['excerpt'], 'evidence_id': row['id'], 'excerpt': row['excerpt'], 'stance': 'neutral', 'relation': 'direct'} for row in screen['items']]
             return answer(final('research', '확정 일봉에서 조건에 맞는 종목을 확인했습니다.', claims))
         news = [o for o in outputs if o.get('coverage', {}).get('kind') == 'news']

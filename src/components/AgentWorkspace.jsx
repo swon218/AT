@@ -4,6 +4,7 @@ import robotImage from '../assets/atlas-agent.png'
 import { MAX_QUESTION_LENGTH, ROBOT_SIZE, robotCoordinates, robotPosition } from '../utils/agentWorkspace'
 import './AgentWorkspace.css'
 import { safeAgentLink } from '../services/agentApi'
+import { importQuery } from '../utils/screener'
 
 const suggestions = [
   { label: '조건으로 종목 찾기', text: '일봉 RSI 30 이하인 종목을 찾아줘', icon: Search },
@@ -60,11 +61,12 @@ function Conversation({ agent, compact = false, onExpand }) {
         <div className="agent-message-meta"><span>{message.role === 'assistant' ? 'ATLAS AI' : '나'}</span><time dateTime={message.createdAt}>{timeLabel(message.createdAt)}</time></div>
         <div className={message.role === 'assistant' ? 'agent-assistant-message' : 'agent-user-message'}>{message.content.split('\n').map((line, i) => <p key={i}>{line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => part.startsWith('**') ? <strong key={j}>{part.slice(2, -2)}</strong> : part.startsWith('`') ? <code key={j}>{part.slice(1, -1)}</code> : part)}</p>)}</div>
         {!!message.answer?.sources?.length && <ul className="agent-sources">{message.answer.sources.map(source => <li key={source.id}>{safeAgentLink(source.url) ? <a href={safeAgentLink(source.url)} target="_blank" rel="noopener noreferrer">{source.title || source.id}</a> : <span>{source.excerpt || source.id}</span>}<small>{source.source} · {source.published_at || source.as_of} · {source.scope === 'title_and_snippet' ? '제목·요약' : '확정 일봉'}</small></li>)}</ul>}
+        {agent.openScreen && message.answer?.result_sets?.filter(set => set.coverage?.kind === 'screen' && importQuery(set.query)).map(set => <button type="button" className="agent-expand-result" key={set.id} onClick={() => agent.openScreen(set.query)}>조건검색에서 조건 열기 · 최신 데이터로 다시 조회<ArrowUpRight size={14}/></button>)}
         <div className="agent-message-state"><Check size={12}/><span>{message.role === 'assistant' ? `${agent.active.requests?.find(r => r.id === message.request_id)?.status === 'partial' ? '부분 완료' : '완료'} · ${message.answer?.as_of || ''}` : '질문 저장됨'}</span></div>
       </div>)}
       {compact && <button type="button" className="agent-expand-result" onClick={onExpand}>이 대화를 넓게 보기<ArrowUpRight size={15}/></button>}
     </div>}
-    {agent.busy && <div className="agent-connection-note" role="status"><Bot size={20}/><p>{agent.steps?.at(-1)?.kind === 'tool' ? ({ screen_rsi: 'RSI 조건 확인 중', get_stock_news: '뉴스 조회 중', resolve_symbol: '종목 확인 중', get_news_details: '확보 기사 확인 중', get_market_context: '거래일 기준 확인 중' }[agent.steps.at(-1).name] || '조회 결과 확인 중') : agent.steps?.length ? '모델 분석 중' : '요청 처리 대기 중'}</p></div>}
+    {agent.busy && <div className="agent-connection-note" role="status"><Bot size={20}/><p>{agent.steps?.at(-1)?.kind === 'tool' ? ({ screen_stocks: '공통 일봉 조건검색 중', screen_rsi: 'RSI 조건 확인 중', get_stock_news: '뉴스 조회 중', resolve_symbol: '종목 확인 중', get_news_details: '확보 기사 확인 중', get_market_context: '거래일 기준 확인 중' }[agent.steps.at(-1).name] || '조회 결과 확인 중') : agent.steps?.length ? '모델 분석 중' : '요청 처리 대기 중'}</p></div>}
     {!!agent.steps?.length && <details className="agent-execution"><summary>실행 기록 {agent.steps.length}개</summary>{agent.steps.map(step => <p key={step.seq}>{step.seq}. {step.name} · {step.status} · {step.elapsed_ms}ms {step.result?.count !== undefined ? `· ${step.result.count}건` : ''}</p>)}</details>}
     <div ref={bottom}/>
   </div>

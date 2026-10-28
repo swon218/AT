@@ -1,0 +1,215 @@
+{
+  "$defs": {
+    "Condition": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "$ref": "#/$defs/Metric"
+        },
+        "operator": {
+          "enum": [
+            "lt",
+            "lte",
+            "gt",
+            "gte",
+            "crosses_above",
+            "crosses_below"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "right": {
+          "$ref": "#/$defs/Operand"
+        }
+      },
+      "required": [
+        "left",
+        "operator",
+        "right"
+      ],
+      "title": "Condition",
+      "type": "object"
+    },
+    "Metric": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "sma",
+            "ema",
+            "rsi",
+            "bb_lower",
+            "bb_middle",
+            "bb_upper",
+            "volume_sma",
+            "macd",
+            "macd_signal",
+            "macd_histogram"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "period": {
+          "maximum": 500,
+          "minimum": 1,
+          "title": "Period",
+          "type": "integer"
+        },
+        "slow": {
+          "maximum": 500,
+          "minimum": 1,
+          "title": "Slow",
+          "type": "integer"
+        },
+        "signal": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Signal",
+          "type": "integer"
+        },
+        "multiplier": {
+          "maximum": 10,
+          "minimum": 0.1,
+          "title": "Multiplier",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "period",
+        "slow",
+        "signal",
+        "multiplier"
+      ],
+      "title": "Metric",
+      "type": "object"
+    },
+    "Operand": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "constant",
+            "metric"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "maximum": 1000000000000.0,
+              "minimum": -1000000000000.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        },
+        "metric": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Metric"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "factor": {
+          "maximum": 1000,
+          "minimum": 0.01,
+          "title": "Factor",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "value",
+        "metric",
+        "factor"
+      ],
+      "title": "Operand",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "market": {
+      "enum": [
+        "ALL",
+        "KOSPI",
+        "KOSDAQ"
+      ],
+      "title": "Market",
+      "type": "string"
+    },
+    "match": {
+      "enum": [
+        "all",
+        "any"
+      ],
+      "title": "Match",
+      "type": "string"
+    },
+    "conditions": {
+      "items": {
+        "$ref": "#/$defs/Condition"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Conditions",
+      "type": "array"
+    },
+    "sort": {
+      "enum": [
+        "code_asc",
+        "close_desc"
+      ],
+      "title": "Sort",
+      "type": "string"
+    },
+    "page": {
+      "maximum": 300,
+      "minimum": 1,
+      "title": "Page",
+      "type": "integer"
+    },
+    "page_size": {
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Page Size",
+      "type": "integer"
+    },
+    "snapshot_id": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{24}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Snapshot Id"
+    }
+  },
+  "required": [
+    "market",
+    "match",
+    "conditions",
+    "sort",
+    "page",
+    "page_size",
+    "snapshot_id"
+  ],
+  "title": "StockScreen",
+  "type": "object"
+}

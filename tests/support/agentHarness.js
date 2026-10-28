@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { registerAgentRoutes, createAgentBridge } from '../../server/agent.js'
 import { testDatabase } from './agentDatabase.js'
+import { registerScreenRoutes, createScreenBridge } from '../../server/screener.js'
 
-export async function startHarness({ port = 13000, pythonPort = 18010 } = {}) {
+export async function startHarness({ port = 13000, pythonPort = 18010, publicOrigin = 'http://127.0.0.1:15173' } = {}) {
   if (process.env.NODE_ENV === 'production') throw new Error('Test harness is forbidden in production')
   const secret = 'local-fixture-only-'.repeat(3)
   const { db, store } = await testDatabase()
@@ -14,13 +15,14 @@ export async function startHarness({ port = 13000, pythonPort = 18010 } = {}) {
   const userA = randomUUID(), userB = randomUUID()
   await db.query('INSERT INTO auth.users VALUES($1),($2)', [userA, userB])
   registerAgentRoutes(app, { store, cookieSecret: secret, internalSecret: secret,
-    publicOrigin: 'http://127.0.0.1:15173', secureCookie: false,
+    publicOrigin, secureCookie: false,
     authenticate: async token => {
       if (token === 'Bearer fixture-user-a') return userA
       if (token === 'Bearer fixture-user-b') return userB
       throw Object.assign(new Error('invalid_authentication'), { statusCode: 401 })
     }, bridge: createAgentBridge({ base: `http://127.0.0.1:${pythonPort}`, secret }) })
   app.get('/api/health', async () => ({ ok: true, test_fixture: true }))
+  registerScreenRoutes(app, { publicOrigin, bridge: createScreenBridge({ base: `http://127.0.0.1:${pythonPort}`, secret }) })
   app.setNotFoundHandler(async (_, reply) => reply.code(503).send({ error: 'test_fixture_no_broker_access' }))
   await app.listen({ port, host: '127.0.0.1' })
   const python = process.env.AI_TEST_PYTHON || fileURLToPath(new URL('../../.venv-ai/Scripts/python.exe', import.meta.url))

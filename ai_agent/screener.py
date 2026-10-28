@@ -15,11 +15,12 @@ from .snapshot_fingerprint import fingerprint, FingerprintUnavailable
 MAX_BARS = 2000
 BATCH_SIZE = 64
 MAX_FLOAT = '1.7976931348623157e308'
-# Do the same OHLC/finite/tradable checks while reading only date/close into Python.
+# Keep finite/tradable checks in SQLite before indicator calculations.
 VALID_BAR = ' AND '.join(
     ["c.tradable != 0"] +
     [f"(typeof(c.{x}) IN ('integer','real') AND c.{x}>0 AND c.{x}<={MAX_FLOAT})" for x in ('open', 'high', 'low', 'close')] +
-    ['c.low<=min(c.open,c.close)', 'c.high>=max(c.open,c.close)']
+    ['c.low<=min(c.open,c.close)', 'c.high>=max(c.open,c.close)',
+     f"(typeof(c.volume) IN ('integer','real') AND c.volume>=0 AND c.volume<={MAX_FLOAT})"]
 )
 
 
@@ -32,8 +33,9 @@ class ScanChanged(Exception):
 
 
 class RsiScreener:
-    def __init__(self, ttl=60, clock=time.monotonic):
+    def __init__(self, ttl=60, clock=time.monotonic, evaluator=None, required_bars=15):
         self.ttl, self.clock = ttl, clock
+        self.evaluator, self.required_bars = evaluator, required_bars
         self.lock, self.entries = Lock(), OrderedDict()
 
     def close(self):
@@ -151,7 +153,8 @@ class RsiScreener:
                 ranges = ','.join('(?,?)' for _ in starts)
                 parameters = tuple(value for row in starts for value in row)
                 bars = db.execute(f'''WITH selected(code,start) AS (VALUES {ranges})
-                    SELECT c.code,c.date,c.close,CASE WHEN {VALID_BAR} THEN 1 ELSE 0 END usable
+                SELECT c.code,c.date,c.close,CASE WHEN {VALID_BAR} THEN 1 ELSE 0 END usable,
+                       c.open,c.high,c.low,c.volume
                     FROM selected s CROSS JOIN candles c
                     ON c.code=s.code AND c.date>=s.start AND c.date<=? ORDER BY c.code,c.date''', (*parameters, cutoff)).fetchall()
                 by_code = {code: list(rows) for code, rows in groupby(bars, key=lambda row: row[0])}
@@ -180,7 +183,7 @@ class RsiScreener:
                 scanned += 1
                 rows = by_code.get(code, [])
                 reason = None
-                if len(rows) < 15:
+                if len(rows) < self.required_bars:
                     reason = 'insufficient_warmup'
                 elif rows[-1][1] != cutoff:
                     reason = 'stale_data'
@@ -202,11 +205,15 @@ class RsiScreener:
                 if reason:
                     excluded[reason] += 1
                 else:
-                    values.append({'code': code, 'name': name, 'market': symbol_market,
-                                   'rsi': wilder_rsi([r[2] for r in rows]), 'bars': len(rows)})
+                    try:
+                        calculated = self.evaluator(rows) if self.evaluator else {'rsi': wilder_rsi([r[2] for r in rows])}
+                    except (ValueError, ArithmeticError):
+                        excluded['indicator_unavailable'] += 1
+                        continue
+                    values.append({'code': code, 'name': name, 'market': symbol_market, **calculated, 'bars': len(rows)})
             if self.clock() >= deadline:
                 break
-        values.sort(key=lambda row: (row['rsi'], row['code']))
+        values.sort(key=lambda row: (row.get('rsi', 0), row['code']))
         return {'items': values, 'universe': total, 'scanned': scanned, 'valid': len(values), 'excluded': dict(excluded)}
 
 

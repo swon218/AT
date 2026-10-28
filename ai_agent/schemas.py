@@ -1,5 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
+from .screen_models import StockScreen
 
 
 class Strict(BaseModel):
@@ -33,8 +34,9 @@ class Details(Strict):
 
 
 TOOL_MODELS = {'resolve_symbol': Resolve, 'get_market_context': Context, 'screen_rsi': Screen,
-               'get_stock_news': News, 'get_news_details': Details}
+               'screen_stocks': StockScreen, 'get_stock_news': News, 'get_news_details': Details}
 DESCRIPTIONS = {
+    'screen_stocks': 'Shared manual/AI daily-stock screener over the collected lab DB. Build 1..8 conditions with all/any. Metrics: OHLCV, SMA/EMA/RSI(period), Bollinger bands(period,multiplier), volume_sma, MACD(period=fast,slow,signal). Unused period/slow/signal/multiplier=1. Right constant: value set, metric=null, factor=1; right metric: value=null, metric set, factor scales it. Crosses compare previous and latest completed bars. Default daily RSI14, Bollinger20/2, MACD12/26/9; clearly disclose chosen defaults, clarify material ambiguities (e.g. low touch vs close below). snapshot_id=null first, reuse returned snapshot_id for later pages. Conditions cannot access private accounts, execute SQL/code or place orders. Prefer this shared engine for indicator searches; actual coverage/exclusions are mandatory.',
     'resolve_symbol': 'Resolve an exact Korean stock name/code against the collected catalog. Multiple matches require clarification; partial catalog is disclosed.',
     'get_market_context': 'Server KST time, XKRX calendar, overnight/today boundaries and latest completed daily session. No realtime price.',
     'screen_rsi': 'Read-only local daily SQLite; calculate Wilder RSI(14) on completed bars. Sorted RSI ascending, code ascending. Limited collected universe, quality exclusions and pagination. Never realtime.',

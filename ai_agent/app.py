@@ -12,9 +12,12 @@ from .provider import OpenAIProvider
 from .runner import Runner
 from .schemas import RunInput
 from .tools import NewsSource, ResearchTools
+from .screen_models import StockScreen
+from .screen_engine import SCREEN_ENGINE, ScreenSnapshotChanged
+from .screener import ScanBusy, ScanChanged, FingerprintUnavailable
 
 
-def create_app(settings=None, provider=None, tools_factory=None, callback=None):
+def create_app(settings=None, provider=None, tools_factory=None, callback=None, screen_engine=None, clock=None):
     s = settings or Settings.from_env()
     if len(s.internal_secret) < 32:
         # Healthy process with explicit unavailable state; never accepts unauthenticated requests.
@@ -24,13 +27,14 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None):
     url = urlsplit(s.callback_url)
     if url.scheme != 'http' or url.hostname not in ('127.0.0.1', 'localhost') or url.path != '/api/internal/agent/events':
         raise ValueError('Callback must use the fixed loopback event endpoint')
-    if provider is not None and os.getenv('NODE_ENV') == 'production':
+    if (provider is not None or clock is not None) and os.getenv('NODE_ENV') == 'production':
         raise ValueError('Injected providers are test-only')
     model = provider or OpenAIProvider(s)
     news = NewsSource(s)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     recent = {'state': 'configured' if s.api_key else 'api_key_missing', 'last_success_at': None, 'error_code': None}
     runs, active = {}, set()
+    screens = screen_engine or SCREEN_ENGINE
 
     async def authorize(x_atlas_internal: str = Header(default='')):
         if not configured or not hmac.compare_digest(x_atlas_internal, s.internal_secret):
@@ -48,6 +52,51 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None):
         return {'ok': True, 'provider': recent, 'model': s.model, 'key_configured': bool(s.api_key),
                 'lab_ready': bool(s.lab_path and __import__('pathlib').Path(s.lab_path).is_file()),
                 'news_configured': bool(s.naver_id and s.naver_secret)}
+
+    @app.post('/screen')
+    async def screen(body: StockScreen, x_atlas_internal: str = Header(default='')):
+        await authorize(x_atlas_internal)
+        try:
+            # Independent from model enablement, API keys, billing and guest AI quota.
+            return await asyncio.wait_for(asyncio.to_thread(screens.execute, s, body, clock() if clock else datetime.now(KST)), s.tool_seconds)
+        except ScreenSnapshotChanged:
+            raise HTTPException(409, 'snapshot_changed') from None
+        except ScanChanged:
+            raise HTTPException(409, 'screen_data_changed') from None
+        except ScanBusy:
+            raise HTTPException(503, 'screen_busy') from None
+        except FingerprintUnavailable:
+            raise HTTPException(503, 'screen_snapshot_unverified') from None
+        except (asyncio.TimeoutError, FileNotFoundError):
+            raise HTTPException(503, 'screen_data_not_ready') from None
+        except ValueError:
+            raise HTTPException(503, 'calendar_unverified') from None
+
+    @app.get('/screen/meta')
+    async def screen_meta(x_atlas_internal: str = Header(default='')):
+        await authorize(x_atlas_internal)
+        def read_meta():
+            import sqlite3
+            from pathlib import Path
+            from contextlib import closing
+            path = Path(s.lab_path).resolve()
+            if not s.lab_path or not path.is_file(): raise FileNotFoundError()
+            with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=2)) as db:
+                db.execute('PRAGMA query_only=ON'); db.execute('BEGIN')
+                end = time.monotonic() + 3
+                db.set_progress_handler(lambda: int(time.monotonic() > end), 10000)
+                total = db.execute('SELECT count(*) FROM symbols WHERE active=1').fetchone()[0]
+                latest = db.execute('SELECT max((SELECT max(date) FROM candles c WHERE c.code=s.code)) FROM symbols s WHERE active=1').fetchone()[0]
+                sources = [r[0] for r in db.execute('SELECT DISTINCT source FROM symbols WHERE active=1')]
+                quality = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='current_candle_quality' AND type='view'").fetchone())
+            from .market import market_context
+            context = market_context(clock() if clock else datetime.now(KST), s.calendar_through)
+            return {'available': True, 'universe': total, 'latest_bar': latest, 'cutoff': context['latest_completed'],
+                    'sources': sources, 'quality_ready': quality, 'timeframe': '1d', 'max_conditions': 8}
+        try:
+            return await asyncio.to_thread(read_meta)
+        except Exception:
+            raise HTTPException(503, 'screen_data_not_ready') from None
 
     @app.post('/run')
     async def run(body: RunInput, x_atlas_internal: str = Header(default='')):
