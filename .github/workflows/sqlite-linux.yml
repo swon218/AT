@@ -23,3 +23,7 @@ jobs:
         run: /tmp/atlas-ci-venv/bin/python -m ai_agent.tests.diagnose_lifecycle
       - name: Real Linux regression suite
         run: /tmp/atlas-ci-venv/bin/python -m pytest ai_agent/tests -q --tb=short
+      - name: Real writer and restricted read-only UID gate
+        run: |
+          command -v setfacl || sudo apt-get install -y acl
+          sudo /tmp/atlas-ci-venv/bin/python -m pytest ai_agent/tests/test_wal_guard_linux.py -q --tb=short

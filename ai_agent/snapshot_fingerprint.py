@@ -17,7 +17,7 @@ import sys
 from threading import Lock
 import time
 
-FORMAT = 'sqlite-physical-commit-v1'
+FORMAT = 'sqlite-physical-commit-v2'
 TIMEOUT = 2.0
 
 
@@ -70,13 +70,18 @@ def _wal(path, page_size):
         if stamp[2] == 32:
             return None  # No frames: opening an empty WAL is not a data commit.
         with open(str(path) + '-shm', 'rb') as shm:
-            raw = shm.read(96)
-        index, indexed_size = _index_header(raw)
+            raw = shm.read(136)
+        index, indexed_size = _index_header(raw[:96])
         frames, pages = struct.unpack('=II', index[16:24])
         if frames == 0:
             return None  # A retained/preallocated WAL can contain only stale frames.
         if indexed_size != page_size or index[32:40] != header[16:24] or index[13] != (magic & 1):
             raise FingerprintUnavailable('wal_index_mismatch')
+        if len(raw) != 136:
+            raise FingerprintUnavailable('index_unverified')
+        backfilled = struct.unpack('=I', raw[128:132])[0]
+        if backfilled > frames:
+            raise FingerprintUnavailable('index_unverified')
         offset = 32 + (frames - 1) * (page_size + 24)
         if offset + 24 + page_size > stamp[2]:
             raise FingerprintUnavailable('wal_unstable')
@@ -98,9 +103,14 @@ def _wal(path, page_size):
             raise FingerprintUnavailable('commit_unverified')
         if stamp != _stat(os.fstat(wal.fileno())):
             raise FingerprintUnavailable('wal_unstable')
-        # iChange, SHM checksums, read marks and checkpoint counters are deliberately
-        # absent. They can change without a new committed data snapshot.
-        return stamp, header.hex(), frames, pages, frame.hex(), hashlib.sha256(page).hexdigest()
+        if backfilled == frames:
+            # All committed WAL pages are already in the main DB. Keeping,
+            # resetting or deleting that WAL is then only a storage lifecycle.
+            return None
+        # File timestamps, allocation size/inode, read marks and ACL ctime are
+        # not commit IDs. Stat is still checked above for a racing sample; actual
+        # WAL commit identity is verified by salts, index and frame/page checksums.
+        return header.hex(), frames, pages, frame.hex(), hashlib.sha256(page).hexdigest()
 
 
 def _sample(path):
@@ -118,7 +128,9 @@ def _sample(path):
     wal = _wal(path, page_size)
     if stamp != _stat(path.stat()):
         raise FingerprintUnavailable('db_unstable')
-    return stamp, header.hex(), wal
+    # Keep main DB identity/size/mtime plus its header to detect checkpointed
+    # writes and replacement. ctime alone changes on chmod/ACL, without a commit.
+    return stamp[:4], header.hex(), wal
 
 
 def _probe(path):
@@ -128,7 +140,7 @@ def _probe(path):
             first, second = _sample(path), _sample(path)
             if first == second:
                 token = hashlib.sha256(json.dumps([FORMAT, first], separators=(',', ':')).encode()).hexdigest()
-                return {'format': FORMAT, 'token': token, 'wal_committed_frames': first[2][2] if first[2] else 0}
+                return {'format': FORMAT, 'token': token, 'wal_committed_frames': first[2][1] if first[2] else 0}
         except FingerprintUnavailable as exc:
             reason = str(exc)
             continue
