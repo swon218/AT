@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import platform
+import os
 import sqlite3
 import time
 from ai_agent.config import Settings
@@ -37,7 +38,17 @@ def main():
                           os=platform.platform(), as_of=now.isoformat(), cutoff=context['latest_completed'],
                           calendar_source=context['calendar_source']), ensure_ascii=False), flush=True)
     scanner, engine = RsiScreener(), ScreenEngine()
-    reader = scanner._connect(Path(settings.lab_path))
+    path = Path(settings.lab_path)
+    print(json.dumps(dict(sidecars={suffix: dict(exists=Path(str(path)+suffix).exists(),
+                        readable=os.access(str(path)+suffix, os.R_OK)) for suffix in ('-wal', '-shm')})), flush=True)
+    reader = None
+    try:
+        reader = scanner._connect(path)
+        reader.execute('SELECT rootpage FROM sqlite_master LIMIT 1').fetchone()
+    except sqlite3.OperationalError:
+        if reader is not None: reader.close()
+        print('SCREENER_READER_INFRASTRUCTURE_UNAVAILABLE: prepare owner-side WAL guard; do not grant reader write access', flush=True)
+        raise SystemExit(1) from None
     try:
         before = fingerprint(Path(settings.lab_path))
         versions = [reader.execute('PRAGMA data_version').fetchone()[0]]

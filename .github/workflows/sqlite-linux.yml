@@ -1,0 +1,29 @@
+name: SQLite Linux compatibility
+on:
+  push:
+    branches: [main, codex/sqlite-wal-lifecycle]
+    paths: ['ai_agent/**', 'lab/**', 'deploy/**', '.github/workflows/sqlite-linux.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Runtime matches VPS
+        run: |
+          /usr/bin/python3 -c "import sqlite3,sys; print(sys.version,sqlite3.sqlite_version); assert sys.version_info[:2]==(3,10); assert sqlite3.sqlite_version=='3.37.2'"
+          /usr/bin/python3 -m venv /tmp/atlas-ci-venv
+          /tmp/atlas-ci-venv/bin/python -m pip install --require-hashes -r ai_agent/requirements-test.lock
+      - name: Disposable WAL lifecycle diagnosis
+        run: /tmp/atlas-ci-venv/bin/python -m ai_agent.tests.diagnose_lifecycle
+      - name: Real Linux regression suite
+        run: /tmp/atlas-ci-venv/bin/python -m pytest ai_agent/tests -q --tb=short
+      - name: Real writer and restricted read-only UID gate
+        run: |
+          command -v setfacl || sudo apt-get install -y acl
+          sudo /tmp/atlas-ci-venv/bin/python -m pytest ai_agent/tests/test_wal_guard_linux.py -q --tb=short

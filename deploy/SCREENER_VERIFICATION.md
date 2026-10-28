@@ -1,5 +1,15 @@
 # 조건 검색 구현 검증 (2026-10-28)
 
+## SQLite/WAL 후속 검증
+
+- `a7abb937`의 운영 배포는 사용자 보고상 gate 실패로 중단됐습니다. 아래 최초 로컬 통과 기록은 운영 통과 기록이 아닙니다.
+- Ubuntu 22.04 시스템 Python 3.10.12 / SQLite 3.37.2의 공개 CI를 추가했습니다. 기존 47개는 동일 Linux CI에서 통과해, VPS의 네 가지 실패를 SQLite 버전만으로 단정하지 않습니다.
+- 후속 v2는 main ctime/ACL, WAL 보존·삭제·메타데이터와 실제 commit을 구분합니다. 실제 commit, 같은 크기/mtime WAL commit, 데이터 교체·혼합 거부는 계속 검증합니다.
+- 실제 서로 다른 비관리자 UID로, main DB/디렉터리에 쓰기 권한이 없는 reader가 WAL 부재 때 실패함을 재현했습니다. 기존 owner의 query-only guard가 준비한 뒤 같은 reader로 `SCREENER_READONLY_GATE_PASS`를 확인했고, 실제 writer commit 및 TRUNCATE checkpoint 후에도 다시 gate를 통과했습니다. helper/reader의 SQL 쓰기 차단과 기존 ACL mask 보존도 검증합니다.
+- 최종 후보 CI 기록: https://github.com/swon218/AT/actions/runs/40701734113 (Linux 일반 51개 통과, 권한 분리 2개는 일반 실행에서 skip 후 별도 단계에서 2개 모두 실제 실행·통과). 총 53개 회귀 조건을 실제 Linux에서 확인했습니다. 공개 API는 읽기 인프라 실패를 빈 종목 목록이나 원문 예외로 노출하지 않고 503으로 반환합니다.
+- Windows 격리 SQLite 3.37.2: 일반 50개 통과, Linux 전용 3개 skip(실제 UID 2개와 Windows mandatory WAL lock 때문에 fail-closed하는 미커밋 raw-read 1개). Node의 관련 실제 HTTP/프록시 테스트 6개 통과. 최초 변경의 Node 전체 121개/build 통과 기록은 아래에 별도로 보존합니다.
+- 실제 운영 DB의 새 gate와 새 owner-side 보조 서비스 반영은 여전히 VPS 작업입니다. 후속 배포는 `deploy/SCREENER_SQLITE_HERMES.md`가 이전 지침보다 우선합니다. SQLite 업그레이드, DB 복제, 수집 스케줄·품질 변경, AI 쓰기 권한 추가, 운영 유료 호출은 하지 않았습니다.
+
 ## 확인한 범위
 
 - 새 탭은 실험실과 AI 에이전트 사이에 위치하며, 공통 sidebar footer와 header를 그대로 사용합니다.

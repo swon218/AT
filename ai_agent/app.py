@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 import hmac
 import os
+import sqlite3
 import time
 from urllib.parse import urlsplit
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -68,6 +69,10 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
         except FingerprintUnavailable:
             raise HTTPException(503, 'screen_snapshot_unverified') from None
         except (asyncio.TimeoutError, FileNotFoundError):
+            raise HTTPException(503, 'screen_data_not_ready') from None
+        except sqlite3.OperationalError:
+            # A missing/unreadable WAL-index is infrastructure unavailability,
+            # never an empty stock result or permission to retry read/write.
             raise HTTPException(503, 'screen_data_not_ready') from None
         except ValueError:
             raise HTTPException(503, 'calendar_unverified') from None

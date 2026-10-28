@@ -1,0 +1,23 @@
+[Unit]
+Description=ATLAS SQLite sidecars for read-only research
+Before=atlas-ai.service
+
+[Service]
+Type=notify
+User=atlas
+Group=atlas
+WorkingDirectory=/opt/atlas
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/atlas/.venv-lab/bin/python -m lab.wal_guard --db /var/lib/atlas/lab.sqlite --reader atlas-ai
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/atlas
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
