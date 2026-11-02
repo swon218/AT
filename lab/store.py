@@ -221,8 +221,8 @@ def query(path, code=None):
         # Prices and their quality overlay must come from one SQLite snapshot,
         # even if the nightly writer commits between the SELECT statements.
         db.execute("BEGIN")
-        quality_ready = bool(db.execute("SELECT 1 FROM sqlite_master WHERE type='view' AND name='current_candle_quality'").fetchone())
         if code:
+            quality_ready = bool(db.execute("SELECT 1 FROM sqlite_master WHERE type='view' AND name='current_candle_quality'").fetchone())
             if not re.fullmatch(r"[0-9][0-9A-Z]{5}", code):
                 raise ValueError("Invalid symbol")
             symbol = db.execute("SELECT * FROM symbols WHERE code=?", (code,)).fetchone()
@@ -246,22 +246,12 @@ def query(path, code=None):
             ordered = sorted(candles.values(), key=lambda row: row["time"])[-2000:]
             return {"ready": bool(symbol), "symbol": dict(symbol) if symbol else None,
                     "items": ordered, "quality": quality}
-        items = db.execute("""SELECT s.*,min(c.date) AS first_date,max(c.date) AS last_date,
-          count(c.date) AS bars FROM symbols s LEFT JOIN candles c USING(code)
-          GROUP BY s.code ORDER BY s.name""")
+        # Search needs identities only. Never scan historical prices or quality
+        # versions here; selected-symbol requests above own those reads.
+        items = db.execute("SELECT code,name,market FROM symbols ORDER BY name")
         run = db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
         rows = [dict(row) for row in items]
-        if quality_ready:
-            counts = {r["code"]: dict(r) for r in db.execute("""SELECT q.code,
-              sum(v.status='corrected') AS corrected, sum(v.status='quarantined') AS quarantined,
-              sum(v.status='quarantined' AND c.date IS NOT NULL) AS hidden
-              FROM candle_quality_versions v JOIN candle_quality q USING(code,date,source,raw_hash,policy)
-              LEFT JOIN candles c USING(code,date) WHERE v.status!='original' GROUP BY q.code""")}
-            for row in rows:
-                q = counts.get(row["code"], {})
-                row.update(corrected=q.get("corrected", 0), quarantined=q.get("quarantined", 0))
-                row["bars"] -= q.get("hidden", 0)
-        return {"ready": any(row["bars"] for row in rows), "items": rows,
+        return {"ready": bool(rows), "items": rows,
                 "run": dict(run) if run else None, "interval": "1d"}
 
 

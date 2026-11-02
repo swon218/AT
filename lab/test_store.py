@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 import json
 import sqlite3
+from unittest.mock import patch
 from store import connect, query, save_rows, validate_rows, prepare_rows
 
 
@@ -26,7 +27,7 @@ class StoreTests(unittest.TestCase):
         data = query(self.path, "005930")
         self.assertEqual(len(data["items"]), 1)
         self.assertEqual(data["items"][0]["close"], 107)
-        self.assertEqual(query(self.path)["items"][0]["bars"], 1)
+        self.assertEqual(query(self.path)["items"], [{"code": "005930", "name": "Samsung", "market": "KOSPI"}])
 
     def test_invalid_full_response_preserves_existing_data(self):
         self.save()
@@ -34,7 +35,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT close FROM candles').fetchone()[0], 105)
         self.assertEqual(query(self.path, "005930")["items"][0]["quality"], "quarantined")
         self.assertIsNone(query(self.path, "005930")["items"][0]["close"])
-        self.assertEqual(query(self.path)["items"][0]["bars"], 0)
+        self.assertEqual(query(self.path, "005930")["quality"]["quarantined"], 1)
 
     def test_exact_one_krw_high_and_low_corrections_preserve_raw_and_audit(self):
         rows = [{**self.rows[0], "close": 111}, {**self.rows[0], "date": "2025-01-03", "close": 89}]
@@ -72,7 +73,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(len(data["items"]), 3)
         self.assertEqual(data["quality"]["quarantined"], 1)
         self.assertEqual(data["quality"]["issues"][-1]["delta"], 50)
-        self.assertEqual(query(self.path)["items"][0]["bars"], 2)
+        self.assertEqual(sum(c["close"] is not None for c in data["items"]), 2)
         self.assertEqual(self.db.execute('SELECT count(*) FROM raw_candles').fetchone()[0], 3)
 
     def test_provider_resolution_keeps_prior_raw_versions_and_decisions(self):
@@ -142,6 +143,50 @@ class StoreTests(unittest.TestCase):
     def test_alphanumeric_krx_codes_are_supported(self):
         save_rows(self.db, "00680K", "Preferred", "KOSPI", self.rows, "2025-01-01", "2025-01-31")
         self.assertEqual(query(self.path, "00680K")["symbol"]["code"], "00680K")
+
+    def test_catalog_never_reads_prices_or_quality_and_does_not_write(self):
+        self.save()
+        with self.db:
+            self.db.execute("INSERT INTO symbols(code,name,market,source) VALUES('000660','SK Hynix','KOSPI','FDR:NAVER')")
+        original_connect = sqlite3.connect
+        reads = set()
+
+        def readonly_connect(*args, **kwargs):
+            db = original_connect(*args, **kwargs)
+
+            def authorize(action, table, column, database, trigger):
+                if action == sqlite3.SQLITE_READ:
+                    reads.add(table)
+                    if table not in ('symbols', 'runs'):
+                        return sqlite3.SQLITE_DENY
+                if action in (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE):
+                    return sqlite3.SQLITE_DENY
+                return sqlite3.SQLITE_OK
+
+            db.set_authorizer(authorize)
+            return db
+
+        with patch('store.sqlite3.connect', side_effect=readonly_connect):
+            data = query(self.path)
+        self.assertTrue(data['ready'])
+        self.assertEqual(reads, {'symbols', 'runs'})
+        self.assertEqual({r['code'] for r in data['items']}, {'005930', '000660'})
+        self.assertTrue(all(set(r) == {'code', 'name', 'market'} for r in data['items']))
+        self.assertEqual(len(query(self.path, '005930')['items']), 1)
+        self.assertEqual(query(self.path, '000660')['items'], [])
+
+    def test_selected_symbol_keeps_other_symbols_prices_and_quality_separate(self):
+        self.save()
+        save_rows(self.db, '000660', 'SK Hynix', 'KOSPI',
+                  [{**self.rows[0], 'close': 160}], '2025-01-01', '2025-01-31')
+        samsung = query(self.path, '005930')
+        hynix = query(self.path, '000660')
+        self.assertEqual(samsung['symbol']['code'], '005930')
+        self.assertEqual(samsung['items'][0]['close'], 105)
+        self.assertEqual(samsung['quality']['quarantined'], 0)
+        self.assertEqual(hynix['symbol']['code'], '000660')
+        self.assertIsNone(hynix['items'][0]['close'])
+        self.assertEqual(hynix['quality']['quarantined'], 1)
 
 
 if __name__ == '__main__':
