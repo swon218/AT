@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { getKiwoomMarketSummary, getKiwoomMarketSession } from '../services/kiwoomMarketApi'
+import { getKiwoomMarketSummary } from '../services/kiwoomMarketApi'
 import ExchangeRateCard from './ExchangeRateCard'
+import MarketSessionCard from './MarketSessionCard'
 
 function useMarketData(scope, fetchData, interval) {
   const [state, setState] = useState({})
@@ -42,7 +43,6 @@ const money = (value, signed = false) => {
   if (signed) return `${prefix}${(absolute / 100_000_000).toLocaleString('ko-KR', { maximumFractionDigits: 0 })}억`
   return absolute >= 1_000_000_000_000 ? `${(absolute / 1_000_000_000_000).toFixed(2)}조` : `${(absolute / 100_000_000).toLocaleString('ko-KR', { maximumFractionDigits: 0 })}억`
 }
-const time = value => value ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(value)) : ''
 const emptyMarkets = [{ symbol: 'kospi', name: '코스피' }, { symbol: 'kosdaq', name: '코스닥' }]
 
 function DataFooter({ state, markets, errorKey }) {
@@ -68,18 +68,9 @@ function Breadth({ market }) {
 
 export default function MarketSummary({ credentialScope }) {
   const summary = useMarketData(credentialScope, getKiwoomMarketSummary, 30_000)
-  const session = useMarketData(credentialScope, getKiwoomMarketSession, 10_000)
   const markets = summary.data?.markets || emptyMarkets
-  const status = session.data
-  const stale = session.error || status?.stale
-  const connection = status?.connection === 'connected' ? '실시간 연결' : status?.connection === 'reconnecting' ? '재연결 중' : '연결 중'
   return <section className="dashboard-market-summary" aria-label="시장 주요 데이터">
-    <article className="panel dashboard-summary-card summary-session" aria-busy={session.loading}>
-      <div className="summary-card-heading"><h2>장 상태</h2><small>KRX</small></div>
-      <div className={`summary-session-state ${stale ? 'stale' : status?.phase || 'unknown'}`}><span className="session-dot"/><strong>{status?.label || (session.error ? '조회 실패' : '연결 중')}</strong></div>
-      <p className="summary-session-detail">{stale ? '마지막 상태 · 현재 상태 확인 필요' : status?.expectedOpenAt ? `${time(status.expectedOpenAt)} 개장 예상` : status?.source === 'calendar' ? '한국시간 주말 기준' : status?.source === 'kiwoom' ? `${time(status.marketTime)} 장 상태 수신` : '키움 장운영 신호 수신 대기'}</p>
-      <div className={`summary-card-footer${stale ? ' summary-warning' : ''}`}><span>{session.error ? '상태 조회 실패' : `키움 · ${connection}`}</span>{session.error && <button type="button" onClick={session.retry} aria-label="장 상태 다시 조회"><RefreshCw size={12}/></button>}</div>
-    </article>
+    <MarketSessionCard/>
     <ExchangeRateCard/>
     <article className="panel dashboard-summary-card" aria-busy={summary.loading}>
       <div className="summary-card-heading"><h2>시장 거래대금</h2><small>누적</small></div>

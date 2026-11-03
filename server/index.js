@@ -17,6 +17,7 @@ import { registerMarketIndexRoutes } from './marketIndices.js'
 import { registerMarketSummaryRoutes } from './marketSummary.js'
 import { registerExchangeRateRoutes } from './exchangeRate.js'
 import { createMarketSessions } from './marketSession.js'
+import { registerMarketCalendarRoutes } from './marketCalendar.js'
 import { registerAddedBrokerRoutes } from './addedBrokers.js'
 import { registerAgentRoutes } from './agent.js'
 import { registerScreenRoutes } from './screener.js'
@@ -33,6 +34,7 @@ registerLabRoutes(app)
 registerStockSearchRoutes(app)
 registerMarketIndexRoutes(app)
 registerMarketSummaryRoutes(app, { sessions: createMarketSessions() })
+registerMarketCalendarRoutes(app)
 registerExchangeRateRoutes(app)
 registerAddedBrokerRoutes(app)
 registerAgentRoutes(app)
