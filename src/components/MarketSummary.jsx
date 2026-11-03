@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { getKiwoomMarketSummary, getKiwoomMarketSession } from '../services/kiwoomMarketApi'
+import ExchangeRateCard from './ExchangeRateCard'
 
 function useMarketData(scope, fetchData, interval) {
   const [state, setState] = useState({})
@@ -79,7 +80,7 @@ export default function MarketSummary({ credentialScope }) {
       <p className="summary-session-detail">{stale ? '마지막 상태 · 현재 상태 확인 필요' : status?.expectedOpenAt ? `${time(status.expectedOpenAt)} 개장 예상` : status?.source === 'calendar' ? '한국시간 주말 기준' : status?.source === 'kiwoom' ? `${time(status.marketTime)} 장 상태 수신` : '키움 장운영 신호 수신 대기'}</p>
       <div className={`summary-card-footer${stale ? ' summary-warning' : ''}`}><span>{session.error ? '상태 조회 실패' : `키움 · ${connection}`}</span>{session.error && <button type="button" onClick={session.retry} aria-label="장 상태 다시 조회"><RefreshCw size={12}/></button>}</div>
     </article>
-    <article className="panel dashboard-summary-card summary-fx"><div className="summary-card-heading"><h2>원/달러</h2></div><strong className="summary-fx-value">—</strong><div className="summary-card-footer">연결 예정</div></article>
+    <ExchangeRateCard/>
     <article className="panel dashboard-summary-card" aria-busy={summary.loading}>
       <div className="summary-card-heading"><h2>시장 거래대금</h2><small>누적</small></div>
       <div className="summary-market-values">{markets.map(market => <div key={market.symbol}><span>{market.name}</span><strong title={market.turnoverWon == null ? '' : `${digits(market.turnoverWon)}원`}>{money(market.turnoverWon)}<small>{market.turnoverWon == null ? '' : ' 원'}</small></strong></div>)}</div>

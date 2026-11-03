@@ -15,6 +15,7 @@ import { placeTossOrder } from './tossOrders.js'
 import { registerLabRoutes } from './lab.js'
 import { registerMarketIndexRoutes } from './marketIndices.js'
 import { registerMarketSummaryRoutes } from './marketSummary.js'
+import { registerExchangeRateRoutes } from './exchangeRate.js'
 import { createMarketSessions } from './marketSession.js'
 import { registerAddedBrokerRoutes } from './addedBrokers.js'
 import { registerAgentRoutes } from './agent.js'
@@ -32,6 +33,7 @@ registerLabRoutes(app)
 registerStockSearchRoutes(app)
 registerMarketIndexRoutes(app)
 registerMarketSummaryRoutes(app, { sessions: createMarketSessions() })
+registerExchangeRateRoutes(app)
 registerAddedBrokerRoutes(app)
 registerAgentRoutes(app)
 registerScreenRoutes(app)

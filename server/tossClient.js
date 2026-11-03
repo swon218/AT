@@ -16,6 +16,7 @@ async function readJson(response, label) {
     const message = body.error?.message || body.error_description || body.message || `${label} 요청에 실패했습니다. (${response.status})`
     const error = new Error(message)
     error.statusCode = response.status
+    error.retryAfter = response.headers.get('retry-after')
     error.code = body.error?.code || body.error || ''
     throw error
   }
@@ -25,6 +26,7 @@ async function readJson(response, label) {
 async function issueAccessToken({ apiKey, secretKey }) {
   const response = await fetch(`${config.tossHost}/oauth2/token`, {
     method: 'POST',
+    signal: AbortSignal.timeout(8_000),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
@@ -59,8 +61,11 @@ async function getAccessToken({ apiKey, secretKey, forceRefresh = false }) {
   }
 }
 
-export async function requestTossWithCredentials({ apiKey, secretKey, path, method = 'GET', query, body, accountSeq, retry = true }) {
-  const { token, key } = await getAccessToken({ apiKey, secretKey })
+export async function requestTossWithCredentials({ apiKey, secretKey, path, method = 'GET', query, body, accountSeq, retry = true, signal }) {
+  const { token, key } = await getAccessToken({ apiKey, secretKey }).catch(error => {
+    error.tossStage = 'token'
+    throw error
+  })
   const url = new URL(path, config.tossHost)
   Object.entries(query || {}).forEach(([name, value]) => {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(name, String(value))
@@ -71,12 +76,13 @@ export async function requestTossWithCredentials({ apiKey, secretKey, path, meth
 
   const response = await fetch(url, {
     method,
+    signal,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  if (response.status === 401 && retry) {
-    tokenCache.delete(key)
-    return requestTossWithCredentials({ apiKey, secretKey, path, method, query, body, accountSeq, retry: false })
+  if (response.status === 401) {
+    if (tokenCache.get(key)?.token === token) tokenCache.delete(key)
+    if (retry) return requestTossWithCredentials({ apiKey, secretKey, path, method, query, body, accountSeq, retry: false, signal })
   }
   return readJson(response, `토스 ${method} ${path}`)
 }
@@ -98,7 +104,7 @@ export async function getTossBrokerageAccount({ apiKey, secretKey }) {
   return account
 }
 
-export function requestToss({ path, method, query, body, accountSeq }) {
+export function requestToss({ path, method, query, body, accountSeq, retry, signal }) {
   return requestTossWithCredentials({
     apiKey: config.tossApiKey,
     secretKey: config.tossSecretKey,
@@ -107,5 +113,7 @@ export function requestToss({ path, method, query, body, accountSeq }) {
     query,
     body,
     accountSeq,
+    retry,
+    signal,
   })
 }

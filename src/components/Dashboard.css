@@ -30,7 +30,12 @@
 .summary-session-state.auction, .summary-session-state.after-hours { color: #eac16a; }
 .summary-session-state.stale { color: #eead7b; }
 .summary-session-detail { color: #7897b3; font-size: 10px; line-height: 1.6; margin: 8px 0 12px; }
-.summary-fx-value { color: #48637e; font-size: 25px; padding: 20px 0; font-weight: 500; }
+.summary-fx-value { color: #48637e; font-size: clamp(19px, 2vw, 25px); padding: 15px 0 6px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.summary-fx-value.has-rate { color: #e8f2ff; }
+.summary-fx-value small { margin-inline-start: 4px; font-size: 11px; }
+.summary-fx-source { color: #87a3bf; font-size: 10px; line-height: 1.5; margin: 0 0 8px; }
+.summary-fx .summary-card-footer { line-height: 1.55; }
+.summary-fx .summary-card-footer button { flex-shrink: 0; }
 .summary-breadth-legend { display: flex; justify-content: flex-end; gap: 7px; font-size: 8px; color: #90a1b6; margin: 3px 0 7px; }
 .summary-breadth-values { display: flex; flex-direction: column; gap: 9px; flex: 1; padding-bottom: 10px; }
 .summary-breadth-label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 3px; font-size: 9px; color: #85a4c0; font-variant-numeric: tabular-nums; }
