@@ -11,6 +11,7 @@ import DashboardWelcome from './components/DashboardWelcome'
 import MarketIndexChart from './components/MarketIndexChart'
 import MarketSummary from './components/MarketSummary'
 import DashboardNews from './components/DashboardNews'
+import NewsPage from './components/NewsPage'
 import './components/Dashboard.css'
 import TradingViewChart from './components/TradingViewChart'
 import LabChartPanel from './components/LabChartPanel'
@@ -111,7 +112,8 @@ function DashboardHoldingsTable({ currentUser, broker, configured, accountSummar
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
-  const brokerageDataEnabled = !['lab', 'screen', 'agent'].includes(activePage)
+  const [newsCategory, setNewsCategory] = useState('all')
+  const brokerageDataEnabled = !['lab', 'screen', 'agent', 'news'].includes(activePage)
   const [selected, setSelected] = useState(defaultStock)
   const [orderPeriod, setOrderPeriod] = useState('15분')
   const selectionVersion = useRef(0)
@@ -181,6 +183,7 @@ function App() {
     setActivePage(page)
     setMobileNav(false)
   }
+  const openNews = category => { setNewsCategory(category); openPage('news') }
   const openScreen = query => { if (screen.open(query)) openPage('screen') }
   const askScreenAgent = query => {
     const text = `${describeQuery(query)}인 종목을 검색하고 결과와 데이터 범위를 설명해줘.`
@@ -419,7 +422,7 @@ function App() {
           <button className={`nav-link ${activePage === 'agent' ? 'active' : ''}`} onClick={() => openPage('agent')}><Bot/><span>AI 에이전트</span></button>
           <button className={`nav-link ${activePage === 'assets' ? 'active' : ''}`} onClick={() => openPage('assets')}><WalletCards/><span>자산 현황</span></button>
           <p>MARKET</p>
-          <a><Newspaper/><span>마켓 뉴스</span></a>
+          <button type="button" className={`nav-link ${activePage === 'news' ? 'active' : ''}`} aria-label="주요 뉴스 · 공시" aria-current={activePage === 'news' ? 'page' : undefined} title="주요 뉴스 · 공시" onClick={() => openPage('news')}><Newspaper/><span>주요 뉴스 · 공시</span></button>
           <a><CircleDollarSign/><span>시세 분석</span></a>
         </nav>
         <SidebarFooter user={currentUser} nickname={nickname} integrationStatus={integrationStatus} onProfileClick={openProfileOrLogin} onSessionClick={openLoginOrLogoutConfirm}/>
@@ -428,12 +431,12 @@ function App() {
       <main>
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
-          {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : activePage === 'screen' ? <><Filter/><span>조건 검색</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
+          {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : activePage === 'screen' ? <><Filter/><span>조건 검색</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
           <div className="header-actions">{brokerageDataEnabled && <span className="market-open"><i/>시장 조회</span>}<button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
         <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
-          {activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => chooseSearchStock({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }} onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('dashboard') }}/> : activePage === 'dashboard' ? <>
+          {activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => chooseSearchStock({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }} onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('dashboard') }}/> : activePage === 'dashboard' ? <>
           <DashboardWelcome/>
 
           <MarketSummary credentialScope={searchCredentialScope}/>
@@ -442,7 +445,7 @@ function App() {
             <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={chooseStock}/>
 
             <MarketIndexChart credentialScope={searchCredentialScope}/>
-            <DashboardNews/>
+            <DashboardNews onOpenNews={openNews}/>
           </section>
 
           <section className="lower-grid guest-lower-grid dashboard-account-grid">
@@ -460,7 +463,7 @@ function App() {
           </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}/>}
         </div>
       </main>
-      <FloatingAgent agent={{ ...agent, openScreen }} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
+      <FloatingAgent agent={{ ...agent, openScreen }} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal} recovery={passwordRecovery} onRecoveryFinished={finishPasswordRecovery}/>
       <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange}/>

@@ -3,7 +3,7 @@ import cors from '@fastify/cors'
 import { config, publicConfigurationStatus } from './config.js'
 import { getRankings } from './rankings.js'
 import { getCandles } from './charts.js'
-import { getNews, getDashboardNews, newsCategories } from './news.js'
+import { registerNewsRoutes } from './news.js'
 import { getAccountSettings, getAuthenticatedCredentials, updateAccountSettings } from './accountSettings.js'
 import { placeKiwoomOrder } from './orders.js'
 import { getKiwoomAccountSummary } from './kiwoomAccount.js'
@@ -35,6 +35,7 @@ registerMarketSummaryRoutes(app, { sessions: createMarketSessions() })
 registerAddedBrokerRoutes(app)
 registerAgentRoutes(app)
 registerScreenRoutes(app)
+registerNewsRoutes(app)
 
 async function tossMarketCredentials(request) {
   const authorization = request.headers.authorization || ''
@@ -82,22 +83,6 @@ app.get('/api/public/market/toss/candles', async (request, reply) => {
     request.log.error({ error: error.message }, 'Toss candles failed')
     return reply.code(error.statusCode || 502).send({ error: error.message })
   }
-})
-
-app.get('/api/public/news', async (request, reply) => {
-  try {
-    const query = String(request.query.query || '국내 증시').slice(0, 100)
-    const display = Math.min(10, Math.max(1, Number(request.query.display) || 6))
-    return { items: await getNews(query, display) }
-  } catch (error) {
-    request.log.error({ error: error.message }, 'Naver news failed')
-    return reply.code(502).send({ error: error.message })
-  }
-})
-
-app.get('/api/public/news/dashboard', { schema: { querystring: { type: 'object', properties: { category: { type: 'string', enum: Object.keys(newsCategories), default: 'all' } } } } }, async (request, reply) => {
-  try { return await getDashboardNews(request.query.category) }
-  catch (error) { return reply.code(error.statusCode || 502).send({ error: error.message }) }
 })
 
 app.get('/api/account/settings', async (request, reply) => {
