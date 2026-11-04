@@ -1,8 +1,10 @@
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from datetime import datetime
 from io import StringIO
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import time
 from types import SimpleNamespace
@@ -157,6 +159,51 @@ class NightlyTests(unittest.TestCase):
         self.assertEqual(calls, ["2026-08-31", start])
         self.assertTrue(change["full"])
         self.assertEqual(query(self.path, "005930")["items"][-1]["close"], 105)
+
+    def test_cutover_gate_blocks_legacy_correction_until_real_source_bar_is_valid(self):
+        listing = self.listing("005930", "000660")
+        for stock in listing:
+            saved = bar(self.listed, 111 if stock["code"] == "005930" else 105)
+            save_rows(self.db, stock["code"], stock["name"], stock["market"], [saved], self.listed, self.day)
+        baseline = self.path.with_name("baseline.sqlite")
+        with closing(connect(baseline)) as backup:
+            self.db.backup(backup)
+        validated = False
+
+        def provider(kind, code=None, *args, **kwargs):
+            if kind == "listing":
+                return listing
+            close = 111 if code == "005930" and not validated else 105
+            return [bar(self.listed, close), bar(self.day)]
+
+        def report():
+            gate = subprocess.run(
+                [sys.executable, "-m", "deploy.lab_transition_gate", "--before", str(baseline),
+                 "--after", str(self.path), "--target", self.day],
+                capture_output=True, text=True, timeout=20,
+            )
+            self.assertEqual(gate.stderr, "")
+            result = json.loads(gate.stdout)
+            self.assertEqual(gate.returncode, 0 if result["passed"] else 1)
+            return result
+
+        with patch("nightly.provider", side_effect=provider):
+            self.assertEqual(self.run_phase("primary"), 2)
+            self.assertEqual(self.run_phase("confirm"), 2)
+            blocked = report()
+            self.assertFalse(blocked["passed"])
+            self.assertEqual(blocked["before"]["usable_candles"], 2)
+            self.assertEqual(blocked["after"]["usable_candles"], 2)  # Another new bar masks the loss in totals.
+            self.assertEqual(blocked["delta"]["quarantined_candles"], 1)
+            self.assertEqual(blocked["newly_failed"], ["005930"])
+            self.assertEqual(blocked["newly_quarantined"][0]["decision"], "corrected")
+            self.assertEqual(blocked["lost_usable"], [dict(code="005930", dates=[self.listed])])
+            validated = True
+            self.assertEqual(self.run_phase("confirm"), 0)
+        allowed = report()
+        self.assertTrue(allowed["passed"], allowed["errors"])
+        self.assertTrue(allowed["legacy_corrected"][0]["usable_after"])
+        self.assertEqual(allowed["after"]["usable_candles"], 4)
 
     def test_deadline_keeps_unprocessed_items_and_calendar_handles_holidays(self):
         with patch("nightly.provider", return_value=self.listing("005930", "000660")) as fetch:
