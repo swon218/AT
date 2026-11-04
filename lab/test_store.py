@@ -150,6 +150,7 @@ class StoreTests(unittest.TestCase):
             self.db.execute("INSERT INTO symbols(code,name,market,source) VALUES('000660','SK Hynix','KOSPI','FDR:NAVER')")
         original_connect = sqlite3.connect
         reads = set()
+        allowed = {'symbols', 'runs', 'sqlite_master', 'lab_publication', 'lab_batches', 'lab_batch_items'}
 
         def readonly_connect(*args, **kwargs):
             db = original_connect(*args, **kwargs)
@@ -157,7 +158,7 @@ class StoreTests(unittest.TestCase):
             def authorize(action, table, column, database, trigger):
                 if action == sqlite3.SQLITE_READ:
                     reads.add(table)
-                    if table not in ('symbols', 'runs'):
+                    if table not in allowed:
                         return sqlite3.SQLITE_DENY
                 if action in (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE):
                     return sqlite3.SQLITE_DENY
@@ -169,7 +170,7 @@ class StoreTests(unittest.TestCase):
         with patch('store.sqlite3.connect', side_effect=readonly_connect):
             data = query(self.path)
         self.assertTrue(data['ready'])
-        self.assertEqual(reads, {'symbols', 'runs'})
+        self.assertTrue({'symbols', 'runs'} <= reads <= allowed)
         self.assertEqual({r['code'] for r in data['items']}, {'005930', '000660'})
         self.assertTrue(all(set(r) == {'code', 'name', 'market'} for r in data['items']))
         self.assertEqual(len(query(self.path, '005930')['items']), 1)

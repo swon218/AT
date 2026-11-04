@@ -1,1 +1,2 @@
 finance-datareader==0.9.202
+exchange-calendars==4.13.2

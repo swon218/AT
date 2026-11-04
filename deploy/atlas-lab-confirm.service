@@ -1,0 +1,26 @@
+[Unit]
+Description=ATLAS 03:00 daily candle confirmation and publication
+Wants=network-online.target
+After=network-online.target atlas-lab-collect.service
+
+[Service]
+Type=oneshot
+User=atlas
+Group=atlas
+WorkingDirectory=/opt/atlas
+Environment=LAB_DB_PATH=/var/lib/atlas/lab.sqlite
+EnvironmentFile=-/etc/atlas/lab-kiwoom.env
+Environment=DOTENV_CONFIG_PATH=/dev/null
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/atlas/.venv-lab/bin/python /opt/atlas/lab/nightly.py confirm --max-minutes 240
+SuccessExitStatus=2
+TimeoutStartSec=260min
+KillMode=control-group
+UMask=0027
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/atlas

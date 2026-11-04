@@ -1,5 +1,5 @@
 [Unit]
-Description=ATLAS historical daily candle collection
+Description=ATLAS 21:00 primary daily candle collection
 Wants=network-online.target
 After=network-online.target
 
@@ -9,10 +9,12 @@ User=atlas
 Group=atlas
 WorkingDirectory=/opt/atlas
 Environment=LAB_DB_PATH=/var/lib/atlas/lab.sqlite
-Environment=LAB_SOURCE=NAVER
+EnvironmentFile=-/etc/atlas/lab-kiwoom.env
+Environment=DOTENV_CONFIG_PATH=/dev/null
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/atlas/.venv-lab/bin/python /opt/atlas/lab/collect.py --max-minutes 260
+ExecStart=/opt/atlas/.venv-lab/bin/python /opt/atlas/lab/nightly.py primary --max-minutes 250
+SuccessExitStatus=2
 TimeoutStartSec=270min
 KillMode=control-group
 UMask=0027

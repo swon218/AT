@@ -3,7 +3,7 @@ const base = import.meta.env.VITE_API_BASE_URL ?? ''
 // Historical data is public and never obtains or sends brokerage credentials.
 async function read(path, signal) {
   let response
-  try { response = await fetch(`${base}/api/public/lab/${path}`, { signal, credentials: 'omit' }) }
+  try { response = await fetch(`${base}/api/public/lab/${path}`, { signal, credentials: 'omit', cache: 'no-store' }) }
   catch (error) {
     if (error.name === 'AbortError') throw error
     throw new Error('실험실 서버에 연결하지 못했습니다. 네트워크와 VPS API를 확인하세요.')

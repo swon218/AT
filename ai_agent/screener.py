@@ -3,11 +3,13 @@ from bisect import bisect_left, bisect_right
 from collections import Counter, OrderedDict
 from datetime import datetime
 import hashlib
+import json
 from itertools import groupby
 from pathlib import Path
 import sqlite3
 from threading import Lock
 import time
+from lab.store import LAB_SOURCES
 from .krx_closures import VERSION
 from .market import KST, calendar, expected_sessions, wilder_rsi
 from .snapshot_fingerprint import fingerprint, FingerprintUnavailable
@@ -30,6 +32,13 @@ class ScanBusy(Exception):
 
 class ScanChanged(Exception):
     pass
+
+
+def publication(db):
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='lab_publication'").fetchone():
+        return None
+    row = db.execute("SELECT version,target,summary FROM lab_publication WHERE id=1").fetchone()
+    return (row[0], row[1], json.loads(row[2]).get('data_day')) if row else None
 
 
 class RsiScreener:
@@ -85,14 +94,18 @@ class RsiScreener:
             # snapshot lifecycles. Attest actual DB/WAL commit state independently.
             db = entry['reader']
             now = self.clock()
-            version = fingerprint(path)
+            published = publication(db)
+            version = ('published', published[0]) if published else fingerprint(path)
+            if published and published[2]:
+                cutoff = min(cutoff, published[2])
             db.execute('BEGIN')
             try:
                 # BEGIN is deferred. Pin a real snapshot (and initialize the pager)
                 # before choosing partial progress. A commit between the independent
                 # fingerprint and this snapshot must never reuse older progress.
                 db.execute('SELECT rootpage FROM sqlite_master LIMIT 1').fetchone()
-                if fingerprint(path) != version:
+                observed = publication(db)
+                if observed != published or (not published and fingerprint(path) != version):
                     entry['results'].clear()
                     raise ScanChanged()
                 cache_key = (version, market, cutoff, settings.screen_symbols, VERSION)
@@ -111,7 +124,8 @@ class RsiScreener:
                 # and retain the collector's WAL indefinitely.
                 db.set_progress_handler(None, 0)
                 db.rollback()
-            final_version = fingerprint(path, timeout=0.65)
+            final = publication(db)
+            final_version = ('published', final[0]) if final else fingerprint(path, timeout=0.65)
             final_stamp = path.stat()
             if version != final_version or identity != (final_stamp.st_dev, final_stamp.st_ino):
                 entry['results'].clear()
@@ -122,6 +136,8 @@ class RsiScreener:
                 return result
             result['data_read_at'] = previous['data_read_at'] if previous else datetime.now(KST).isoformat()
             result['data_version'] = hashlib.sha256(repr((identity, version, cutoff, VERSION)).encode()).hexdigest()[:24]
+            result['cutoff'] = cutoff
+            result['publication_version'] = published[0] if published else None
             result['cache_hit'] = False
             result['resumed'] = previous['scanned'] if previous else 0
             # Retain bounded partial progress, never label it complete/cache_hit. Resume
@@ -145,6 +161,11 @@ class RsiScreener:
         total = db.execute('SELECT count(*) FROM symbols WHERE ' + where, params).fetchone()[0]
         symbols = db.execute('SELECT code,name,market FROM symbols WHERE ' + where + ' ORDER BY code LIMIT ? OFFSET ?', (*params, max(0, max_symbols - scanned), scanned)).fetchall()
         quality_ready = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='current_candle_quality' AND type='view'").fetchone())
+        effective = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_candle_quality' AND type='view'").fetchone())
+        published = publication(db)
+        managed = bool(published and published[1])
+        states = dict(db.execute("SELECT code,status FROM lab_public_symbols WHERE target=?", (cutoff,))) if managed else {}
+        supported = {code for code, source in db.execute("SELECT code,source FROM symbols WHERE active=1") if source in LAB_SOURCES} if managed else None
         for start in range(0, len(symbols), BATCH_SIZE):
             if self.clock() >= deadline:
                 break
@@ -172,13 +193,25 @@ class RsiScreener:
                     # Force the current map as the outer index range, joining the exact
                     # version and raw identity. Historical versions cannot replace a missing
                     # current record; missing raw data remains excluded.
+                    overrides = """LEFT JOIN lab_resolution_current a USING(code,date)
+                        LEFT JOIN lab_resolution_events e ON e.id=a.event
+                        LEFT JOIN lab_recovery_candidates recovered ON recovered.id=e.candidate
+                            AND (recovered.base_source,recovered.base_hash,recovered.base_policy)=(q.source,q.raw_hash,q.policy)""" if effective else ""
+                    status = "CASE WHEN v.status='quarantined' AND recovered.id IS NOT NULL THEN 'recovered' ELSE v.status END" if effective else "v.status"
+                    bad = "status IN ('quarantined','corrected')" if managed else "status='quarantined'"
                     qualities = db.execute(f'''WITH selected(code,start) AS (VALUES {','.join('(?,?)' for _ in quality_ranges)})
-                        SELECT code,sum(status='quarantined'),group_concat(date,',') FROM (
-                        SELECT q.code,q.date,v.status FROM selected s CROSS JOIN candle_quality q
+                        SELECT code,sum({bad}),group_concat(date,',') FROM (
+                        SELECT q.code,q.date,{status} AS status FROM selected s CROSS JOIN candle_quality q
                         ON q.code=s.code AND q.date>=s.start AND q.date<=?
                         CROSS JOIN candle_quality_versions v USING(code,date,source,raw_hash,policy)
                         CROSS JOIN raw_candles r USING(code,date,source,raw_hash)
+                        {overrides}
                         ORDER BY q.code,q.date) GROUP BY code''', (*quality_parameters, cutoff)).fetchall()
+                nontrade = {}
+                if effective:
+                    for code, day in db.execute(f"""SELECT n.code,n.date FROM lab_nontrade n JOIN symbols s USING(code,source)
+                        WHERE n.code IN ({','.join('?' for _ in codes)}) AND n.date<=?""", (*codes, cutoff)):
+                        nontrade.setdefault(code, set()).add(day)
             except sqlite3.OperationalError as exc:
                 if self.clock() >= deadline:
                     break
@@ -189,8 +222,15 @@ class RsiScreener:
                     break
                 scanned += 1
                 rows = by_code.get(code, [])
+                confirmed = nontrade.get(code, set())
                 reason = None
-                if len(rows) < self.required_bars:
+                if supported is not None and code not in supported:
+                    reason = 'unsupported_source'
+                elif states.get(code) == 'nontrade':
+                    reason = 'verified_nontrade'
+                elif states and states.get(code) != 'complete':
+                    reason = 'collection_unverified'
+                elif len(rows) < self.required_bars:
                     reason = 'insufficient_warmup'
                 elif rows[-1][1] != cutoff:
                     reason = 'stale_data'
@@ -205,9 +245,10 @@ class RsiScreener:
                     # dates are allowed, just as before; every stored candle must be covered.
                     if ','.join(dates) != quality_dates and not set(dates).issubset(set(quality_dates.split(','))):
                         reason = 'quality_records_missing'
-                    elif dates != all_sessions[bisect_left(all_sessions, rows[0][1]):bisect_right(all_sessions, cutoff)]:
+                    elif tuple(d for d in dates if d not in confirmed) != tuple(d for d in
+                          all_sessions[bisect_left(all_sessions, rows[0][1]):bisect_right(all_sessions, cutoff)] if d not in confirmed):
                         reason = 'missing_sessions'
-                    elif any(not row[3] for row in rows):
+                    elif any(not row[3] and row[1] not in confirmed for row in rows):
                         reason = 'invalid_ohlc'
                 if reason:
                     excluded[reason] += 1
