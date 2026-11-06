@@ -138,6 +138,51 @@
 .dashboard-orders-table th:nth-child(5) { text-align: right; }
 .dashboard-orders-table td { padding: 0; }
 .dashboard-orders-table .data-message { min-height: 180px; }
+.dashboard-recent-orders { container: atlas-recent-orders / inline-size; }
+.dashboard-recent-orders .dashboard-orders-scroll { max-height: 360px; overflow-y: auto; }
+.dashboard-recent-orders .recent-orders-head { height: auto; min-height: 49px; gap: 10px; flex-wrap: wrap; padding-block: 10px; }
+.recent-orders-refresh, .recent-orders-link { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #29415f; border-radius: 5px; padding: 5px 8px; background: #10243b; color: #aec7e0; font-size: 10px; cursor: pointer; }
+.recent-orders-refresh:disabled { opacity: .5; cursor: default; }
+.recent-orders-link { margin-top: 8px; }
+.recent-orders-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; padding: 10px 14px 6px; font-size: 10px; color: #8ba4c1; line-height: 1.6; }
+.recent-order-accounts { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 0 14px 8px; font-size: 10px; color: #7e98b3; }
+.recent-order-accounts label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 100%; }
+.recent-order-accounts select { max-width: 100%; border: 1px solid #29415f; border-radius: 4px; padding: 3px 5px; background: #10243b; color: #c9d9ec; font: inherit; }
+.recent-orders-warning { padding: 0 14px; margin: 5px 0 10px; color: #e6b678; font-size: 10px; line-height: 1.6; }
+.dashboard-recent-orders .recent-orders-table { min-width: 600px; }
+.recent-orders-table .recent-order-row td { padding: 9px 10px; border-top: 1px solid #17283d; color: #c5d7ed; font-size: 10px; vertical-align: middle; }
+.recent-orders-table .recent-order-row td:nth-child(4), .recent-orders-table .recent-order-row td:nth-child(5) { text-align: right; white-space: nowrap; }
+.recent-order-row strong, .recent-order-row small { display: block; }
+.recent-order-row strong { overflow-wrap: anywhere; }
+.recent-order-row small { margin-top: 4px; color: #7896b4; font-size: 9px; }
+.recent-order-row button { display: flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 4px 0; font: inherit; white-space: nowrap; }
+.recent-order-row .is-open { transform: rotate(180deg); }
+.recent-order-state { white-space: nowrap; color: #93adca; }
+.recent-order-state.filled { color: #62d7ba; }
+.recent-order-state.partiallyFilled { color: #85bdff; }
+.recent-order-state.residualCancelled, .recent-order-state.cancelled { color: #e7b97b; }
+.recent-order-state.rejected { color: #ef96a0; }
+.recent-order-detail { padding: 10px 14px; border-top: 1px solid #1c3551; background: #0a2032; font-size: 10px; color: #9db6cf; line-height: 1.7; }
+.recent-order-detail p { margin: 4px 0; overflow-wrap: anywhere; }
+.recent-order-detail ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.recent-order-detail li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; padding-block: 4px; }
+.dashboard-recent-orders button:focus-visible, .dashboard-recent-orders select:focus-visible { outline: 2px solid #6fc8ff; outline-offset: 2px; }
+@container atlas-recent-orders (max-width: 580px) {
+  .dashboard-recent-orders .recent-orders-table { display: block; min-width: 0; width: 100%; }
+  .recent-orders-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .recent-orders-table tbody { display: block; }
+  .recent-orders-table .recent-order-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 9px 14px; gap: 6px 12px; border-top: 1px solid #17283d; }
+  .recent-orders-table .recent-order-row td { padding: 0; border: 0; text-align: left; }
+  .recent-order-row td:nth-child(2) { text-align: right; }
+  .recent-order-row td:nth-child(3) { grid-column: 1 / -1; }
+  .recent-orders-table .recent-order-row td:nth-child(4) { grid-column: 1; grid-row: 3; text-align: left; font-size: 12px; }
+  .recent-order-row td:nth-child(4)::before { content: '체결/주문 '; font-size: 9px; color: #7896b4; }
+  .recent-order-row td:nth-child(6) { grid-column: 2; grid-row: 3; text-align: right; }
+  .recent-orders-table .recent-order-row td:nth-child(5) { grid-column: 1 / -1; text-align: left; }
+  .recent-order-row td:nth-child(5)::before { content: '평균체결가 '; color: #7896b4; }
+  .recent-orders-table tr:not(.recent-order-row) { display: block; }
+  .recent-orders-table tr:not(.recent-order-row) > td { display: block; }
+}
 @container atlas-dashboard (max-width: 960px) {
   .dashboard-market-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .guest-content .trading-grid.dashboard-market-grid {

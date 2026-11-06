@@ -14,7 +14,7 @@ export const validSymbol = symbol => /^[0-9][0-9A-Z]{5}$/.test(symbol)
 // Never propagate transport errors containing a token URL or credentials.
 export async function fetchJson(fetcher, url, options, label) {
   let response
-  try { response = await fetcher(url, { ...options, signal: AbortSignal.timeout(20_000) }) }
+  try { response = await fetcher(url, { ...options, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000) }) }
   catch { throw httpError(`${label} 응답을 확인할 수 없습니다. 잠시 후 다시 조회해 주세요.`, 504) }
   let body
   try { body = await response.json() }

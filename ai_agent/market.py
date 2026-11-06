@@ -45,6 +45,22 @@ def expected_sessions(start, end):
     return [str(s.date()) for s in calendar().sessions_in_range(pd.Timestamp(start), pd.Timestamp(end))]
 
 
+def recent_order_days(day, through):
+    """Include today's session; weekends and holidays use the previous session."""
+    parsed = datetime.strptime(day, '%Y-%m-%d').date().isoformat()
+    if parsed != day or day < '2001-01-01' or day > through:
+        raise ValueError('calendar_unverified')
+    cal = calendar()
+    last = cal.date_to_session(day, direction='previous')
+    days = [str(last.date())]
+    for _ in range(4):
+        last = cal.previous_session(last)
+        days.append(str(last.date()))
+    return {'days': days, 'timezone': 'Asia/Seoul',
+            'source': 'exchange_calendars:XKRX:4.13.2+' + VERSION,
+            'verified_through': through}
+
+
 def wilder_rsi(closes, period=14):
     if len(closes) <= period:
         raise ValueError('insufficient_warmup')

@@ -24,20 +24,21 @@ export function createKbClient({ fetcher = fetch, ip = config.kbClientIp, mac = 
     const data = validateKbResponse(body)
     return { token: data.access_token, expiresIn: data.expires_in }
   })
-  async function request(auth, code, input, { write = false, retry = true } = {}) {
-    if (!['ssam1801', 'ssam1802', 'ssqm1801', 'ssqm1802', 'ssqm2952', 'ivs11560', 'ivu10140'].includes(code)) throw httpError('지원하지 않는 KB API 경로입니다.', 400)
+  async function request(auth, code, input, { write = false, retry = true, signal } = {}) {
+    if (!['ssam1801', 'ssam1802', 'ssqm1801', 'ssqm1802', 'ssqm2952', 'ssqm2341', 'ivs11560', 'ivu10140'].includes(code)) throw httpError('지원하지 않는 KB API 경로입니다.', 400)
     const dataHeader = header(), token = await tokens.get(auth)
     await throttle(auth)
+    signal?.throwIfAborted()
     try {
       const { body } = await fetchJson(fetcher, `${config.kbHost}/api/v1/${code}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ dataHeader, dataBody: input }),
+        body: JSON.stringify({ dataHeader, dataBody: input }), signal,
       }, 'KB')
       return validateKbResponse(body)
     } catch (error) {
       if (error.statusCode === 401) {
         tokens.clear(auth)
-        if (!write && retry) return request(auth, code, input, { retry: false })
+        if (!write && retry) return request(auth, code, input, { retry: false, signal })
       }
       throw error
     }
