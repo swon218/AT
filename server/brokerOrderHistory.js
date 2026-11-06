@@ -23,6 +23,13 @@ const list = (body, key, optional = false) => {
   if (!Array.isArray(body[key])) throw httpError('주문내역 응답 형식을 확인할 수 없습니다.')
   return body[key]
 }
+async function historyStage(stage, work) {
+  try { return await work() }
+  catch (error) {
+    error.orderStage ||= error.tossStage === 'token' ? 'token' : stage
+    throw error
+  }
+}
 
 export function orderState(item) {
   if (item.rejected) return 'rejected'
@@ -77,7 +84,7 @@ export function createBrokerHistory({ kiwoom = requestKiwoomWithCredentials, tos
     const ref = raw => createHmac('sha256', auth.secretKey).update(JSON.stringify([account.user.id, broker, auth.appKey || auth.apiKey, raw])).digest('hex').slice(0, 32)
     let rawAccount = '', accounts, selectedAccountRef, accountLabel
     if (broker === 'nh') {
-      const available = await nhAccounts(auth)
+      const available = await historyStage('accounts', () => nhAccounts(auth))
       signal?.throwIfAborted()
       accounts = available.map(option => ({ id: ref(option.id), label: option.label }))
       const chosen = requestedRef ? available.find(option => ref(option.id) === requestedRef) : available.length === 1 ? available[0] : null
@@ -85,7 +92,7 @@ export function createBrokerHistory({ kiwoom = requestKiwoomWithCredentials, tos
       if (!chosen) return { status: 'accountRequired', accounts, selectedAccountRef: '', items: [] }
       rawAccount = chosen.id; selectedAccountRef = ref(chosen.id); accountLabel = chosen.label
     } else if (broker === 'toss') {
-      const selected = await tossAccount(auth, signal)
+      const selected = await historyStage('accounts', () => tossAccount(auth, signal))
       signal?.throwIfAborted()
       rawAccount = selected.accountSeq
       selectedAccountRef = ref(rawAccount); accountLabel = '종합매매 · API 연결 계좌'
@@ -111,13 +118,13 @@ export function createBrokerHistory({ kiwoom = requestKiwoomWithCredentials, tos
     if (broker === 'kiwoom') {
       for (const day of days) {
         const snapshots = new Map(), fills = new Map()
-        const fetchRows = async (apiId, key, body, collect) => paged(async nextKey => {
+        const fetchRows = async (apiId, key, body, collect) => historyStage(apiId, () => paged(async nextKey => {
           await pause(signal)
           return kiwoom({ ...auth, apiId, endpoint: '/api/dostk/acnt', body: { ord_dt: dayString(day), stk_bond_tp: '1', sell_tp: '0', stk_cd: '', fr_ord_no: '', dmst_stex_tp: '%', ...body }, returnPage: true, contYn: nextKey ? 'Y' : 'N', nextKey, timeoutMs: 12_000, signal })
         }, result => {
           if (String(result.body?.return_code) !== '0') throw httpError('키움 주문내역 응답을 확인할 수 없습니다.')
           collect(list(result.body, key, true)); return { more: result.contYn === 'Y', key: result.nextKey }
-        })
+        }))
         await fetchRows('kt00007', 'acnt_ord_cntr_prps_dtl', { qry_tp: '2' }, rows => {
           for (const row of rows) snapshots.set(no(row.ord_no), row)
         })
@@ -152,7 +159,7 @@ export function createBrokerHistory({ kiwoom = requestKiwoomWithCredentials, tos
         }
       }
     } else if (broker === 'toss') {
-      for (const group of ['OPEN', 'CLOSED']) await paged(cursor => toss({ ...auth, path: '/api/v1/orders', accountSeq: rawAccount,
+      for (const group of ['OPEN', 'CLOSED']) await historyStage(group === 'OPEN' ? 'orders_open' : 'orders_closed', () => paged(cursor => toss({ ...auth, path: '/api/v1/orders', accountSeq: rawAccount,
         query: { status: group, from: days.at(-1), to: days[0], limit: 100, cursor }, signal }), payload => {
         const result = payload.result
         if (!result || typeof result.hasNext !== 'boolean') throw httpError('토스 주문내역 응답을 확인할 수 없습니다.')
@@ -173,17 +180,17 @@ export function createBrokerHistory({ kiwoom = requestKiwoomWithCredentials, tos
           }))
         }
         return { more: result.hasNext, key: result.nextCursor }
-      })
+      }))
     } else if (broker === 'nh') {
       for (const day of days) {
         const rows = new Map()
-        await paged(cts => nh.request(auth, '/krstock/inquiry/v1/dailyOrderExecution', {
+        await historyStage('dailyOrderExecution', () => paged(cts => nh.request(auth, '/krstock/inquiry/v1/dailyOrderExecution', {
           orr_dt: dayString(day), act_no: rawAccount, itg_orr_no: 0, orr_mkt_cd: '00', ost_cns_dit: '0',
         }, { cts, signal }), result => {
           if (!result.rsp_cd) throw httpError('NH 주문내역 응답을 확인할 수 없습니다.')
           for (const row of list(result, 'Output_0', true)) rows.set(no(row.itg_orr_no), row)
           return { more: result.hasMore || ['00165', '00218'].includes(result.rsp_cd), key: result.continuation }
-        })
+        }))
         const childCancellations = new Map(), children = new Set()
         for (const [id, row] of rows) {
           const parent = no(row.org_itg_orr_no)
@@ -206,11 +213,11 @@ export function createBrokerHistory({ kiwoom = requestKiwoomWithCredentials, tos
     } else if (broker === 'kb') {
       for (const day of days) {
         const rows = new Map()
-        await paged(nxtKey => kb.request(auth, 'ssqm2341', { ccls_clsf: '0', ordr_dt: dayString(day), nxt_key: nxtKey }, { signal }), result => {
+        await historyStage('ssqm2341', () => paged(nxtKey => kb.request(auth, 'ssqm2341', { ccls_clsf: '0', ordr_dt: dayString(day), nxt_key: nxtKey }, { signal }), result => {
           if (positive(result.grid_cnt1) > (result.Record1?.length || 0)) throw httpError('KB 주문내역 목록을 모두 확인하지 못했습니다.')
           for (const row of list(result, 'Record1', true)) rows.set(no(row.ordr_no), row)
           return { more: Boolean(String(result.nxt_key || '').trim()), key: String(result.nxt_key || '').trim() }
-        })
+        }))
         const childCancellations = new Map(), children = new Set()
         for (const [id, row] of rows) {
           const parent = no(row.orgn_ordr_no)

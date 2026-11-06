@@ -86,7 +86,7 @@ export async function getKiwoomRealtimeAuth({ appKey = config.kiwoomAppKey, secr
 }
 
 export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false, timeoutMs, signal }) {
-  const { token, cacheKey } = await getAccessToken({ appKey, secretKey })
+  const { token, cacheKey } = await getAccessToken({ appKey, secretKey }).catch(error => { error.orderStage = 'token'; throw error })
   signal?.throwIfAborted()
   try {
     const response = await fetch(`${config.kiwoomHost}${endpoint}`, {

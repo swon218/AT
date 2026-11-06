@@ -8,17 +8,20 @@ import { normalizeHistoryOrder } from '../server/brokerOrderHistory.js'
 
 const days = ['2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03', '2026-11-02']
 const app = Fastify()
+const metrics = { requests: 0, reads: 0 }
 registerRecentOrderRoutes(app, createRecentOrderHandlers({
   now: () => Date.parse('2026-11-06T23:00:00+09:00'), calendar: async () => ({ days, timezone: 'Asia/Seoul' }),
   authenticate: async request => {
     const id = request.headers.authorization?.slice(7)
-    if (!/^qa-(alice|bob|partial|empty|missing)$/.test(id || '')) throw Object.assign(new Error(), { statusCode: 401 })
+    if (!/^qa-(alice|bob|partial|empty|missing|rate)$/.test(id || '')) throw Object.assign(new Error(), { statusCode: 401 })
     return { user: { id }, status: { kiwoomConfigured: true, tossConfigured: true, nhConfigured: true, kbConfigured: id !== 'qa-missing' },
       credentials: { kiwoomAppKey: 'fixture', kiwoomSecretKey: 'fixture', tossApiKey: 'fixture', tossSecretKey: 'fixture', nhAppKey: 'fixture', nhSecretKey: 'fixture', kbAppKey: 'fixture', kbSecretKey: 'fixture' } }
   },
   readBroker: async (broker, owner, _, requestedRef) => {
+    metrics.reads++
     if (owner.user.id === 'qa-alice') await new Promise(resolve => setTimeout(resolve, 2000))
     if (owner.user.id === 'qa-partial' && broker === 'kb') throw new Error('fixture failure')
+    if (owner.user.id === 'qa-rate' && broker === 'toss') throw Object.assign(new Error('fixture limit'), { statusCode: 429, retryAfter: '30' })
     const accounts = broker === 'nh' ? [{ id: 'a'.repeat(32), label: '검증 계좌 A · ***1111' }, { id: 'b'.repeat(32), label: '검증 계좌 B · ***2222' }] : [{ id: 'a'.repeat(32), label: '검증용 API 연결 계좌' }]
     const selectedAccountRef = requestedRef || (accounts.length === 1 ? accounts[0].id : '')
     if (!selectedAccountRef) return { status: 'accountRequired', accounts, selectedAccountRef: '', items: [] }
@@ -35,7 +38,9 @@ const server = await createServer({ configFile: false, envDir: false, plugins: [
     if (id.replaceAll('\\', '/').endsWith('/src/services/supabaseClient.js')) return `let token = ''; export const setQaUser = value => { token = value }; export const supabase = {auth:{getSession: async () => ({data:{session:token?{access_token:token}:null}})}}`
   }, configureServer(vite) {
     vite.middlewares.use(async (req, res, next) => {
+      if (req.url === '/__qa/metrics') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify(metrics)) }
       if (!req.url.startsWith('/api/account/orders/recent')) return next()
+      metrics.requests++
       const result = await app.inject({ method: 'GET', url: req.url, headers: req.headers })
       res.writeHead(result.statusCode, result.headers); res.end(result.body)
     })

@@ -4,6 +4,7 @@ const base = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export async function getRecentOrders({ accountRefs = {}, selected, broker, id, signal } = {}) {
   const { data } = await supabase?.auth.getSession() ?? { data: {} }
+  signal?.throwIfAborted()
   const token = data?.session?.access_token
   if (!token) throw Object.assign(new Error('로그인이 필요합니다.'), { status: 401 })
   const query = new URLSearchParams(Object.entries(accountRefs).map(([broker, value]) => [`${broker}Account`, value]))
