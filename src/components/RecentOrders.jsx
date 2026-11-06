@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, RefreshCw } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import useRecentOrders from '../hooks/useRecentOrders'
 import { getRecentOrders } from '../services/recentOrdersApi'
 import { BROKERS, getBroker } from '../utils/brokers'
-import { missingOrderBrokers, orderStatusLabels } from '../utils/recentOrders'
+import { orderStatusLabels } from '../utils/recentOrders'
+import { toggleAssetBroker } from '../utils/assetSummary'
 
 const number = value => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) : '—'
 const money = value => value == null ? '—' : `${number(value)}원`
@@ -30,29 +31,29 @@ function OrderDetails({ order, accountRefs, scope }) {
   </div>
 }
 
-export default function RecentOrders({ currentUser, integrationStatus, integrationVersion, onOpenSettings, onLogin }) {
+export default function RecentOrders({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange, onOpenSettings, onLogin }) {
   const [selection, setSelection] = useState(null)
   const accountRefs = selection?.owner === currentUser?.id && selection?.version === integrationVersion ? selection.refs : {}
-  const [revision, setRevision] = useState(0)
-  const state = useRecentOrders({ userId: currentUser?.id, integrationStatus, integrationVersion, accountRefs, revision })
+  const state = useRecentOrders({ userId: currentUser?.id, integrationStatus, integrationVersion, accountRefs, selected })
   const [expanded, setExpanded] = useState(null)
-  const missing = state.error?.status === 403 && state.error.missingBrokers?.length ? state.error.missingBrokers : missingOrderBrokers(integrationStatus)
-  const eligible = Boolean(currentUser && !missing.length)
-  const data = eligible ? state.data : null
+  const data = currentUser && selected.length ? state.data : null
+  const missing = data?.brokers.filter(broker => broker.status === 'unconfigured') || []
   const failures = data?.brokers.filter(broker => broker.status === 'error') || []
   const accountRequired = data?.brokers.filter(broker => broker.status === 'accountRequired') || []
-  const emptySuccess = data?.brokers.length === BROKERS.length && data.brokers.every(broker => broker.status === 'ready') && !data.items.length
+  const emptySuccess = selected.length > 0 && data?.brokers.length === selected.length && data.brokers.every(broker => broker.status === 'ready') && !data.items.length
 
   return <article className="panel dashboard-recent-orders">
-    <div className="panel-head recent-orders-head"><div><h2>최근 주문 · 체결 내역</h2></div><button type="button" className="recent-orders-refresh" aria-label="최근 주문 내역 새로고침" disabled={!eligible || state.loading} onClick={() => setRevision(value => value + 1)}><RefreshCw size={12}/>새로고침</button></div>
-    {!currentUser ? <div className="data-message">로그인 후 최근 주문·체결 내역을 볼 수 있습니다.<button type="button" className="recent-orders-link" onClick={onLogin}>로그인</button></div>
-      : missing.length ? <div className="data-message"><span>{missing.map(broker => broker.name).join(' · ')} API를 등록하면 4개 증권사 내역을 볼 수 있습니다.</span><button type="button" className="recent-orders-link" onClick={onOpenSettings}>개인 설정</button></div>
+    <div className="panel-head recent-orders-head"><div><h2>최근 주문 · 체결 내역</h2></div><button type="button" className="dashboard-news-more recent-orders-more" disabled title="주문·체결 내역 탭 준비 중" aria-label="최근 주문·체결 내역 더보기 (준비 중)">더보기</button></div>
+    <div className="holdings-broker-tabs recent-orders-brokers" role="group" aria-label="최근 주문 증권사 선택">{BROKERS.map(broker => <button type="button" key={broker.id} aria-pressed={selected.includes(broker.id)} className={selected.includes(broker.id) ? `active ${broker.id}` : ''} onClick={() => onSelectedChange(value => toggleAssetBroker(value, broker.id, { allowEmpty: true }))}>{broker.shortName}</button>)}</div>
+    {!selected.length ? <div className="data-message" role="status">증권사를 선택해주세요</div>
+      : !currentUser ? <div className="data-message">로그인 후 최근 주문·체결 내역을 볼 수 있습니다.<button type="button" className="recent-orders-link" onClick={onLogin}>로그인</button></div>
       : <>
-        <div className="recent-orders-meta">최근 5거래일 · 최신 10건 · KST{data && <span>{data.range.days.at(-1)} ~ {data.range.days[0]}</span>}</div>
+        <div className="recent-orders-meta">최근 5거래일 · 최근 5건 · 최신 거래가 아래에 표시됩니다.{data?.range && <span>{data.range.days.at(-1)} ~ {data.range.days[0]} · KST</span>}</div>
+        {missing.length > 0 && <p className="recent-orders-warning" role="status">{missing.map(broker => getBroker(broker.broker).name).join(' · ')} API 미등록 · 연결된 선택 증권사의 내역을 표시합니다. <button type="button" className="recent-orders-link" onClick={onOpenSettings}>개인 설정</button></p>}
         {data && <div className="recent-order-accounts">{data.brokers.map(broker => broker.accounts?.length > 1 ? <label key={broker.broker}>{getBroker(broker.broker).shortName} 조회 계좌<select aria-label={`${getBroker(broker.broker).name} 주문내역 조회 계좌`} value={accountRefs[broker.broker] || broker.selectedAccountRef || ''} onChange={event => setSelection({ owner: currentUser.id, version: integrationVersion, refs: { ...accountRefs, [broker.broker]: event.target.value } })}><option value="" disabled>계좌 선택</option>{broker.accounts.map(account => <option value={account.id} key={account.id}>{account.label}</option>)}</select></label> : broker.selectedAccountRef ? <small key={broker.broker}>{getBroker(broker.broker).shortName} · {broker.accounts?.[0]?.label}</small> : null)}</div>}
         {failures.length > 0 && <p className="recent-orders-warning" role="status">{failures.map(broker => getBroker(broker.broker).name).join(' · ')} 조회 실패 · 성공한 증권사 내역만 표시합니다.</p>}
         {accountRequired.length > 0 && <p className="recent-orders-warning" role="status">{accountRequired.map(broker => getBroker(broker.broker).name).join(' · ')} 조회 계좌를 선택해 주세요.</p>}
-        {data?.orderingIncomplete && <p className="recent-orders-warning">주문 시각 미제공 내역은 같은 날짜의 시각 확인 내역 뒤에 표시합니다. 해당 날짜 내 최신 순서는 확정할 수 없습니다.</p>}
+        {data?.orderingIncomplete && <p className="recent-orders-warning">주문 시각 미제공 내역은 같은 날짜의 시각 확인 내역 앞에 표시합니다. 해당 날짜 내 정확한 시간순서는 확인할 수 없습니다.</p>}
         {state.loading ? <div className="data-message" role="status">주문·체결 내역을 조회하고 있습니다.</div>
           : state.error ? <div className="data-message" role="status">{state.error.message}</div>
           : emptySuccess ? <div className="data-message">최근 주문 없음</div>

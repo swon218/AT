@@ -19,51 +19,78 @@ const authenticate = async req => {
 const request = (token = 'user-a', query = {}) => ({ headers: { authorization: `Bearer ${token}` }, query })
 const makeOrder = (broker, ref = 'a'.repeat(32), day = days[0], id = '1', values = {}) => normalizeHistoryOrder(broker, ref, day, id, { symbol: '005930', quantity: 10, filledQuantity: 4, pending: true, ...values })
 
-test('list AND detail reject guests, invalid sessions and 0–3 brokers before calendar or ANY brokerage call', async t => {
+test('list AND detail reject guests and invalid sessions before calendar or ANY brokerage call', async t => {
   let brokerageCalls = 0, calendarCalls = 0
   const app = Fastify(); t.after(() => app.close())
   registerRecentOrderRoutes(app, createRecentOrderHandlers({ authenticate, calendar: async () => { calendarCalls++; return calendar() }, readBroker: async () => { brokerageCalls++; throw new Error('forbidden') } }))
   for (const path of ['/api/account/orders/recent', `/api/account/orders/recent/kiwoom/${'a'.repeat(64)}`]) {
-    for (const token of ['', 'expired', '0', '1', '2', '3']) {
-      const response = await app.inject({ url: path + '?userId=admin&kiwoomConfigured=true&accountId=12345678901', headers: token ? { authorization: `Bearer ${token}` } : {} })
-      assert.equal(response.statusCode, token && token !== 'expired' ? 403 : 401)
+    for (const token of ['', 'expired']) {
+      const response = await app.inject({ url: path + '?brokers=kiwoom&userId=admin&kiwoomConfigured=true&accountId=12345678901', headers: token ? { authorization: `Bearer ${token}` } : {} })
+      assert.equal(response.statusCode, 401)
       assert.equal(response.headers['cache-control'], 'private, no-store')
       assert.ok(!response.body.includes('secret'))
-      if (token === '3') assert.deepEqual(response.json().missingBrokers, [{ id: 'kb', name: 'KB증권' }])
     }
   }
   assert.equal(brokerageCalls, 0); assert.equal(calendarCalls, 0)
 })
 
-test('a configured flag without the actual personal key also fails; registrations are read on every request', async () => {
+test('all 16 selections query only selected registered brokers, including zero and partially configured users', async () => {
+  const calls = []; let calendarCalls = 0, registrationMask = 0
+  const handlers = createRecentOrderHandlers({ now, calendar: async () => { calendarCalls++; return calendar() }, authenticate: async () => {
+    const a = account()
+    for (const [i, broker] of HISTORY_BROKERS.entries()) a.status[`${broker}Configured`] = Boolean(registrationMask & (1 << i))
+    return a
+  }, readBroker: async broker => { calls.push(broker); return { status: 'ready', items: [makeOrder(broker)], accounts: [] } } })
+  for (registrationMask = 0; registrationMask < 16; registrationMask++) for (let selectedMask = 0; selectedMask < 16; selectedMask++) {
+    calls.length = 0; calendarCalls = 0
+    const selected = HISTORY_BROKERS.filter((_, i) => selectedMask & (1 << i))
+    const expected = HISTORY_BROKERS.filter((_, i) => selectedMask & registrationMask & (1 << i))
+    const result = await handlers.list(request('user-a', { brokers: selected.join(',') }))
+    assert.deepEqual(calls, expected)
+    assert.deepEqual(result.brokers.map(b => b.broker), selected)
+    assert.equal(calendarCalls, expected.length ? 1 : 0)
+    assert.ok(result.brokers.every(b => b.status === (expected.includes(b.broker) ? 'ready' : 'unconfigured')))
+  }
+  calls.length = 0; calendarCalls = 0
+  await assert.rejects(handlers.list(request('user-a', { brokers: 'unknown' })), { statusCode: 400 })
+  assert.equal(calls.length, 0); assert.equal(calendarCalls, 0)
+})
+
+test('credentials are checked for each broker on every request; an unrelated missing key never blocks detail', async () => {
   let calls = 0, registered = true, authCalls = 0
   const handlers = createRecentOrderHandlers({ now, calendar, authenticate: async () => { authCalls++; const a = account(); if (!registered) delete a.credentials.kbSecretKey; return a },
     readBroker: async broker => { calls++; return { status: 'ready', items: [makeOrder(broker)], accounts: [] } } })
   const result = await handlers.list(request())
   assert.equal(calls, 4); assert.equal(result.items.length, 4)
   registered = false
-  await assert.rejects(handlers.list(request()), { statusCode: 403 })
+  const partial = await handlers.list(request())
+  assert.equal(calls, 7); assert.equal(partial.brokers.find(b => b.broker === 'kb').status, 'unconfigured')
   await assert.rejects(handlers.detail({ ...request(), params: { broker: 'kb', id: result.items[0].id } }), { statusCode: 403 })
-  assert.equal(calls, 4); assert.equal(authCalls, 3)
+  assert.equal(calls, 7)
+  assert.equal((await handlers.detail({ ...request(), params: { broker: 'kiwoom', id: makeOrder('kiwoom').id } })).item.broker, 'kiwoom')
+  assert.equal(calls, 8); assert.equal(authCalls, 4)
 })
 
-test('all four brokers use authenticated identity, latest ten sort, partial failure, all-empty and no shared responses', async () => {
+test('selected brokers use authenticated identity, latest FIVE are displayed oldest first, partial failure and all-empty stay distinct', async () => {
   const callers = []; let failed = '', empty = false
   const handlers = createRecentOrderHandlers({ authenticate, calendar, now, readBroker: async (broker, owner) => {
     callers.push([broker, owner.user.id]); if (failed === broker) throw new Error('token=secret account=12345678901')
     return { status: 'ready', accounts: [], items: empty ? [] : [1, 2, 3, 4].map(i => makeOrder(broker, 'a'.repeat(32), days[0], String(i), { orderedAt: `2026-11-06T09:00:0${i}+09:00` })) }
   } })
   const first = await handlers.list(request('alice', { userId: 'mallory' }))
-  assert.equal(first.items.length, 10); assert.ok(first.items.every((row, i, rows) => !i || Date.parse(rows[i - 1].orderedAt) >= Date.parse(row.orderedAt)))
+  assert.equal(first.items.length, 5)
+  assert.ok(first.items.every((row, i, rows) => !i || Date.parse(rows[i - 1].orderedAt) <= Date.parse(row.orderedAt)))
+  assert.equal(first.items[0].orderedAt, '2026-11-06T09:00:03+09:00')
+  assert.equal(first.items.at(-1).orderedAt, '2026-11-06T09:00:04+09:00')
   assert.deepEqual(callers.slice(0, 4), HISTORY_BROKERS.map(b => [b, 'alice']))
   failed = 'nh'
-  const partial = await handlers.list(request('bob'))
+  const partial = await handlers.list(request('bob', { brokers: 'kiwoom,nh,toss' }))
   assert.equal(partial.brokers.find(b => b.broker === 'nh').status, 'error')
-  assert.equal(partial.items.length, 10); assert.ok(!JSON.stringify(partial).includes('secret'))
-  assert.ok(callers.slice(4).every(([, id]) => id === 'bob'))
+  assert.equal(partial.items.length, 5); assert.ok(!JSON.stringify(partial).includes('secret'))
+  assert.ok(callers.slice(4).every(([broker, id]) => id === 'bob' && broker !== 'kb'))
   failed = ''; empty = true
-  const zero = await handlers.list(request())
-  assert.deepEqual(zero.items, []); assert.ok(zero.brokers.every(b => b.status === 'ready'))
+  const zero = await handlers.list(request('user-a', { brokers: 'toss' }))
+  assert.deepEqual(zero.items, []); assert.deepEqual(zero.brokers.map(b => [b.broker, b.status]), [['toss', 'ready']])
 })
 
 test('deadline records a broker failure; details cannot escape current authorized account or range', async () => {

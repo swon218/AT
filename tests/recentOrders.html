@@ -9,13 +9,14 @@ import '/src/styles.css'
 import '/src/components/Dashboard.css'
 function Fixture() {
   const [user, setUser] = useState(''), [notice, setNotice] = useState('')
+  const [selected, setSelected] = useState(['kiwoom', 'toss', 'nh', 'kb'])
   const status = { kiwoomConfigured: true, tossConfigured: true, nhConfigured: true, kbConfigured: user !== 'qa-missing' }
   return React.createElement('main', {style:{margin:'20px',maxWidth:'650px'}},
     React.createElement('p', {}, '최근 주문 · 체결 내역 — 모의 데이터 검증'),
     React.createElement('label', {}, '검증 시나리오 ', React.createElement('select', { 'aria-label':'검증 시나리오', value:user, onChange:event => {setQaUser(event.target.value); setUser(event.target.value)} },
       ...[['','비로그인'],['qa-missing','KB 미등록'],['qa-alice','사용자 A · 느린 응답'],['qa-bob','사용자 B'],['qa-partial','KB 조회 실패'],['qa-empty','정상 0건']].map(([value,label]) => React.createElement('option',{key:value,value},label)))),
     React.createElement('p', {role:'status'}, notice),
-    React.createElement('div', {style:{marginTop:'16px'}}, React.createElement(RecentOrders, {currentUser:user?{id:user}:null,integrationStatus:status,integrationVersion:0,onOpenSettings:()=>setNotice('개인 설정 이동 확인'),onLogin:()=>setNotice('로그인 동작 확인')})))
+    React.createElement('div', {style:{marginTop:'16px'}}, React.createElement(RecentOrders, {currentUser:user?{id:user}:null,integrationStatus:status,integrationVersion:0,selected,onSelectedChange:setSelected,onOpenSettings:()=>setNotice('개인 설정 이동 확인'),onLogin:()=>setNotice('로그인 동작 확인')})))
 }
 createRoot(document.getElementById('root')).render(React.createElement(Fixture))
 </script></body></html>
