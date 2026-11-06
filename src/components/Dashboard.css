@@ -101,9 +101,9 @@
 .dashboard-index-panel button:focus-visible, .dashboard-news button:focus-visible, .dashboard-news a:focus-visible { outline: 2px solid #6fc8ff; outline-offset: -2px; }
 .dashboard-account-grid .dashboard-holdings-table { overflow-x: auto; }
 .dashboard-account-grid .dashboard-holding-row { min-width: 455px; }
-.dashboard-holdings-head { flex-wrap: wrap; gap: 10px; }
+.dashboard-holdings .dashboard-holdings-head { flex-wrap: wrap; gap: 10px; height: auto; min-height: 49px; padding-block: 10px; box-sizing: border-box; }
 .dashboard-holdings .holdings-broker-tabs { flex-wrap: wrap; }
-.dashboard-holdings .holdings-broker-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.dashboard-holdings .holdings-broker-tabs button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 48px; min-width: 48px; height: 28px; padding: 0; flex: 0 0 48px; font-size: 11px; }
 .holdings-broker-tabs button.active.nh { border-color: #e9b940; }
 .holdings-broker-tabs button.active.kb { border-color: #f39944; }
 .dashboard-holdings button:disabled { cursor: default; }
@@ -114,14 +114,10 @@
 .dashboard-holdings-tools small { font-size: 10px; line-height: 1.6; }
 .dashboard-holdings-tools button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #29415f; border-radius: 5px; padding: 5px 7px; background: #10243b; color: #aec7e0; font-size: 10px; cursor: pointer; }
 .dashboard-holdings-tools button:disabled { opacity: .5; }
-.dashboard-holdings-status { display: grid; gap: 6px; padding: 0 15px 10px; }
-.dashboard-broker-status { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 8px; color: #839fba; font-size: 10px; line-height: 1.6; }
-.dashboard-broker-status strong { color: #c9d9ec; }
-.dashboard-broker-status.ready > span { color: #63d6b3; }
-.dashboard-broker-status.error > span, .dashboard-broker-status.error > small { color: #ef9ba5; }
-.dashboard-broker-status small { font-size: 10px; overflow-wrap: anywhere; }
-.dashboard-broker-status label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px; max-width: 100%; }
-.dashboard-broker-status select { max-width: 100%; border: 1px solid #29415f; border-radius: 4px; padding: 3px 5px; background: #10243b; color: #c9d9ec; font: inherit; }
+.dashboard-holdings-accounts { display: grid; gap: 6px; padding: 0 15px 10px; color: #839fba; font-size: 10px; }
+.dashboard-holdings-accounts:empty { display: none; }
+.dashboard-holdings-accounts label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px; max-width: 100%; }
+.dashboard-holdings-accounts select { max-width: 100%; border: 1px solid #29415f; border-radius: 4px; padding: 3px 5px; background: #10243b; color: #c9d9ec; font: inherit; }
 .dashboard-orders-scroll { overflow-x: auto; }
 .dashboard-orders-table {
   width: 100%;

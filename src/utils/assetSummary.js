@@ -8,10 +8,10 @@ export const ASSET_METRICS = [
 
 export const hasAmount = value => typeof value === 'number' && Number.isFinite(value)
 
-export function toggleAssetBroker(selected, broker) {
+export function toggleAssetBroker(selected, broker, { allowEmpty = false } = {}) {
   if (!BROKERS.some(item => item.id === broker)) return selected
   if (!selected.includes(broker)) return [...selected, broker]
-  return selected.length > 1 ? selected.filter(id => id !== broker) : selected
+  return allowEmpty || selected.length > 1 ? selected.filter(id => id !== broker) : selected
 }
 
 export function summarizeAssets(selected, accounts) {
