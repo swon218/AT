@@ -6,7 +6,6 @@ previous data; there is deliberately no silent fallback to a different market.
 import argparse
 from datetime import date, datetime, timedelta
 import json
-import math
 import os
 from pathlib import Path
 import subprocess
@@ -14,7 +13,7 @@ import sys
 import time
 
 from store import KST, SOURCE, connect, now_iso, save_rows, prepare_rows, quality_counts
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 
 
 @contextmanager
@@ -50,24 +49,14 @@ def provider_worker(args):
     import FinanceDataReader as fdr
     if args.worker == "listing":
         frame = fdr.StockListing("KRX")
-        try:
-            import pandas as pd
-            listed = {str(row.Code).zfill(6): row.ListingDate.strftime("%Y-%m-%d")
-                      for row in fdr.StockListing("KRX-DESC").itertuples() if pd.notna(row.ListingDate)}
-        except Exception:
-            listed = {}
-        rows = [{"code": str(row.Code).zfill(6), "name": str(row.Name), "market": str(row.Market),
-                 "listed": listed.get(str(row.Code).zfill(6))}
+        rows = [{"code": str(row.Code).zfill(6), "name": str(row.Name), "market": str(row.Market)}
                 for row in frame.itertuples() if row.Market in ("KOSPI", "KOSDAQ")]
         if not rows:
             raise ValueError("Empty KRX listing")
         return rows
     frame = fdr.DataReader(f"{args.source}:{args.symbol}", args.start, args.end)
-    def value(raw):
-        number = float(raw)
-        return number if math.isfinite(number) else str(number)
     return [{"date": index.strftime("%Y-%m-%d"),
-             **{key.lower(): value(row[key]) for key in ("Open", "High", "Low", "Close", "Volume")}}
+             **{key.lower(): float(row[key]) for key in ("Open", "High", "Low", "Close", "Volume")}}
             for index, row in frame.iterrows()]
 
 
@@ -211,9 +200,6 @@ if __name__ == "__main__":
                     connect(args.db).close()
                     print("Quality schema ready; existing candles preserved.")
                 else:
-                    with closing(connect(args.db)) as guard:
-                        if guard.execute("SELECT 1 FROM lab_batches UNION ALL SELECT 1 FROM lab_publication LIMIT 1").fetchone():
-                            raise OSError("Use lab/nightly.py for a managed database")
                     sys.exit(collect(args))
         except OSError as exc:
             print(f"Collector lock/storage unavailable: {exc}", file=sys.stderr)

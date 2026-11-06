@@ -209,7 +209,6 @@ class ResearchTools:
             if key not in self.rsi_snapshots:
                 self.rsi_snapshots[key] = await asyncio.to_thread(self.screener.scan, self.settings, args.market, cutoff)
             scan = self.rsi_snapshots[key]
-            cutoff = scan.get('cutoff', cutoff)
         except ScanBusy:
             raise ToolError('screen_busy', True)
         except ScanChanged:

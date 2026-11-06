@@ -28,12 +28,12 @@ function EquityCurve({ points }) {
   return <div className="lab-equity"><div><span>일별 평가자산</span><span>{won(low)} ~ {won(high)}원</span></div><svg viewBox="0 0 800 145" role="img" aria-label="백테스트 일별 평가자산 추이"><path d={path} fill="none" stroke="#8d99ff" strokeWidth="2.5"/></svg><div><small>{points[0].time}</small><small>{points.at(-1).time}</small></div></div>
 }
 
-export default function LabBacktestPanel({ candles, quality, symbol, publication, basis, indicators, settings, onSettingsChange, strategyName, disabled }) {
+export default function LabBacktestPanel({ candles, quality, symbol, indicators, settings, onSettingsChange, strategyName, disabled }) {
   const [run, setRun] = useState(null)
   const [error, setError] = useState('')
   const update = patch => onSettingsChange(previous => ({ ...previous, ...patch }))
   const rules = RULES.filter(rule => indicators.some(c => c.id === rule.indicator))
-  const fingerprint = useMemo(() => JSON.stringify([symbol, candles, quality, publication?.version, basis, indicators, settings]), [symbol, candles, quality, publication?.version, basis, indicators, settings])
+  const fingerprint = useMemo(() => JSON.stringify([symbol, candles, quality, indicators, settings]), [symbol, candles, quality, indicators, settings])
   const qualityError = useMemo(() => {
     if (!candles.length) return ''
     try { validateIndicators(indicators); backtestWindow(candles, indicators, settings); return '' }
@@ -47,7 +47,7 @@ export default function LabBacktestPanel({ candles, quality, symbol, publication
     catch (err) { setRun(null); setError(err.message) }
   }
   const exportResult = () => {
-    const blob = new Blob([JSON.stringify({ engineVersion: 2, exportedAt: new Date().toISOString(), symbol, publication: publication || null, basis: basis || null, quality: quality || null, strategyName: run.name, indicators: run.indicators, settings: run.settings, result, candles }, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify({ engineVersion: 2, exportedAt: new Date().toISOString(), symbol, quality: quality || null, strategyName: run.name, indicators: run.indicators, settings: run.settings, result, candles }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob), a = document.createElement('a')
     a.href = url; a.download = `atlas-lab-${symbol.code}-${result.end}.json`; a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)

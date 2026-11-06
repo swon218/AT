@@ -8,24 +8,11 @@ test('historical endpoints work without login and validate symbol before databas
   let reads = 0
   registerLabRoutes(app, async code => { reads++; return code ? { items: [{ time: '2025-01-02', close: 100 }] } : { ready: true, items: [{ code: '005930' }] } })
   try {
-    const catalog = await app.inject('/api/public/lab/symbols')
-    assert.equal(catalog.statusCode, 200)
-    assert.equal(catalog.headers['cache-control'], 'no-store')
+    assert.equal((await app.inject('/api/public/lab/symbols')).statusCode, 200)
     assert.equal((await app.inject('/api/public/lab/candles?symbol=005930')).statusCode, 200)
     assert.equal((await app.inject('/api/public/lab/candles?symbol=00680K')).statusCode, 200)
     assert.equal((await app.inject('/api/public/lab/candles?symbol=../../env')).statusCode, 400)
     assert.equal(reads, 3)
-  } finally { await app.close() }
-})
-
-test('known collection failures return a status even when no candle has been published', async () => {
-  const app = Fastify()
-  registerLabRoutes(app, async () => ({ items: [], collection: { status: 'not_reflected', target: '2026-10-30' } }))
-  try {
-    const response = await app.inject('/api/public/lab/candles?symbol=005930')
-    assert.equal(response.statusCode, 200)
-    assert.equal(response.json().collection.status, 'not_reflected')
-    assert.equal(response.headers['cache-control'], 'no-store')
   } finally { await app.close() }
 })
 

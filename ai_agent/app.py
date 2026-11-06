@@ -103,13 +103,9 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
                 latest = db.execute('SELECT max((SELECT max(date) FROM candles c WHERE c.code=s.code)) FROM symbols s WHERE active=1').fetchone()[0]
                 sources = [r[0] for r in db.execute('SELECT DISTINCT source FROM symbols WHERE active=1')]
                 quality = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='current_candle_quality' AND type='view'").fetchone())
-                from .screener import publication
-                published = publication(db)
             from .market import market_context
             context = market_context(clock() if clock else datetime.now(KST), s.calendar_through)
-            cutoff = min(context['latest_completed'], published[2]) if published and published[2] else context['latest_completed']
-            return {'available': True, 'universe': total, 'latest_bar': latest, 'cutoff': cutoff,
-                    'publication_version': published[0] if published else None,
+            return {'available': True, 'universe': total, 'latest_bar': latest, 'cutoff': context['latest_completed'],
                     'sources': sources, 'quality_ready': quality, 'timeframe': '1d', 'max_conditions': 8}
         try:
             return await asyncio.to_thread(read_meta)

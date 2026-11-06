@@ -12,16 +12,14 @@ function MetricEditor({ value, onChange, label }) {
     </div>}
   </div>
 }
-const reasons = { quarantined_ohlc: '품질 격리', insufficient_warmup: '계산 이력 부족', missing_sessions: '거래일 누락', stale_data: '최신 일봉 미수집', quality_records_missing: '품질 이력 누락', quality_unavailable: '품질 검증 불가', unsupported_source: '지원하지 않는 출처', indicator_unavailable: '지표 계산 불가', invalid_ohlc: 'OHLC 오류', invalid_volume: '거래량 오류', collection_unverified: '공개 배치 미완료', verified_nontrade: '확인된 비거래' }
+const reasons = { quarantined_ohlc: '품질 격리', insufficient_warmup: '계산 이력 부족', missing_sessions: '거래일 누락', stale_data: '최신 일봉 미수집', quality_records_missing: '품질 이력 누락', quality_unavailable: '품질 검증 불가', unsupported_source: '지원하지 않는 출처', indicator_unavailable: '지표 계산 불가', invalid_ohlc: 'OHLC 오류', invalid_volume: '거래량 오류' }
 const number = n => Number.isFinite(n) ? n.toLocaleString('ko-KR', { maximumFractionDigits: 4 }) : '—'
 
 export default function ScreenerWorkspace({ screen, onOpenChart, onAskAgent, agentReady }) {
-  const { query: q, edit, result: cached, meta, busy, error, search, stop, loadMeta } = screen
+  const { query: q, edit, result, meta, busy, error, search, stop, loadMeta } = screen
   const [expanded, setExpanded] = useState(null)
   const [handoffError, setHandoffError] = useState('')
-  useEffect(() => { void loadMeta(); const poll = setInterval(loadMeta, 60_000); return () => clearInterval(poll) }, [])
-  const stale = cached?.coverage.publication_version != null && meta?.publication_version > cached.coverage.publication_version
-  const result = stale ? null : cached
+  useEffect(() => { void loadMeta() }, [])
   const update = patch => edit({ ...q, ...patch })
   const change = (i, patch) => update({ conditions: q.conditions.map((c, index) => index === i ? { ...c, ...patch } : c) })
   const cov = result?.coverage
@@ -46,7 +44,6 @@ export default function ScreenerWorkspace({ screen, onOpenChart, onAskAgent, age
     </form>
     <div className="screen-results"><div className="screen-panel-title"><h2>검색 결과 {cov && <span>{number(cov.matches)}종목</span>}</h2><label className="screen-sort">정렬<select aria-label="결과 정렬" value={q.sort} onChange={e => update({ sort: e.target.value })}><option value="code_asc">종목코드 순</option><option value="close_desc">종가 높은 순</option></select></label></div>
       {error && <p className="screen-error" role="alert">{error}</p>}
-      {stale && <p className="screen-notice" role="status">공개 일봉이 갱신되었습니다. 같은 조건으로 다시 검색할 수 있습니다.</p>}
       {meta && !meta.unavailable && (!meta.quality_ready || meta.latest_bar !== meta.cutoff) && <p className="screen-notice">{!meta.quality_ready ? '품질 검증 데이터가 준비되지 않았습니다.' : `검색 기준일 ${meta.cutoff} · 최근 수집 ${meta.latest_bar || '없음'}. 최신 일봉이 없는 종목은 제외됩니다.`}</p>}
       {result ? <>
         <div className="screen-result-summary"><span className="screen-result-date">{result.as_of} 확정 일봉</span><p>{describeQuery(result.query)}</p><div><span>{number(cov.scanned)} / {number(cov.universe)}종목 확인</span><span>계산 가능 {number(cov.valid)} · 제외 {number(excluded)}</span></div><progress aria-label="종목 확인 진행률" value={cov.scanned} max={cov.universe || 1}/>

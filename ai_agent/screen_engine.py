@@ -63,7 +63,7 @@ class ScreenEngine:
             data = self.scanners[signature].scan(settings, query.market, context['latest_completed'])
             if query.snapshot_id is not None and query.snapshot_id != data['data_version']:
                 raise ScreenSnapshotChanged()
-            return data, {**context, 'latest_completed': data.get('cutoff', context['latest_completed'])}
+            return data, context
         finally:
             self.lock.release()
 
@@ -106,7 +106,6 @@ class ScreenEngine:
         page = matches[(query.page-1)*query.page_size:query.page*query.page_size]
         coverage = {k: data[k] for k in ('universe', 'scanned', 'valid', 'excluded', 'data_version', 'data_read_at', 'cache_hit', 'resumed')}
         coverage.update(kind='screen', market=query.market, not_scanned=data['universe']-data['scanned'],
-                        publication_version=data.get('publication_version'),
                         matches=len(matches), returned=len(page), page=query.page, page_size=query.page_size,
                         as_of=context['latest_completed'], sort=query.sort, calculation_version=VERSION,
                         calendar_source=context['calendar_source'], match=query.match)
