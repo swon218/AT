@@ -8,6 +8,7 @@ import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketA
 import GlobalStockSearch from './components/GlobalStockSearch'
 import MarketRankings from './components/MarketRankings'
 import DashboardWelcome from './components/DashboardWelcome'
+import DashboardHoldings from './components/DashboardHoldings'
 import MarketIndexChart from './components/MarketIndexChart'
 import MarketSummary from './components/MarketSummary'
 import DashboardNews from './components/DashboardNews'
@@ -16,7 +17,7 @@ import './components/Dashboard.css'
 import TradingViewChart from './components/TradingViewChart'
 import LabChartPanel from './components/LabChartPanel'
 import OrderEntryPanel from './components/OrderEntryPanel'
-import { getBroker, isBrokerConfigured } from './utils/brokers'
+import { BROKERS, getBroker, isBrokerConfigured } from './utils/brokers'
 import AuthModal from './components/AuthModal'
 import AccountSettingsModal from './components/AccountSettingsModal'
 import AssetsPage from './components/AssetsPage'
@@ -24,7 +25,7 @@ import ConfirmDialog from './components/ConfirmDialog'
 import { initialRecoveryRequest, supabase } from './services/supabaseClient'
 import { clearRecoveryUrl, initializePasswordRecovery, RECOVERY_LINK_ERROR } from './services/passwordRecovery'
 import { getIntegrationSettings } from './services/accountSettingsApi'
-import { getBrokerAccountSummary, getKiwoomAccountSummary } from './services/kiwoomAccountApi'
+import { getBrokerAccountSummary } from './services/kiwoomAccountApi'
 import useIndicatorDraft from './hooks/useIndicatorDraft'
 import useStrategies from './hooks/useStrategies'
 import useAgentWorkspace from './hooks/useAgentWorkspace'
@@ -51,10 +52,6 @@ const rankingCategories = [
   { id: 'surge', label: '거래량 급증' },
   { id: 'favorites', label: '관심종목' },
 ]
-
-function LoginNotice({ text }) {
-  return <div className="login-preview-note"><LogIn/><span>{text}</span></div>
-}
 
 function StockChartPanel({ stock, period, onPeriodChange, indicators = [], orderMode = false, credentialScope = 'guest', broker = 'kiwoom' }) {
   const [minuteMenuOpen, setMinuteMenuOpen] = useState(false)
@@ -91,25 +88,6 @@ function ChartWorkspace({ selected, period, onPeriodChange, currentUser, integra
   )
 }
 
-function DashboardHoldingsTable({ currentUser, broker, configured, accountSummary, accountLoading, accountError }) {
-  const brokerName = broker === 'toss' ? '토스' : '키움'
-  if (!currentUser) return <div className="empty-panel-body"><LoginNotice text="로그인 시 보유종목이 표시됩니다."/></div>
-  if (!configured) return <div className="empty-panel-body"><LoginNotice text={`개인 설정에서 ${brokerName}증권 API를 저장해 주세요.`}/></div>
-  if (accountLoading) return <div className="data-message"><span className="loading-ring"/></div>
-  if (accountError) return <div className="data-message error">{accountError}</div>
-  const holdings = accountSummary?.holdings || []
-  if (holdings.length === 0) return <div className="data-message">{brokerName}증권 보유종목이 없습니다.</div>
-  return <div className="dashboard-holdings-table">
-    <div className="dashboard-holding-row head"><span>증권사 · 종목</span><span>보유수량</span><span>수익률</span><span>평가손익</span></div>
-    <div className="dashboard-holding-scroll">{holdings.map((item) => {
-      const profitRate = Number(item.profitRate || 0)
-      const evaluationProfit = Number(item.evaluationProfit || 0)
-      const direction = evaluationProfit >= 0 ? 'up' : 'down'
-      return <div className="dashboard-holding-row" key={`${broker}-${item.code}`}><span><span className={`broker-holding-badge ${broker}`}>{brokerName}</span><strong>{item.name}</strong><small>{item.code}</small></span><span>{won(item.quantity)}주</span><span className={profitRate >= 0 ? 'up' : 'down'}>{profitRate >= 0 ? '+' : ''}{profitRate.toFixed(2)}%</span><span className={direction}>{evaluationProfit >= 0 ? '+' : '-'}{won(Math.abs(evaluationProfit))}원</span></div>
-    })}</div>
-  </div>
-}
-
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
   const [newsCategory, setNewsCategory] = useState('all')
@@ -141,10 +119,6 @@ function App() {
   const screen = useScreener(currentUser?.id)
   const [nickname, setNickname] = useState('')
   const [integrationStatus, setIntegrationStatus] = useState({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false })
-  const [accountSummary, setAccountSummary] = useState(null)
-  const [accountLoading, setAccountLoading] = useState(false)
-  const [accountError, setAccountError] = useState('')
-  const [accountRefreshVersion, setAccountRefreshVersion] = useState(0)
   const [orderBroker, setOrderBroker] = useState('kiwoom')
   const [orderAccountId, setOrderAccountId] = useState('')
   const [orderAccountSummary, setOrderAccountSummary] = useState(null)
@@ -156,10 +130,7 @@ function App() {
   const currentOrderAccountOptions = orderAccountOptions?.owner === orderAccountOwner ? orderAccountOptions.accounts : []
   const orderAccountScope = JSON.stringify([currentUser?.id, orderBroker, orderAccountId, selected?.code, integrationVersion, orderAccountRefreshVersion])
   const currentOrderAccountSummary = orderAccountSummary?.requestScope === orderAccountScope ? orderAccountSummary : null
-  const [dashboardHoldingsBroker, setDashboardHoldingsBroker] = useState('kiwoom')
-  const [tossDashboardSummary, setTossDashboardSummary] = useState(null)
-  const [tossDashboardLoading, setTossDashboardLoading] = useState(false)
-  const [tossDashboardError, setTossDashboardError] = useState('')
+  const [dashboardHoldingsBrokers, setDashboardHoldingsBrokers] = useState(() => BROKERS.map(({ id }) => id))
 
   const chooseStock = (stock) => {
     selectionVersion.current += 1
@@ -290,11 +261,6 @@ function App() {
   }, [activePage, selected?.code, searchCredentialScope, selectionRevision])
 
   useEffect(() => {
-    if (activePage !== 'dashboard') return
-    setDashboardHoldingsBroker(integrationStatus.kiwoomConfigured ? 'kiwoom' : integrationStatus.tossConfigured ? 'toss' : 'kiwoom')
-  }, [activePage, currentUser?.id, integrationStatus.kiwoomConfigured, integrationStatus.tossConfigured])
-
-  useEffect(() => {
     let active = true
     if (!currentUser) {
       setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false })
@@ -305,27 +271,6 @@ function App() {
       .catch(() => active && setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false }))
     return () => { active = false }
   }, [currentUser])
-
-  useEffect(() => {
-    let active = true
-    if (activePage !== 'dashboard' || !currentUser || !integrationStatus.kiwoomConfigured) {
-      setAccountSummary(null)
-      setAccountLoading(false)
-      setAccountError('')
-      return () => { active = false }
-    }
-    setAccountLoading(true)
-    setAccountError('')
-    getKiwoomAccountSummary()
-      .then((summary) => active && setAccountSummary(summary))
-      .catch((error) => {
-        if (!active) return
-        setAccountSummary(null)
-        setAccountError(error.message)
-      })
-      .finally(() => active && setAccountLoading(false))
-    return () => { active = false }
-  }, [activePage, currentUser, integrationStatus.kiwoomConfigured, accountRefreshVersion, integrationVersion])
 
   useEffect(() => {
     let active = true
@@ -353,27 +298,6 @@ function App() {
       .finally(() => active && setOrderAccountLoading(false))
     return () => { active = false }
   }, [activePage, currentUser, integrationStatus.kiwoomConfigured, integrationStatus.tossConfigured, integrationStatus.nhConfigured, integrationStatus.kbConfigured, orderBroker, orderAccountId, selected?.code, orderAccountRefreshVersion, integrationVersion])
-
-  useEffect(() => {
-    let active = true
-    if (activePage !== 'dashboard' || dashboardHoldingsBroker !== 'toss' || !currentUser || !integrationStatus.tossConfigured) {
-      setTossDashboardSummary(null)
-      setTossDashboardLoading(false)
-      setTossDashboardError('')
-      return () => { active = false }
-    }
-    setTossDashboardLoading(true)
-    setTossDashboardError('')
-    getBrokerAccountSummary('toss')
-      .then((summary) => active && setTossDashboardSummary(summary))
-      .catch((error) => {
-        if (!active) return
-        setTossDashboardSummary(null)
-        setTossDashboardError(error.message)
-      })
-      .finally(() => active && setTossDashboardLoading(false))
-    return () => { active = false }
-  }, [activePage, currentUser, integrationStatus.tossConfigured, dashboardHoldingsBroker])
 
   useEffect(() => {
     let active = true
@@ -449,7 +373,7 @@ function App() {
           </section>
 
           <section className="lower-grid guest-lower-grid dashboard-account-grid">
-            <article className="panel holdings dashboard-holdings"><div className="panel-head dashboard-holdings-head"><div><h2>보유종목</h2></div><div className="holdings-broker-tabs" aria-label="보유종목 증권사 선택"><button className={dashboardHoldingsBroker === 'kiwoom' ? 'active kiwoom' : ''} onClick={() => setDashboardHoldingsBroker('kiwoom')}>키움</button><button className={dashboardHoldingsBroker === 'toss' ? 'active toss' : ''} onClick={() => setDashboardHoldingsBroker('toss')}>토스</button></div></div><DashboardHoldingsTable currentUser={currentUser} broker={dashboardHoldingsBroker} configured={dashboardHoldingsBroker === 'toss' ? integrationStatus.tossConfigured : integrationStatus.kiwoomConfigured} accountSummary={dashboardHoldingsBroker === 'toss' ? tossDashboardSummary : accountSummary} accountLoading={dashboardHoldingsBroker === 'toss' ? tossDashboardLoading : accountLoading} accountError={dashboardHoldingsBroker === 'toss' ? tossDashboardError : accountError}/></article>
+            <DashboardHoldings key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardHoldingsBrokers} onSelectedChange={setDashboardHoldingsBrokers}/>
             <article className="panel dashboard-recent-orders">
               <div className="panel-head"><div><h2>최근 주문 · 체결 내역</h2></div><small>준비 중</small></div>
               <div className="dashboard-orders-scroll">
