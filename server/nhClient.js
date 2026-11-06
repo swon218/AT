@@ -7,7 +7,7 @@ export function validateNhResponse(body) {
   const message = body.message || {}
   const text = String(message.usr_msg || body.rsp_msg || '')
   if (['E', 'F'].includes(message.msg_lv_code) || failedMessage.test(text)) {
-    throw httpError(`NH API: ${text || '요청이 거절되었습니다.'}`)
+    throw Object.assign(httpError(`NH API: ${text || '요청이 거절되었습니다.'}`), { brokerCode: body.rsp_cd })
   }
   return body
 }
@@ -22,7 +22,7 @@ export function createNhClient({ fetcher = fetch, host = config.nhHost, throttle
   })
   async function request(auth, path, input = {}, { cts = '', write = false, retry = true, signal } = {}) {
     if (!/^\/(krstock\/(quote|inquiry|order)\/v1\/[A-Za-z]+|n2\/acctinfo)$/.test(path)) throw httpError('지원하지 않는 NH API 경로입니다.', 400)
-    const token = await tokens.get(auth)
+    const token = await tokens.get(auth).catch(error => { error.orderStage = 'token'; throw error })
     await throttle(auth)
     signal?.throwIfAborted()
     const base = path === '/n2/acctinfo' || path.includes('/quote/') ? 'https://api.nhplug.com:8443' : host

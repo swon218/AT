@@ -18,8 +18,8 @@ export async function fetchJson(fetcher, url, options, label) {
   catch { throw httpError(`${label} 응답을 확인할 수 없습니다. 잠시 후 다시 조회해 주세요.`, 504) }
   let body
   try { body = await response.json() }
-  catch { throw httpError(`${label} 응답 형식을 확인할 수 없습니다.`) }
-  if (!response.ok) throw httpError(`${label} 요청이 거절되었습니다. (HTTP ${response.status})`, response.status === 401 ? 401 : 502)
+  catch { throw Object.assign(httpError(`${label} 응답 형식을 확인할 수 없습니다.`), { upstreamStatus: response.status, retryAfter: response.headers.get('retry-after') }) }
+  if (!response.ok) throw Object.assign(httpError(`${label} 요청이 거절되었습니다. (HTTP ${response.status})`, response.status === 401 ? 401 : 502), { upstreamStatus: response.status, retryAfter: response.headers.get('retry-after') })
   return { body, response }
 }
 

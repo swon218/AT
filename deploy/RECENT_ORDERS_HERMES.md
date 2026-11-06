@@ -1,6 +1,17 @@
 # 헤르메스 전달문 · 대시보드 주문내역
 
-ATLAS `main`의 **대시보드 주문내역** 커밋을 적용하세요. 사용자가 전달한 최종 SHA와 `git log -1 --format='%H %s' -- deploy/RECENT_ORDERS_HERMES.md`를 대조하세요. 이 문서는 배포 완료 보고가 아닙니다. 실주문을 보내거나 주문 활성화 스위치를 변경하지 마세요.
+> 보관 문서: 아래는 과거 선별 배포 기록입니다. main 복구·통합 이후 새 작업에는 아래의 main 금지·선별 브랜치 고정 지침을 적용하지 않습니다. 현재 기준은 [main 복구 및 배포 지침](MAIN_RESTORE_HERMES.md)입니다.
+
+> 후속 `최근 주문` 변경부터 네 증권사 전체 등록 조건과 최신 10건 표시를 폐기합니다. 아래는 초기 구현 기록이며, 현재 배포·권한·선택·정렬 규칙은 [최근 주문 후속 전달문](RECENT_ORDERS_SELECTION_HERMES.md)을 우선 적용하세요.
+
+이번 배포는 운영 기준 `6cdeb74b572254de7646d636a6275e4430086f16`에서 분리한 **`codex/dashboard-orders-only` 브랜치**만 사용하세요. `main`을 운영에 pull/merge하지 마세요. 이 브랜치에는 대시보드 보유종목 추가·수정과 주문내역 변경만 포함되어 있습니다. 사용자가 전달한 최종 SHA와 `git log -1 --format='%H %s' -- deploy/RECENT_ORDERS_HERMES.md`를 대조하세요. 이 문서는 배포 완료 보고가 아닙니다. 실주문을 보내거나 주문 활성화 스위치를 변경하지 마세요.
+
+## 취소한 실험실 작업과 테스트 환경
+
+- `118aa19`와 `ac85f2a`의 실험실 일봉 전환은 이번 배포에서 제외합니다. 기존 운영 실험실 코드·DB·수집 정책·unit·timer를 그대로 유지하세요. 실패한 전환 게이트를 이번 작업으로 해결하거나 우회하지 마세요.
+- 운영 `.venv-ai`에는 pytest를 설치하지 마세요. 같은 선별 배포 SHA에서 격리된 테스트 전용 venv로 실행한 달력 테스트 통과 결과를 인정합니다. 테스트 venv의 Python과 운영 Python/런타임 의존성 버전을 대조하고, 운영 venv에서는 pytest 없이 달력 함수와 내부 HTTP 경로를 읽기 전용으로 확인하세요.
+- 새 Git SHA가 생기는 선별 배포입니다. 원본 `c447396`은 변경의 출처이며 최종 배포 SHA는 사용자가 별도로 전달한 **이 브랜치의 최종 SHA**입니다. 다른 변경을 섞지 말고 해당 SHA를 고정해 배포하세요.
+- 선별 브랜치 로컬 재검증: Node 서버 110/110, 프런트 유틸·자산 집계 7/7, Python 달력 22/22, 웹 빌드 통과. 원래 main의 서버 113개에서 취소한 실험실 변경의 테스트 3개가 빠져 110개가 된 것입니다.
 
 ## 배포 범위
 
@@ -57,17 +68,23 @@ ATLAS `main`의 **대시보드 주문내역** 커밋을 적용하세요. 사용�
    systemctl show atlas-api.service atlas-ai.service -p WorkingDirectory -p User -p EnvironmentFiles
    ```
 
-2. 저장소 소유자로 작업하고 기존 변경을 보존하세요. 실패하면 다음 단계는 중단하세요.
+2. 저장소 소유자로 작업하고 기존 변경을 보존하세요. 운영 checkout에 `git pull origin main`을 하지 마세요. 별도 staging checkout에서 아래 브랜치를 fetch한 뒤 사용자가 전달한 최종 SHA에 고정하세요. 실패하면 다음 단계는 중단하세요.
 
    ```bash
    git status --short
-   git pull --ff-only origin main
+   git fetch origin codex/dashboard-orders-only
+   # DEPLOY_SHA에는 사용자가 승인한 이번 선별 배포의 최종 전체 SHA만 입력
+   git switch --detach "$DEPLOY_SHA"
+   git merge-base --is-ancestor 6cdeb74b572254de7646d636a6275e4430086f16 HEAD
+   git diff --name-only 6cdeb74b572254de7646d636a6275e4430086f16 HEAD
    git log -1 --format='%H %s' -- deploy/RECENT_ORDERS_HERMES.md
    node --test server/recentOrders.test.js tests/recentOrders.test.js
    npm run test:server
-   .venv-ai/bin/python -m pytest ai_agent/tests/test_order_calendar.py ai_agent/tests/test_calendar_screener.py -q
+   "$TEST_VENV/bin/python" -m pytest ai_agent/tests/test_order_calendar.py ai_agent/tests/test_calendar_screener.py -q
    npm run build
    ```
+
+변경 목록에 `lab/`, `ai_agent/screener.py`, `ai_agent/screen_engine.py`, `ai_agent/tools.py`, 실험실 UI, 수집 unit/timer 또는 실험실 SQL이 있으면 중단하세요. `ai_agent/app.py`는 주문 달력 내부 경로 추가만, `ai_agent/market.py`는 최근 5거래일 함수 추가만 있어야 합니다. 운영 기준에서 실험실 관련 경로의 diff가 비어 있는 것을 확인한 후 기존 배포 방식으로 선별 checkout을 운영에 반영하세요. 운영 DB 전환과 마이그레이션은 실행하지 마세요.
 
 3. 기존 AI_INTERNAL_SECRET의 일치와 Python의 달력 검증 범위를 확인하세요. 현재 기본 `AI_CALENDAR_THROUGH`는 2026-12-31입니다. 범위를 벗어나면 503으로 실패하며 임의 평일 달력으로 대체하지 않습니다. 연장에는 기존 휴장일 검토 절차가 필요합니다.
 
@@ -80,7 +97,7 @@ ATLAS `main`의 **대시보드 주문내역** 커밋을 적용하세요. 사용�
 
    비로그인 목록 응답은 401이어야 합니다. 상세의 임의 형식 유효 id도 인증 전에는 401이어야 합니다. 내부 달력은 헤더 없이 401, 운영 서비스 환경에서 기존 내부 헤더로 요청하면 최근 5거래일을 반환해야 합니다. 비밀값을 명령행 인자나 로그에 출력하지 마세요.
 
-4. 같은 SHA의 Vercel Production/Ready 배포를 확인하세요. 실제 웹에서 비로그인, 일부 미등록의 누락 증권사명·개인 설정 동작, 네 곳 등록 사용자의 네 증권사 조회, NH 계좌 선택을 확인하세요. 실제 대조를 허용한 사용자 계좌의 최근 5거래일 주문을 각 증권사 앱과 비교하세요. ATLAS 밖에서 낸 주문도 API가 반환하면 포함되어야 합니다. 실주문 테스트를 보내지 마세요.
+4. `main`이 아닌 **선별 브랜치의 같은 최종 SHA**로 Vercel Production/Ready 배포를 확인하세요. 최신 main 배포를 승격하지 마세요. 실제 웹에서 비로그인, 일부 미등록의 누락 증권사명·개인 설정 동작, 네 곳 등록 사용자의 네 증권사 조회, NH 계좌 선택을 확인하세요. 실제 대조를 허용한 사용자 계좌의 최근 5거래일 주문을 각 증권사 앱과 비교하세요. ATLAS 밖에서 낸 주문도 API가 반환하면 포함되어야 합니다. 실주문 테스트를 보내지 마세요.
 5. 한 곳 실패 때 나머지 결과 유지, 전부 정상 0건, 부분체결·잔량취소·전량취소·거절·체결 완료, 행 펼침, 수동 갱신과 주문 화면에서 대시보드 복귀를 확인하세요. 로그아웃·사용자 전환·키 변경/삭제·NH 계좌 변경 시 이전 행과 늦은 상세 응답이 표시되지 않아야 합니다.
 6. 증권사별 상태와 API/웹의 배포 SHA, 내부 달력 상태, 실계좌 대조 여부와 명세상 한계를 분리하여 사용자에게 보고하세요. 키·토큰·전체 계좌번호·원본 개인 응답은 보고에 포함하지 마세요.
 

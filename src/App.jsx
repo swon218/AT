@@ -132,6 +132,7 @@ function App() {
   const orderAccountScope = JSON.stringify([currentUser?.id, orderBroker, orderAccountId, selected?.code, integrationVersion, orderAccountRefreshVersion])
   const currentOrderAccountSummary = orderAccountSummary?.requestScope === orderAccountScope ? orderAccountSummary : null
   const [dashboardHoldingsBrokers, setDashboardHoldingsBrokers] = useState(() => BROKERS.map(({ id }) => id))
+  const [dashboardOrderBrokers, setDashboardOrderBrokers] = useState(() => BROKERS.map(({ id }) => id))
 
   const chooseStock = (stock) => {
     selectionVersion.current += 1
@@ -375,7 +376,7 @@ function App() {
 
           <section className="lower-grid guest-lower-grid dashboard-account-grid">
             <DashboardHoldings key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardHoldingsBrokers} onSelectedChange={setDashboardHoldingsBrokers}/>
-            <RecentOrders key={`recent-orders:${currentUser?.id || 'guest'}`} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} onOpenSettings={() => setAccountSettingsOpen(true)} onLogin={() => setAuthModalOpen(true)}/>
+            <RecentOrders key={`recent-orders:${currentUser?.id || 'guest'}`} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardOrderBrokers} onSelectedChange={setDashboardOrderBrokers} onLogin={() => setAuthModalOpen(true)}/>
           </section>
           </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}/>}
         </div>
