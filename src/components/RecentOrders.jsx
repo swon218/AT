@@ -3,7 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import useRecentOrders from '../hooks/useRecentOrders'
 import { getRecentOrders } from '../services/recentOrdersApi'
 import { BROKERS, getBroker } from '../utils/brokers'
-import { orderStatusLabels } from '../utils/recentOrders'
+import { orderStatusLabels, recentOrdersEmptyMessage } from '../utils/recentOrders'
 import { toggleAssetBroker } from '../utils/assetSummary'
 
 const number = value => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) : '—'
@@ -31,16 +31,13 @@ function OrderDetails({ order, accountRefs, scope }) {
   </div>
 }
 
-export default function RecentOrders({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange, onOpenSettings, onLogin }) {
+export default function RecentOrders({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange, onLogin }) {
   const [selection, setSelection] = useState(null)
   const accountRefs = selection?.owner === currentUser?.id && selection?.version === integrationVersion ? selection.refs : {}
   const state = useRecentOrders({ userId: currentUser?.id, integrationStatus, integrationVersion, accountRefs, selected })
   const [expanded, setExpanded] = useState(null)
   const data = currentUser && selected.length ? state.data : null
-  const missing = data?.brokers.filter(broker => broker.status === 'unconfigured') || []
-  const failures = data?.brokers.filter(broker => broker.status === 'error') || []
-  const accountRequired = data?.brokers.filter(broker => broker.status === 'accountRequired') || []
-  const emptySuccess = selected.length > 0 && data?.brokers.length === selected.length && data.brokers.every(broker => broker.status === 'ready') && !data.items.length
+  const accountChoices = data?.brokers.filter(broker => broker.accounts?.length > 1) || []
 
   return <article className="panel dashboard-recent-orders">
     <div className="panel-head recent-orders-head"><div><h2>최근 주문 · 체결 내역</h2></div><button type="button" className="dashboard-news-more recent-orders-more" disabled title="주문·체결 내역 탭 준비 중" aria-label="최근 주문·체결 내역 더보기 (준비 중)">더보기</button></div>
@@ -49,15 +46,11 @@ export default function RecentOrders({ currentUser, integrationStatus, integrati
       : !currentUser ? <div className="data-message">로그인 후 최근 주문·체결 내역을 볼 수 있습니다.<button type="button" className="recent-orders-link" onClick={onLogin}>로그인</button></div>
       : <>
         <div className="recent-orders-meta">최근 5거래일 · 최근 5건 · 최신 거래가 아래에 표시됩니다.{data?.range && <span>{data.range.days.at(-1)} ~ {data.range.days[0]} · KST</span>}</div>
-        {missing.length > 0 && <p className="recent-orders-warning" role="status">{missing.map(broker => getBroker(broker.broker).name).join(' · ')} API 미등록 · 연결된 선택 증권사의 내역을 표시합니다. <button type="button" className="recent-orders-link" onClick={onOpenSettings}>개인 설정</button></p>}
-        {data && <div className="recent-order-accounts">{data.brokers.map(broker => broker.accounts?.length > 1 ? <label key={broker.broker}>{getBroker(broker.broker).shortName} 조회 계좌<select aria-label={`${getBroker(broker.broker).name} 주문내역 조회 계좌`} value={accountRefs[broker.broker] || broker.selectedAccountRef || ''} onChange={event => setSelection({ owner: currentUser.id, version: integrationVersion, refs: { ...accountRefs, [broker.broker]: event.target.value } })}><option value="" disabled>계좌 선택</option>{broker.accounts.map(account => <option value={account.id} key={account.id}>{account.label}</option>)}</select></label> : broker.selectedAccountRef ? <small key={broker.broker}>{getBroker(broker.broker).shortName} · {broker.accounts?.[0]?.label}</small> : null)}</div>}
-        {failures.length > 0 && <p className="recent-orders-warning" role="status">{failures.map(broker => `${getBroker(broker.broker).name}${broker.error === 'rate_limited' ? ' 요청 한도 초과 · 잠시 후 다시 조회해 주세요' : broker.error === 'timeout' ? ' 조회 시간 초과' : ' 조회 실패'}`).join(' / ')} · 성공한 증권사 내역만 표시합니다.</p>}
-        {accountRequired.length > 0 && <p className="recent-orders-warning" role="status">{accountRequired.map(broker => getBroker(broker.broker).name).join(' · ')} 조회 계좌를 선택해 주세요.</p>}
+        {accountChoices.length > 0 && <div className="recent-order-accounts">{accountChoices.map(broker => <label key={broker.broker}>{getBroker(broker.broker).shortName} 조회 계좌<select aria-label={`${getBroker(broker.broker).name} 주문내역 조회 계좌`} value={accountRefs[broker.broker] || broker.selectedAccountRef || ''} onChange={event => setSelection({ owner: currentUser.id, version: integrationVersion, refs: { ...accountRefs, [broker.broker]: event.target.value } })}><option value="" disabled>계좌 선택</option>{broker.accounts.map(account => <option value={account.id} key={account.id}>{account.label}</option>)}</select></label>)}</div>}
         {data?.orderingIncomplete && <p className="recent-orders-warning">주문 시각 미제공 내역은 같은 날짜의 시각 확인 내역 앞에 표시합니다. 해당 날짜 내 정확한 시간순서는 확인할 수 없습니다.</p>}
         {state.loading ? <div className="data-message" role="status">주문·체결 내역을 조회하고 있습니다.</div>
-          : state.error ? <div className="data-message" role="status">{state.error.message}</div>
-          : emptySuccess ? <div className="data-message">최근 주문 없음</div>
-          : !data?.items.length ? <div className="data-message">조회가 완료되지 않은 증권사가 있습니다.</div>
+          : state.error ? <div className="data-message" role="status">거래 내역을 불러오지 못했습니다.</div>
+          : !data?.items.length ? <div className="data-message" role="status">{recentOrdersEmptyMessage(data)}</div>
           : <div className="dashboard-orders-scroll"><table className="dashboard-orders-table recent-orders-table" aria-label="최근 주문 및 체결 내역"><thead><tr><th scope="col">주문 날짜·시각</th><th scope="col">증권사</th><th scope="col">종목·매매</th><th scope="col">체결/주문수량</th><th scope="col">평균체결가</th><th scope="col">상태</th></tr></thead><tbody>{data.items.map(order => {
             const open = expanded?.scope === state.scope && expanded.id === order.id
             return <OrderRow key={order.id} order={order} open={open} onToggle={() => setExpanded(open ? null : { scope: state.scope, id: order.id })} accountRefs={accountRefs} scope={state.scope}/>
