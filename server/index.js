@@ -4,6 +4,7 @@ import { config, publicConfigurationStatus } from './config.js'
 import { getRankings } from './rankings.js'
 import { getCandles } from './charts.js'
 import { registerNewsRoutes } from './news.js'
+import { registerRecentOrderRoutes } from './recentOrders.js'
 import { getAccountSettings, getAuthenticatedCredentials, updateAccountSettings } from './accountSettings.js'
 import { placeKiwoomOrder } from './orders.js'
 import { getKiwoomAccountSummary } from './kiwoomAccount.js'
@@ -37,6 +38,7 @@ registerMarketSummaryRoutes(app, { sessions: createMarketSessions() })
 registerMarketCalendarRoutes(app)
 registerExchangeRateRoutes(app)
 registerAddedBrokerRoutes(app)
+registerRecentOrderRoutes(app)
 registerAgentRoutes(app)
 registerScreenRoutes(app)
 registerNewsRoutes(app)

@@ -9,6 +9,7 @@ import GlobalStockSearch from './components/GlobalStockSearch'
 import MarketRankings from './components/MarketRankings'
 import DashboardWelcome from './components/DashboardWelcome'
 import DashboardHoldings from './components/DashboardHoldings'
+import RecentOrders from './components/RecentOrders'
 import MarketIndexChart from './components/MarketIndexChart'
 import MarketSummary from './components/MarketSummary'
 import DashboardNews from './components/DashboardNews'
@@ -374,15 +375,7 @@ function App() {
 
           <section className="lower-grid guest-lower-grid dashboard-account-grid">
             <DashboardHoldings key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardHoldingsBrokers} onSelectedChange={setDashboardHoldingsBrokers}/>
-            <article className="panel dashboard-recent-orders">
-              <div className="panel-head"><div><h2>최근 주문 · 체결 내역</h2></div><small>준비 중</small></div>
-              <div className="dashboard-orders-scroll">
-                <table className="dashboard-orders-table" aria-label="최근 주문 및 체결 내역">
-                  <thead><tr><th scope="col">시간</th><th scope="col">구분</th><th scope="col">종목명</th><th scope="col">주문가</th><th scope="col">수량</th><th scope="col">상태</th></tr></thead>
-                  <tbody><tr><td colSpan={6}><div className="data-message">주문·체결 내역 조회 기능을 준비하고 있습니다.</div></td></tr></tbody>
-                </table>
-              </div>
-            </article>
+            <RecentOrders key={`recent-orders:${currentUser?.id || 'guest'}`} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} onOpenSettings={() => setAccountSettingsOpen(true)} onLogin={() => setAuthModalOpen(true)}/>
           </section>
           </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}/>}
         </div>

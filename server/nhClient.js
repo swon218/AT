@@ -20,22 +20,23 @@ export function createNhClient({ fetcher = fetch, host = config.nhHost, throttle
     const { body } = await fetchJson(fetcher, url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, 'NH 인증')
     return { token: body.access_token, expiresIn: body.expires_in }
   })
-  async function request(auth, path, input = {}, { cts = '', write = false, retry = true } = {}) {
+  async function request(auth, path, input = {}, { cts = '', write = false, retry = true, signal } = {}) {
     if (!/^\/(krstock\/(quote|inquiry|order)\/v1\/[A-Za-z]+|n2\/acctinfo)$/.test(path)) throw httpError('지원하지 않는 NH API 경로입니다.', 400)
     const token = await tokens.get(auth)
     await throttle(auth)
+    signal?.throwIfAborted()
     const base = path === '/n2/acctinfo' || path.includes('/quote/') ? 'https://api.nhplug.com:8443' : host
     try {
       const { body, response } = await fetchJson(fetcher, `${base}${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(cts ? { cts, cts_flag: 'Y' } : {}) },
-        body: JSON.stringify({ Input_0: input }),
+        body: JSON.stringify({ Input_0: input }), signal,
       }, 'NH')
       validateNhResponse(body)
       return { ...body, continuation: response.headers.get('cts_flag') === 'Y' ? response.headers.get('cts') || '' : '', hasMore: response.headers.get('cts_flag') === 'Y' }
     } catch (error) {
       if (error.statusCode === 401) {
         tokens.clear(auth)
-        if (!write && retry) return request(auth, path, input, { cts, retry: false })
+        if (!write && retry) return request(auth, path, input, { cts, retry: false, signal })
       }
       throw error
     }

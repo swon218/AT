@@ -85,12 +85,13 @@ export async function getKiwoomRealtimeAuth({ appKey = config.kiwoomAppKey, secr
   return { token, invalidate: () => { if (tokenCache.get(cacheKey)?.token === token) tokenCache.delete(cacheKey) } }
 }
 
-export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false, timeoutMs }) {
+export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false, timeoutMs, signal }) {
   const { token, cacheKey } = await getAccessToken({ appKey, secretKey })
+  signal?.throwIfAborted()
   try {
     const response = await fetch(`${config.kiwoomHost}${endpoint}`, {
       method: 'POST',
-      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+      signal: signal && timeoutMs ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : signal || (timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined),
       headers: {
         'Content-Type': 'application/json;charset=UTF-8',
         authorization: `Bearer ${token}`,
@@ -107,7 +108,7 @@ export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, e
 
     const cached = tokenCache.get(cacheKey)
     if (cached?.token === token) tokenCache.delete(cacheKey)
-    return requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry: false, contYn, nextKey, returnPage, timeoutMs })
+    return requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry: false, contYn, nextKey, returnPage, timeoutMs, signal })
   }
 }
 

@@ -54,6 +54,15 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
                 'lab_ready': bool(s.lab_path and __import__('pathlib').Path(s.lab_path).is_file()),
                 'news_configured': bool(s.naver_id and s.naver_secret)}
 
+    @app.get('/calendar/order-days')
+    async def order_days(date: str, x_atlas_internal: str = Header(default='')):
+        await authorize(x_atlas_internal)
+        from .market import recent_order_days
+        try:
+            return recent_order_days(date, s.calendar_through)
+        except ValueError:
+            raise HTTPException(503, 'calendar_unverified') from None
+
     @app.post('/screen')
     async def screen(body: StockScreen, x_atlas_internal: str = Header(default='')):
         await authorize(x_atlas_internal)
