@@ -104,8 +104,6 @@
 .dashboard-holdings .dashboard-holdings-head { flex-wrap: wrap; gap: 10px; height: auto; min-height: 49px; padding-block: 10px; box-sizing: border-box; }
 .dashboard-holdings .holdings-broker-tabs { flex-wrap: wrap; }
 .dashboard-holdings .holdings-broker-tabs button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 48px; min-width: 48px; height: 28px; padding: 0; flex: 0 0 48px; font-size: 11px; }
-.holdings-broker-tabs button.active.nh { border-color: #e9b940; }
-.holdings-broker-tabs button.active.kb { border-color: #f39944; }
 .dashboard-holdings button:disabled { cursor: default; }
 .dashboard-holdings button:focus-visible, .dashboard-holdings select:focus-visible { outline: 2px solid #6fc8ff; outline-offset: 2px; }
 .broker-holding-badge.nh { background: #40371b; color: #f0cb63; }
@@ -140,12 +138,11 @@
 .dashboard-orders-table .data-message { min-height: 180px; }
 .dashboard-recent-orders { container: atlas-recent-orders / inline-size; }
 .dashboard-recent-orders .dashboard-orders-scroll { max-height: 360px; overflow-y: auto; }
-.dashboard-recent-orders .recent-orders-head { height: auto; min-height: 49px; gap: 10px; flex-wrap: wrap; padding-block: 10px; }
-.recent-orders-link { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #29415f; border-radius: 5px; padding: 5px 8px; background: #10243b; color: #aec7e0; font-size: 10px; cursor: pointer; }
+.dashboard-recent-orders .recent-orders-head { display: grid; grid-template-columns: auto minmax(48px, 1fr) auto; height: auto; min-height: 49px; gap: 10px; padding-block: 10px; }
+.recent-orders-head h2 { white-space: nowrap; }
 .recent-orders-more:disabled { cursor: default; }
-.recent-orders-brokers { flex-wrap: wrap; padding: 10px 14px 0; }
+.recent-orders-head .recent-orders-brokers { justify-content: flex-end; flex-wrap: wrap; gap: 5px; padding: 0; }
 .dashboard-recent-orders .recent-orders-brokers button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 48px; min-width: 48px; height: 28px; padding: 0; flex: 0 0 48px; font-size: 11px; }
-.recent-orders-link { margin-top: 8px; }
 .recent-orders-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; padding: 10px 14px 6px; font-size: 10px; color: #8ba4c1; line-height: 1.6; }
 .recent-order-accounts { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 0 14px 8px; font-size: 10px; color: #7e98b3; }
 .recent-order-accounts label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 100%; }

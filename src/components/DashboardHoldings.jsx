@@ -21,7 +21,7 @@ export default function DashboardHoldings({ currentUser, integrationStatus, inte
       <div className="holdings-broker-tabs" role="group" aria-label="보유종목 증권사 선택">
         {BROKERS.map(broker => {
           const active = selected.includes(broker.id)
-          return <button type="button" key={broker.id} aria-pressed={active} className={active ? `active ${broker.id}` : ''} onClick={() => onSelectedChange(value => toggleAssetBroker(value, broker.id, { allowEmpty: true }))}>
+          return <button type="button" key={broker.id} aria-pressed={active} className={active ? 'active' : ''} onClick={() => onSelectedChange(value => toggleAssetBroker(value, broker.id, { allowEmpty: true }))}>
             {broker.shortName}
           </button>
         })}

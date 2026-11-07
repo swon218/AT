@@ -31,7 +31,7 @@ function OrderDetails({ order, accountRefs, scope }) {
   </div>
 }
 
-export default function RecentOrders({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange, onLogin }) {
+export default function RecentOrders({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange }) {
   const [selection, setSelection] = useState(null)
   const accountRefs = selection?.owner === currentUser?.id && selection?.version === integrationVersion ? selection.refs : {}
   const state = useRecentOrders({ userId: currentUser?.id, integrationStatus, integrationVersion, accountRefs, selected })
@@ -40,10 +40,13 @@ export default function RecentOrders({ currentUser, integrationStatus, integrati
   const accountChoices = data?.brokers.filter(broker => broker.accounts?.length > 1) || []
 
   return <article className="panel dashboard-recent-orders">
-    <div className="panel-head recent-orders-head"><div><h2>최근 주문 · 체결 내역</h2></div><button type="button" className="dashboard-news-more recent-orders-more" disabled title="주문·체결 내역 탭 준비 중" aria-label="최근 주문·체결 내역 더보기 (준비 중)">더보기</button></div>
-    <div className="holdings-broker-tabs recent-orders-brokers" role="group" aria-label="최근 주문 증권사 선택">{BROKERS.map(broker => <button type="button" key={broker.id} aria-pressed={selected.includes(broker.id)} className={selected.includes(broker.id) ? `active ${broker.id}` : ''} onClick={() => onSelectedChange(value => toggleAssetBroker(value, broker.id, { allowEmpty: true }))}>{broker.shortName}</button>)}</div>
+    <div className="panel-head recent-orders-head">
+      <h2>최근 주문 · 체결 내역</h2>
+      <div className="holdings-broker-tabs recent-orders-brokers" role="group" aria-label="최근 주문 증권사 선택">{BROKERS.map(broker => <button type="button" key={broker.id} aria-pressed={selected.includes(broker.id)} className={selected.includes(broker.id) ? 'active' : ''} onClick={() => onSelectedChange(value => toggleAssetBroker(value, broker.id, { allowEmpty: true }))}>{broker.shortName}</button>)}</div>
+      <button type="button" className="dashboard-news-more recent-orders-more" disabled title="주문·체결 내역 탭 준비 중" aria-label="최근 주문·체결 내역 더보기 (준비 중)">더보기</button>
+    </div>
     {!selected.length ? <div className="data-message" role="status">증권사를 선택해주세요</div>
-      : !currentUser ? <div className="data-message">로그인 후 최근 주문·체결 내역을 볼 수 있습니다.<button type="button" className="recent-orders-link" onClick={onLogin}>로그인</button></div>
+      : !currentUser ? <div className="data-message">로그인 후 최근 주문·체결 내역을 볼 수 있습니다.</div>
       : <>
         <div className="recent-orders-meta">최근 5거래일 · 최근 5건 · 최신 거래가 아래에 표시됩니다.{data?.range && <span>{data.range.days.at(-1)} ~ {data.range.days[0]} · KST</span>}</div>
         {accountChoices.length > 0 && <div className="recent-order-accounts">{accountChoices.map(broker => <label key={broker.broker}>{getBroker(broker.broker).shortName} 조회 계좌<select aria-label={`${getBroker(broker.broker).name} 주문내역 조회 계좌`} value={accountRefs[broker.broker] || broker.selectedAccountRef || ''} onChange={event => setSelection({ owner: currentUser.id, version: integrationVersion, refs: { ...accountRefs, [broker.broker]: event.target.value } })}><option value="" disabled>계좌 선택</option>{broker.accounts.map(account => <option value={account.id} key={account.id}>{account.label}</option>)}</select></label>)}</div>}
