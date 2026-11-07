@@ -4,6 +4,7 @@ import { config, publicConfigurationStatus } from './config.js'
 import { getRankings } from './rankings.js'
 import { getCandles } from './charts.js'
 import { registerNewsRoutes } from './news.js'
+import { registerAccountConnectionRoutes } from './accountConnections.js'
 import { registerRecentOrderRoutes } from './recentOrders.js'
 import { getAccountSettings, getAuthenticatedCredentials, updateAccountSettings } from './accountSettings.js'
 import { placeKiwoomOrder } from './orders.js'
@@ -42,6 +43,7 @@ registerRecentOrderRoutes(app)
 registerAgentRoutes(app)
 registerScreenRoutes(app)
 registerNewsRoutes(app)
+registerAccountConnectionRoutes(app)
 
 async function tossMarketCredentials(request) {
   const authorization = request.headers.authorization || ''

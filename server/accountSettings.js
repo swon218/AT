@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { config } from './config.js'
 import { decryptCredentials, encryptCredentials } from './credentialCrypto.js'
+import { accountConnectionCache } from './accountConnectionCache.js'
 
 const clientOptions = {
   auth: {
@@ -87,8 +88,11 @@ export async function updateAccountSettings(request, { client = adminClient, aut
       .map((field) => [field, typeof input[field] === 'string' ? input[field].trim() : ''])
       .filter(([, value]) => value),
   )
+  const clearBrokers = ['kiwoom', 'toss', 'nh', 'kb'].filter(broker => Array.isArray(input.clearBrokers) && input.clearBrokers.includes(broker))
+  const changedBrokers = ['kiwoom', 'toss', 'nh', 'kb'].filter(broker => clearBrokers.includes(broker) ||
+    Object.keys(replacements).some(field => field.startsWith(broker)))
 
-  if (Object.keys(replacements).length === 0) {
+  if (Object.keys(replacements).length === 0 && clearBrokers.length === 0) {
     const error = new Error('저장할 API 키 또는 토큰을 입력해 주세요.')
     error.statusCode = 400
     throw error
@@ -109,6 +113,10 @@ export async function updateAccountSettings(request, { client = adminClient, aut
       })
     : {}
   const credentials = { ...currentCredentials, ...replacements }
+  for (const broker of clearBrokers) {
+    delete credentials[broker === 'toss' ? 'tossApiKey' : `${broker}AppKey`]
+    delete credentials[`${broker}SecretKey`]
+  }
   const encrypted = encryptCredentials(user.id, credentials)
   const row = {
     user_id: user.id,
@@ -123,13 +131,14 @@ export async function updateAccountSettings(request, { client = adminClient, aut
     updated_at: new Date().toISOString(),
   }
 
+  accountConnectionCache.invalidate(user.id, changedBrokers)
   const { data, error } = await client
     .from('user_integrations')
     .upsert(row, { onConflict: 'user_id' })
     .select('kiwoom_configured,toss_configured,nh_configured,kb_configured,telegram_configured')
     .single()
   if (error) throw error
-
+  accountConnectionCache.invalidate(user.id, changedBrokers)
   return configuredStatus(data)
 }
 

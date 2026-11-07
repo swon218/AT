@@ -66,6 +66,7 @@ export async function requestTossWithCredentials({ apiKey, secretKey, path, meth
     error.tossStage = 'token'
     throw error
   })
+  signal?.throwIfAborted()
   const url = new URL(path, config.tossHost)
   Object.entries(query || {}).forEach(([name, value]) => {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(name, String(value))

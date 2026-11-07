@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Activity, Bot, CheckCircle2, KeyRound, LockKeyhole, UserRound, X } from 'lucide-react'
 import { supabase } from '../services/supabaseClient'
 import { getIntegrationSettings, saveIntegrationSettings } from '../services/accountSettingsApi'
@@ -38,9 +38,12 @@ function SecretField({ label, value, placeholder, disabled, onChange }) {
   )
 }
 
-export default function AccountSettingsModal({ open, user, onClose, onNicknameSaved, onIntegrationStatusChange }) {
+export default function AccountSettingsModal({ open, user, onClose, onNicknameSaved, onIntegrationStatusChange, onIntegrationMutation }) {
   const [nickname, setNickname] = useState('')
   const [credentials, setCredentials] = useState(emptyCredentials)
+  const [clearBrokers, setClearBrokers] = useState([])
+  const mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const [status, setStatus] = useState(emptyStatus)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -56,6 +59,7 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
     setLoading(true)
     setMessage('')
     setCredentials(emptyCredentials)
+    setClearBrokers([])
 
     Promise.allSettled([
       supabase.from('profiles').select('nickname').eq('id', user.id).single(),
@@ -91,7 +95,7 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
   if (!open || !user) return null
 
   const updateCredential = (field, value) => setCredentials((current) => ({ ...current, [field]: value }))
-  const hasCredentialInput = Object.values(credentials).some((value) => value.trim())
+  const hasCredentialInput = clearBrokers.length > 0 || Object.values(credentials).some((value) => value.trim())
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -109,6 +113,9 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
     }
 
     setSaving(true)
+    const affected = ['kiwoom', 'toss', 'nh', 'kb'].filter(broker => clearBrokers.includes(broker) ||
+      Object.entries(credentials).some(([field, value]) => field.startsWith(broker) && value.trim()))
+    onIntegrationMutation?.(affected, true)
     try {
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -117,21 +124,24 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
         .select('nickname')
         .single()
       if (profileError) throw profileError
+      if (!mounted.current) return
 
       if (hasCredentialInput) {
-        const nextStatus = await saveIntegrationSettings(credentials)
+        const nextStatus = await saveIntegrationSettings({ ...credentials, clearBrokers }, user.id)
+        if (!mounted.current) return
         setStatus({ ...emptyStatus, ...nextStatus })
         onIntegrationStatusChange?.({ ...emptyStatus, ...nextStatus })
         setCredentials(emptyCredentials)
+        setClearBrokers([])
       }
 
       onNicknameSaved(profile.nickname ?? '')
       setMessageType('success')
       setMessage(hasCredentialInput ? '닉네임과 보안 설정을 저장했습니다.' : '닉네임을 저장했습니다.')
     } catch (error) {
-      setMessage(profileErrorMessage(error))
+      if (mounted.current) setMessage(profileErrorMessage(error))
     } finally {
-      setSaving(false)
+      if (mounted.current) { onIntegrationMutation?.(affected, false); setSaving(false) }
     }
   }
 
@@ -159,6 +169,10 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
               <SecretField label="NH투자증권 Secret Key" value={credentials.nhSecretKey} placeholder={status.nhConfigured ? '저장됨 · 변경할 때만 입력' : '나무 PLUG App Secret'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('nhSecretKey', value)}/>
               <SecretField label="KB증권 App Key" value={credentials.kbAppKey} placeholder={status.kbConfigured ? '저장됨 · 변경할 때만 입력' : 'KB증권 App Key'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('kbAppKey', value)}/>
               <SecretField label="KB증권 Secret Key" value={credentials.kbSecretKey} placeholder={status.kbConfigured ? '저장됨 · 변경할 때만 입력' : 'KB증권 App Secret'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('kbSecretKey', value)}/>
+            </div>
+            <div className="account-broker-deletions" aria-label="저장된 증권사 키 삭제">
+              {[['kiwoom', '키움'], ['toss', '토스'], ['nh', 'NH'], ['kb', 'KB']].map(([broker, label]) =>
+                <label key={broker}><input type="checkbox" checked={clearBrokers.includes(broker)} disabled={loading || saving || !integrationAvailable || !status[`${broker}Configured`]} onChange={event => setClearBrokers(current => event.target.checked ? [...current, broker] : current.filter(item => item !== broker))}/>{label} 키 삭제</label>)}
             </div>
           </section>
 

@@ -32,6 +32,7 @@ import useStrategies from './hooks/useStrategies'
 import useAgentWorkspace from './hooks/useAgentWorkspace'
 import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
 import SidebarFooter from './components/SidebarFooter'
+import useBrokerConnections from './hooks/useBrokerConnections'
 import ScreenerWorkspace from './components/ScreenerWorkspace'
 import useScreener from './hooks/useScreener'
 import { describeQuery } from './utils/screener'
@@ -112,6 +113,7 @@ function App() {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
+  const brokerConnections = useBrokerConnections(currentUser?.id)
   const [authReady, setAuthReady] = useState(!supabase)
   const agent = useAgentWorkspace(currentUser?.id, authReady)
   const strategies = useStrategies(currentUser?.id)
@@ -351,7 +353,7 @@ function App() {
           <button type="button" className={`nav-link ${activePage === 'news' ? 'active' : ''}`} aria-label="주요 뉴스 · 공시" aria-current={activePage === 'news' ? 'page' : undefined} title="주요 뉴스 · 공시" onClick={() => openPage('news')}><Newspaper/><span>주요 뉴스 · 공시</span></button>
           <a><CircleDollarSign/><span>시세 분석</span></a>
         </nav>
-        <SidebarFooter user={currentUser} nickname={nickname} integrationStatus={integrationStatus} onProfileClick={openProfileOrLogin} onSessionClick={openLoginOrLogoutConfirm}/>
+        <SidebarFooter user={currentUser} nickname={nickname} connections={brokerConnections.connections} onProfileClick={openProfileOrLogin} onSessionClick={openLoginOrLogoutConfirm}/>
       </aside>
 
       <main>
@@ -384,7 +386,7 @@ function App() {
       <FloatingAgent agent={{ ...agent, openScreen }} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal} recovery={passwordRecovery} onRecoveryFinished={finishPasswordRecovery}/>
-      <AccountSettingsModal open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange}/>
+      <AccountSettingsModal key={currentUser?.id || 'guest'} open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange} onIntegrationMutation={brokerConnections.mutation}/>
       <ConfirmDialog open={logoutConfirmOpen} pending={loggingOut} onCancel={() => setLogoutConfirmOpen(false)} onConfirm={confirmLogout}/>
     </div>
   )
