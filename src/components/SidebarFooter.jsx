@@ -13,7 +13,7 @@ export default function SidebarFooter({ user, nickname, connections = {}, onProf
             <div key={broker}><span>{label}</span><b className={connections[broker] === true ? '' : 'blocked'}>{connections[broker] === true ? '연결됨' : '연결안됨'}</b></div>)}
           <div><span><LockKeyhole/>주문·계좌</span><b className={availability === '사용불가' ? 'blocked' : availability === '일부 사용' ? 'partial' : ''}>{availability}</b></div>
         </> : <>
-          <div><span><i className="dot kiwoom"/>키움 공개시세</span><b>읽기전용</b></div>
+          <div><span><i className="dot public-market"/>공개시세</span><b>읽기전용</b></div>
           <div><span><LockKeyhole/>주문·계좌</span><b className="blocked">차단</b></div>
         </>}
       </div>
