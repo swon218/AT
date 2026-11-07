@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity, Bell, Bot, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
   LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen,
-  Star, WalletCards, X, Filter,
+  WalletCards, X, Filter,
 } from 'lucide-react'
 import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketApi'
 import GlobalStockSearch from './components/GlobalStockSearch'
@@ -33,7 +33,10 @@ import useAgentWorkspace from './hooks/useAgentWorkspace'
 import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
 import SidebarFooter from './components/SidebarFooter'
 import ThemeSwitch from './components/ThemeSwitch'
+import WatchlistStar, { WatchlistFeedback } from './components/WatchlistStar'
 import useBrokerConnections from './hooks/useBrokerConnections'
+import useWatchlist from './hooks/useWatchlist'
+import useWatchlistQuotes from './hooks/useWatchlistQuotes'
 import ScreenerWorkspace from './components/ScreenerWorkspace'
 import useScreener from './hooks/useScreener'
 import { describeQuery } from './utils/screener'
@@ -56,7 +59,7 @@ const rankingCategories = [
   { id: 'favorites', label: '관심종목' },
 ]
 
-function StockChartPanel({ stock, period, onPeriodChange, indicators = [], orderMode = false, credentialScope = 'guest', broker = 'kiwoom' }) {
+function StockChartPanel({ stock, period, onPeriodChange, indicators = [], credentialScope = 'guest', broker = 'kiwoom', watchlist }) {
   const [minuteMenuOpen, setMinuteMenuOpen] = useState(false)
   const [sourceBroker, setSourceBroker] = useState(broker)
   useEffect(() => setSourceBroker(broker), [broker, credentialScope])
@@ -65,9 +68,14 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], order
   return (
     <article className="panel chart-panel">
       <div className="quote-head">
-        <div className={`quote-identity${orderMode ? ' order-quote-identity' : ''}`}><h2>{stock?.name ?? ''}{stock && !orderMode && <button aria-label="관심종목 추가"><Star size={17}/></button>}</h2><small>{stock ? `${stock.code} · ${stock.market ?? 'KRX'}` : ''}</small>{stock && orderMode && <button className="order-favorite" aria-label="관심종목 추가"><Star size={17}/></button>}</div>
+        <div className="quote-identity order-quote-identity">
+          <h2>{stock?.name ?? ''}</h2>
+          {stock && <WatchlistStar stock={stock} watchlist={watchlist}/>}
+          <small>{stock ? `${stock.code} · ${stock.market ?? 'KRX'}` : ''}</small>
+        </div>
         {stock && <div className="quote-price"><strong>{stock.price == null ? '—' : won(stock.price)}<small>원</small></strong>{stock.change != null && <span className={stock.change >= 0 ? 'up' : 'down'}>{stock.change >= 0 ? '▲' : '▼'} {Math.abs(stock.change)}%</span>}{stock.quoteError && <span title={stock.quoteError}>시세 조회 실패</span>}</div>}
       </div>
+      <WatchlistFeedback watchlist={watchlist}/>
       <div className="chart-toolbar"><div className="chart-periods"><>
         <div className="minute-period-select" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setMinuteMenuOpen(false) }}>
           <button type="button" className={minutePeriods.includes(period) ? 'active minute-trigger' : 'minute-trigger'} aria-haspopup="menu" aria-expanded={minuteMenuOpen} onClick={() => setMinuteMenuOpen((open) => !open)}>{selectedMinute}<ChevronDown/></button>
@@ -80,12 +88,12 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], order
   )
 }
 
-function ChartWorkspace({ selected, period, onPeriodChange, currentUser, integrationStatus = {}, broker, onBrokerChange, accountSummary, accountLoading, accountError, onAccountRefresh, onAccountChange, accountId = '', accountOptions = [], integrationVersion = 0, indicatorsOnly = false, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, strategyStorage }) {
+function ChartWorkspace({ selected, period, onPeriodChange, currentUser, watchlist, integrationStatus = {}, broker, onBrokerChange, accountSummary, accountLoading, accountError, onAccountRefresh, onAccountChange, accountId = '', accountOptions = [], integrationVersion = 0, indicatorsOnly = false, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, strategyStorage }) {
   const configured = !indicatorsOnly && isBrokerConfigured(integrationStatus, broker)
   const credentialScope = `${broker}:${currentUser?.id || 'guest'}:${configured}:${integrationVersion}`
   return (
     <section className="preview-grid order-preview-grid" aria-label={indicatorsOnly ? '실험실' : '주식 주문'}>
-      {indicatorsOnly ? <LabChartPanel indicators={indicatorConfigs} strategyName={strategyName} settings={backtestSettings} onSettingsChange={onBacktestSettingsChange}/> : <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} orderMode credentialScope={credentialScope} broker={broker}/>}
+      {indicatorsOnly ? <LabChartPanel indicators={indicatorConfigs} strategyName={strategyName} settings={backtestSettings} onSettingsChange={onBacktestSettingsChange}/> : <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} credentialScope={credentialScope} broker={broker} watchlist={watchlist}/>}
       <article className="panel preview-order"><OrderEntryPanel key={`${currentUser?.id || 'guest'}:${broker}:${integrationVersion}`} onAccountChange={onAccountChange} accountId={accountId} accountOptions={accountOptions} indicatorsOnly={indicatorsOnly} stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} broker={broker} onBrokerChange={onBrokerChange} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/></article>
     </section>
   )
@@ -116,6 +124,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null)
   const brokerConnections = useBrokerConnections(currentUser?.id)
   const [authReady, setAuthReady] = useState(!supabase)
+  const watchlist = useWatchlist(currentUser?.id, { authReady, onLogin: () => setAuthModalOpen(true) })
   const agent = useAgentWorkspace(currentUser?.id, authReady)
   const strategies = useStrategies(currentUser?.id)
   const orderDraft = useIndicatorDraft(currentUser?.id, strategies)
@@ -144,6 +153,7 @@ function App() {
   }
 
   const searchCredentialScope = `${currentUser?.id || 'guest'}:${integrationStatus.kiwoomConfigured}:${integrationVersion}`
+  const watchlistQuotes = useWatchlistQuotes(watchlist.rows, searchCredentialScope, activePage === 'dashboard' && rankingType === 'favorites')
   const chooseSearchStock = (stock) => {
     chooseStock(stock)
     setActivePage('order')
@@ -216,11 +226,14 @@ function App() {
       return undefined
     }
     let active = true
+    let sessionObserved = false
     initializePasswordRecovery(supabase.auth, initialRecoveryRequest).then(({ session, recovery }) => {
       if (!active) return
-      const user = session?.user ?? null
-      setCurrentUser(user)
-      loadNickname(user)
+      if (!sessionObserved) {
+        const user = session?.user ?? null
+        setCurrentUser(user)
+        loadNickname(user)
+      }
       if (recovery) setPasswordRecovery(recovery)
     }).catch(() => {
       if (active && initialRecoveryRequest.requested) setPasswordRecovery({ status: 'error', message: RECOVERY_LINK_ERROR })
@@ -228,6 +241,7 @@ function App() {
       if (active) setAuthReady(true)
     })
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      sessionObserved = true
       const user = session?.user ?? null
       setCurrentUser(user)
       setAuthReady(true)
@@ -306,7 +320,7 @@ function App() {
 
   useEffect(() => {
     let active = true
-    if (!brokerageDataEnabled) {
+    if (!brokerageDataEnabled || rankingType === 'favorites') {
       setRankingLoading(false)
       return () => { active = false }
     }
@@ -371,7 +385,7 @@ function App() {
           <MarketSummary credentialScope={searchCredentialScope}/>
 
           <section className="trading-grid dashboard-market-grid">
-            <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={chooseStock}/>
+            <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={chooseStock} watchlist={watchlist} quotes={watchlistQuotes}/>
 
             <MarketIndexChart credentialScope={searchCredentialScope}/>
             <DashboardNews onOpenNews={openNews}/>
@@ -381,7 +395,7 @@ function App() {
             <DashboardHoldings key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardHoldingsBrokers} onSelectedChange={setDashboardHoldingsBrokers}/>
             <RecentOrders key={`recent-orders:${currentUser?.id || 'guest'}`} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardOrderBrokers} onSelectedChange={setDashboardOrderBrokers}/>
           </section>
-          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}/>}
+          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} watchlist={watchlist} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}/>}
         </div>
       </main>
       <FloatingAgent agent={{ ...agent, openScreen }} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>

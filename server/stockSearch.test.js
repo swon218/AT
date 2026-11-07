@@ -190,9 +190,14 @@ test('선택 종목 시세는 정확한 코드로 조회하고 등락 부호와 
   const quote = await getStockQuote('005930', { requester: async definition => {
     assert.equal(definition.apiId, 'ka10001')
     assert.equal(definition.body.stk_cd, '005930')
-    return { stk_cd: '005930', stk_nm: '삼성전자', cur_prc: '-70000', flu_rt: '-1.25' }
+    return { stk_cd: '005930', stk_nm: '삼성전자', cur_prc: '-70000', flu_rt: '-1.25', trde_qty: '1,234' }
   } })
   assert.equal(quote.price, 70000)
   assert.equal(quote.change, -1.25)
+  assert.equal(quote.volume, 1234)
+  const missing = await getStockQuote('005930', { requester: async () => ({ stk_cd: '005930', stk_nm: '삼성전자', cur_prc: ' ', trde_qty: '조회불가' }) })
+  assert.deepEqual([missing.price, missing.change, missing.volume], [null, null, null])
+  const zero = await getStockQuote('005930', { requester: async () => ({ stk_cd: '005930', stk_nm: '삼성전자', trde_qty: '0' }) })
+  assert.equal(zero.volume, 0)
   await assert.rejects(getStockQuote('005930', { requester: async () => ({ stk_cd: '000660', stk_nm: '다른종목' }) }), /시세 응답/)
 })

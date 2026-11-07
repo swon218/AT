@@ -8,8 +8,10 @@ import { indexStockCatalog, isStockCatalog, normalizeStockQuery, searchStockCata
 const markets = [['0', 'KOSPI'], ['10', 'KOSDAQ']]
 const validCode = (code) => /^[0-9][0-9A-Z]{5}$/.test(code)
 const numeric = (value) => {
-  if (value === undefined || value === null || value === '') return null
-  const result = Number(String(value).replace(/,/g, ''))
+  if (typeof value !== 'string' && typeof value !== 'number') return null
+  const normalized = String(value).replace(/,/g, '').trim()
+  if (!normalized) return null
+  const result = Number(normalized)
   return Number.isFinite(result) ? result : null
 }
 const httpError = (message, statusCode = 502) => Object.assign(new Error(message), { statusCode })
@@ -109,11 +111,12 @@ export function createStockSearch({ now = Date.now, pause = delay, ttl = STOCK_C
 
 export async function getStockQuote(symbol, { requester }) {
   if (!validCode(symbol)) throw httpError('올바른 6자리 종목코드가 필요합니다.', 400)
-  const body = await requester({ apiId: 'ka10001', endpoint: '/api/dostk/stkinfo', body: { stk_cd: symbol } })
+  const body = await requester({ apiId: 'ka10001', endpoint: '/api/dostk/stkinfo', body: { stk_cd: symbol }, timeoutMs: 7_000 })
   const code = String(body.stk_cd || '').replace(/^A/, '').split('_')[0]
   if (code !== symbol || !body.stk_nm) throw httpError('종목 시세 응답을 확인할 수 없습니다.')
   const price = numeric(body.cur_prc)
-  return { code, name: body.stk_nm, price: price === null ? null : Math.abs(price), change: numeric(body.flu_rt) }
+  const volume = numeric(body.trde_qty)
+  return { code, name: body.stk_nm, price: price === null ? null : Math.abs(price), change: numeric(body.flu_rt), volume: volume === null ? null : Math.abs(volume) }
 }
 
 const searchStocks = createStockSearch({
