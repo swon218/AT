@@ -53,7 +53,7 @@ test('missing brokers do not hide a confirmed empty history, but failure or requ
     assert.equal(recentOrdersEmptyMessage(result(statuses)), '조회 기간에 거래 내역이 없습니다.')
   }
   for (const statuses of [['error'], ['ready', 'error'], ['unconfigured', 'partial']]) {
-    assert.equal(recentOrdersEmptyMessage(result(statuses)), '거래 내역을 모두 확인하지 못했습니다.')
+    assert.equal(recentOrdersEmptyMessage(result(statuses)), null)
   }
   assert.equal(recentOrdersEmptyMessage(result(['ready', 'accountRequired'])), '조회 계좌를 선택해주세요.')
   assert.equal(recentOrdersEmptyMessage(result(['unconfigured', 'unconfigured'])), '조회 가능한 증권사가 없습니다.')

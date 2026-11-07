@@ -32,7 +32,7 @@ export function mergeOrderWindow(previous, next, retried) {
 export function recentOrdersEmptyMessage(data) {
   const brokers = data?.brokers?.filter(broker => broker.status !== 'unconfigured') || []
   if (!brokers.length) return '조회 가능한 증권사가 없습니다.'
-  if (brokers.some(broker => ['partial', 'error'].includes(broker.status))) return '거래 내역을 모두 확인하지 못했습니다.'
+  if (brokers.some(broker => ['partial', 'error'].includes(broker.status))) return null
   if (brokers.some(broker => broker.status === 'accountRequired')) return '조회 계좌를 선택해주세요.'
   if (!brokers.every(broker => broker.status === 'ready')) return '거래 내역을 불러오지 못했습니다.'
   return data.more ? '불러온 날짜에 거래 내역이 없습니다.' : '조회 기간에 거래 내역이 없습니다.'

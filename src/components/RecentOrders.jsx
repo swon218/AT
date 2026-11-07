@@ -33,14 +33,6 @@ function OrderDetails({ order, period, userId, scope }) {
   </div>
 }
 
-const failureMessages = {
-  timeout: '조회 시간이 초과됐습니다.',
-  rate_limited: '증권사 호출 한도를 초과했습니다. 잠시 후 다시 조회해 주세요.',
-  page_limit: '연속조회 한도에 도달했습니다. 거래 내역에서 기간을 줄여 다시 조회해 주세요.',
-  period_unsupported: '증권사가 이 조회 기간을 지원하지 않습니다. 지원 날짜는 해당 증권사에서 확인해 주세요.',
-  broker_unavailable: '증권사 응답을 확인하지 못했습니다.',
-}
-
 function PeriodInput({ label, name, value, max, onChange, invalid }) {
   return <label>{label}<input type="date" name={name} value={value} max={max} required aria-invalid={invalid || undefined}
     onInput={event => onChange(event.currentTarget.value)} onClick={event => {
@@ -67,6 +59,10 @@ export default function RecentOrders({ currentUser, integrationStatus, integrati
   const headingId = useId()
   const pages = state.pages || []
   const first = pages[0], latestBrokers = first?.brokers || []
+  const retryPages = pages.filter(page => page.brokers.some(result => ['error', 'partial'].includes(result.status)))
+  const emptyMessage = first && !state.items.length
+    ? recentOrdersEmptyMessage({ brokers: pages.flatMap(page => page.brokers), more: Boolean(state.nextBefore) })
+    : null
   const accountChoices = brokers.map(id => state.accountChoices[id]).filter(broker => broker?.accounts?.length > 1)
   const hasConfigured = latestBrokers.some(result => result.status !== 'unconfigured' && result.status !== 'accountRequired')
   const title = history ? '거래 내역' : '최근 주문 · 체결 내역'
@@ -137,25 +133,21 @@ export default function RecentOrders({ currentUser, integrationStatus, integrati
       : !currentUser ? <div className="data-message">로그인 후 주문·체결 내역을 볼 수 있습니다.</div>
       : <>
         {accountChoices.length > 0 && <div className="recent-order-accounts">{accountChoices.map(broker => <label key={broker.broker}>{getBroker(broker.broker).shortName} 조회 계좌<select aria-label={`${getBroker(broker.broker).name} 주문내역 조회 계좌`} value={broker.accounts.some(account => account.id === accountRefs[broker.broker]) ? accountRefs[broker.broker] : broker.selectedAccountRef || ''} onChange={event => setSelection({ owner: userId, version: integrationVersion, refs: { ...accountRefs, [broker.broker]: event.target.value } })}><option value="" disabled>계좌 선택</option>{broker.accounts.map(account => <option value={account.id} key={account.id}>{account.label}</option>)}</select></label>)}</div>}
-        {latestBrokers.some(result => result.status === 'unconfigured') && <p className="recent-orders-warning">API 미연결 · {latestBrokers.filter(result => result.status === 'unconfigured').map(result => getBroker(result.broker).shortName).join(', ')}</p>}
         {latestBrokers.some(result => result.status === 'accountRequired') && <p className="recent-orders-warning">조회 계좌 선택 필요 · {latestBrokers.filter(result => result.status === 'accountRequired').map(result => getBroker(result.broker).shortName).join(', ')}</p>}
         {state.items.some(item => !item.orderedAt) && <p className="recent-orders-warning">주문 시각 미제공 내역은 같은 날짜의 시각 확인 내역 앞에 표시합니다. 해당 날짜 내 정확한 시간순서는 확인할 수 없습니다.</p>}
-        {pages.some(page => page.brokers.some(result => ['error', 'partial'].includes(result.status))) &&
-          <details className="recent-orders-issues">
-            <summary>부분 조회 · 일부 증권사 또는 날짜의 내역을 확인하지 못했습니다.</summary>
-            {pages.filter(page => page.brokers.some(result => ['error', 'partial'].includes(result.status))).map(page => <div key={page.window.start}>
-              <strong>{page.window.start} ~ {page.window.end}</strong>
-              <ul>{page.brokers.filter(result => ['error', 'partial'].includes(result.status)).map(result => <li key={result.broker}>{getBroker(result.broker).shortName} · {failureMessages[result.error] || failureMessages.broker_unavailable}
-                {result.completedDays?.length > 0 && ` 확인된 날짜 ${result.completedDays.join(', ')}.`}
-              </li>)}</ul>
-              <button type="button" disabled={state.pending} onClick={() => state.retry(page.before)}>미완료 증권사 다시 조회</button>
-            </div>)}
-          </details>}
+        {retryPages.map(page => {
+          const retryLabel = `다시 조회 (${page.window.start} ~ ${page.window.end})`
+          return <div className="recent-orders-load" key={page.window.start}>
+            <button type="button" disabled={state.pending} aria-label={retryLabel} onClick={() => state.retry(page.before)}>
+              {retryPages.length === 1 ? '다시 조회' : retryLabel}
+            </button>
+          </div>
+        })}
         {state.error && <div className="recent-orders-load" role="status">거래 내역을 불러오지 못했습니다. <button type="button" onClick={() => state.retry(state.before)}>다시 조회</button></div>}
         {state.pending && pages.length > 0 && <p className="recent-orders-load" role="status">주문·체결 내역을 추가 조회하고 있습니다…</p>}
         {state.nextBefore && hasConfigured && <div className="recent-orders-load"><button type="button" disabled={state.pending} onClick={loadOlder}>이전 날짜 더 불러오기</button> <span>{pages.at(-1).window.start}부터 표시 중</span></div>}
         {state.loading ? <div className="data-message" role="status">주문·체결 내역을 조회하고 있습니다.</div>
-          : !state.items.length ? (first && <div className="data-message" role="status">{recentOrdersEmptyMessage({ brokers: pages.flatMap(page => page.brokers), more: Boolean(state.nextBefore) })}</div>)
+          : !state.items.length ? (emptyMessage && <div className="data-message" role="status">{emptyMessage}</div>)
           : <div className="dashboard-orders-scroll" ref={viewport} tabIndex={0} role="region" aria-label={`${title} 목록`} onScroll={event => {
             const box = event.currentTarget
             if (!state.error && box.scrollTop <= 12 && box.scrollHeight > box.clientHeight + 12) loadOlder()

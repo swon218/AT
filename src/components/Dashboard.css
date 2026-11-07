@@ -161,16 +161,13 @@
 .recent-order-accounts label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 100%; }
 .recent-order-accounts select { max-width: 100%; border: 1px solid var(--border-default, #29415f); border-radius: 4px; padding: 3px 5px; background: var(--surface-panel, #10243b); color: var(--text-primary, #c9d9ec); font: inherit; }
 .recent-orders-warning { padding: 0 14px; margin: 5px 0 10px; color: var(--tone-warning, #e6b678); font-size: 10px; line-height: 1.6; }
-.recent-orders-issues, .recent-orders-load { margin: 5px 14px 10px; color: var(--text-secondary); font-size: 12px; }
-.recent-orders-issues summary { color: var(--tone-warning); cursor: pointer; }
-.recent-orders-issues[open] > div { margin-top: 8px; }
-.recent-orders-issues ul { padding-inline-start: 18px; }
-.recent-orders-load button, .recent-orders-issues button, .order-history-period button, .order-history-period input {
+.recent-orders-load { margin: 5px 14px 10px; color: var(--text-secondary); font-size: 12px; }
+.recent-orders-load button, .order-history-period button, .order-history-period input {
   min-height: 34px; padding: 4px 9px; border: 1px solid var(--border-default); border-radius: 6px;
   background: var(--surface-input, var(--surface-panel)); color: var(--text-primary); font: inherit;
 }
-.recent-orders-load button, .recent-orders-issues button, .order-history-period button { cursor: pointer; }
-.recent-orders-load button:disabled, .recent-orders-issues button:disabled { opacity: .65; cursor: wait; }
+.recent-orders-load button, .order-history-period button { cursor: pointer; }
+.recent-orders-load button:disabled { opacity: .65; cursor: wait; }
 .order-history-panel { min-width: 0; }
 .order-history-panel .recent-orders-head { grid-template-columns: auto minmax(48px, 1fr); }
 .order-history-panel h2 { scroll-margin-block-start: 84px; }
