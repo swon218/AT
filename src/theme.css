@@ -41,9 +41,8 @@
   --shadow-accent: rgba(36, 95, 197, .15);
 }
 
-.header-actions .theme-switch { display: inline-flex; align-items: center; flex-shrink: 0; gap: 2px; padding: 3px; border: 1px solid var(--border-strong, #29415f); border-radius: 8px; background: var(--surface-field, #0a1727); }
-.header-actions .theme-switch button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-muted, #a8b9d1); }
-.header-actions .theme-switch svg { width: 16px; height: 16px; }
+.header-actions .theme-switch { display: inline-flex; align-items: center; flex-shrink: 0; gap: 2px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--border-strong, #29415f); background: var(--surface-field, #0a1727); }
+.header-actions .theme-switch button { display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid transparent; background: transparent; color: var(--text-muted, #a8b9d1); }
 .header-actions .theme-switch button[aria-pressed="true"] { border-color: var(--tone-accent, #4b86ff); color: var(--text-primary, #edf4ff); background: var(--surface-selected, #193353); }
 .header-actions .theme-switch button:hover:not([aria-pressed="true"]) { color: var(--text-primary, #edf4ff); background: var(--surface-hover, #172b45); }
 .header-actions .theme-switch button:focus-visible { outline: 2px solid var(--focus-ring, #78a5ff); outline-offset: 2px; z-index: 1; }
