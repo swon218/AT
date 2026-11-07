@@ -59,7 +59,6 @@ export default function RecentOrders({ currentUser, integrationStatus, integrati
   const headingId = useId()
   const pages = state.pages || []
   const first = pages[0], latestBrokers = first?.brokers || []
-  const retryPages = pages.filter(page => page.brokers.some(result => ['error', 'partial'].includes(result.status)))
   const emptyMessage = first && !state.items.length
     ? recentOrdersEmptyMessage({ brokers: pages.flatMap(page => page.brokers), more: Boolean(state.nextBefore) })
     : null
@@ -135,15 +134,7 @@ export default function RecentOrders({ currentUser, integrationStatus, integrati
         {accountChoices.length > 0 && <div className="recent-order-accounts">{accountChoices.map(broker => <label key={broker.broker}>{getBroker(broker.broker).shortName} 조회 계좌<select aria-label={`${getBroker(broker.broker).name} 주문내역 조회 계좌`} value={broker.accounts.some(account => account.id === accountRefs[broker.broker]) ? accountRefs[broker.broker] : broker.selectedAccountRef || ''} onChange={event => setSelection({ owner: userId, version: integrationVersion, refs: { ...accountRefs, [broker.broker]: event.target.value } })}><option value="" disabled>계좌 선택</option>{broker.accounts.map(account => <option value={account.id} key={account.id}>{account.label}</option>)}</select></label>)}</div>}
         {latestBrokers.some(result => result.status === 'accountRequired') && <p className="recent-orders-warning">조회 계좌 선택 필요 · {latestBrokers.filter(result => result.status === 'accountRequired').map(result => getBroker(result.broker).shortName).join(', ')}</p>}
         {state.items.some(item => !item.orderedAt) && <p className="recent-orders-warning">주문 시각 미제공 내역은 같은 날짜의 시각 확인 내역 앞에 표시합니다. 해당 날짜 내 정확한 시간순서는 확인할 수 없습니다.</p>}
-        {retryPages.map(page => {
-          const retryLabel = `다시 조회 (${page.window.start} ~ ${page.window.end})`
-          return <div className="recent-orders-load" key={page.window.start}>
-            <button type="button" disabled={state.pending} aria-label={retryLabel} onClick={() => state.retry(page.before)}>
-              {retryPages.length === 1 ? '다시 조회' : retryLabel}
-            </button>
-          </div>
-        })}
-        {state.error && <div className="recent-orders-load" role="status">거래 내역을 불러오지 못했습니다. <button type="button" onClick={() => state.retry(state.before)}>다시 조회</button></div>}
+        {state.error && <div className="recent-orders-load" role="status">거래 내역을 불러오지 못했습니다.</div>}
         {state.pending && pages.length > 0 && <p className="recent-orders-load" role="status">주문·체결 내역을 추가 조회하고 있습니다…</p>}
         {state.nextBefore && hasConfigured && <div className="recent-orders-load"><button type="button" disabled={state.pending} onClick={loadOlder}>이전 날짜 더 불러오기</button> <span>{pages.at(-1).window.start}부터 표시 중</span></div>}
         {state.loading ? <div className="data-message" role="status">주문·체결 내역을 조회하고 있습니다.</div>

@@ -99,9 +99,16 @@
 .news-story-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .news-story-tags span { border-radius: 4px; background: var(--surface-raised, #102e43); padding: 2px 6px; color: var(--text-secondary, #9fc3df); font-size: 10px; }
 .dashboard-index-panel button:focus-visible, .dashboard-news button:focus-visible, .dashboard-news a:focus-visible { outline: 2px solid var(--focus-ring, #6fc8ff); outline-offset: -2px; }
-.guest-content .dashboard-account-grid > :is(.dashboard-holdings, .dashboard-recent-orders) { min-width: 0; min-height: 0; align-self: stretch; }
-.dashboard-holdings { display: flex; flex-direction: column; overflow: clip; }
-.dashboard-holdings > :not(.dashboard-holdings-scroll) { flex-shrink: 0; }
+.dashboard-account-grid { --dashboard-account-card-height: 270px; }
+.guest-content .dashboard-account-grid > :is(.dashboard-holdings, .dashboard-recent-orders) {
+  display: flex;
+  flex-direction: column;
+  height: var(--dashboard-account-card-height);
+  min-width: 0;
+  min-height: 0;
+}
+.dashboard-account-grid > :is(.dashboard-holdings, .dashboard-recent-orders) > :not(.dashboard-holdings-scroll, .dashboard-orders-scroll) { flex-shrink: 0; }
+.dashboard-holdings-viewport { height: 100%; container-type: size; }
 .dashboard-holdings .dashboard-holdings-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; height: auto; min-height: 49px; padding-block: 10px; }
 .dashboard-holdings-head h2 { white-space: nowrap; }
 .dashboard-holdings-head .holdings-broker-tabs { justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
@@ -109,10 +116,11 @@
 .dashboard-holdings .holdings-broker-tabs button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 48px; min-width: 48px; height: 28px; padding: 0; flex: 0 0 48px; font-size: 11px; }
 .dashboard-holdings button:disabled { cursor: default; }
 .dashboard-holdings button:focus-visible, .dashboard-holdings select:focus-visible { outline: 2px solid var(--focus-ring, #6fc8ff); outline-offset: 2px; }
-.dashboard-holdings-table { width: 100%; min-width: 455px; border-collapse: separate; border-spacing: 0; white-space: nowrap; text-align: right; font-size: 11px; }
+.dashboard-holdings-table { --holdings-column-header-height: 34px; width: 100%; min-width: 455px; border-collapse: separate; border-spacing: 0; white-space: nowrap; text-align: right; font-size: 11px; }
 .dashboard-holdings-table th, .dashboard-holdings-table td { padding: 0 15px; border-bottom: 1px solid var(--border-default, #17283d); }
-.dashboard-holdings-table th { height: 34px; color: var(--text-secondary, #7f9ab9); font-size: 10px; font-weight: 500; }
-.dashboard-holdings-table td { height: 46px; }
+.dashboard-holdings-table th { height: var(--holdings-column-header-height); position: sticky; top: 0; background: var(--surface-panel); color: var(--text-secondary, #7f9ab9); font-size: 10px; font-weight: 500; }
+/* Fit three rows in the visible scrollport, including when account controls are present. */
+.dashboard-holdings-table td { height: max(46px, calc((100cqh - var(--holdings-column-header-height)) / 3)); }
 .dashboard-holdings-table th:first-child, .dashboard-holdings-table td:first-child { text-align: left; }
 .dashboard-holding-stock { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 7px; }
 .dashboard-holding-stock strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -122,10 +130,6 @@
 .broker-holding-badge.toss { background: var(--surface-raised, #302d66); color: var(--text-secondary, #a7a1ff); }
 .broker-holding-badge.nh { background: var(--surface-warning, #40371b); color: var(--tone-warning, #f0cb63); }
 .broker-holding-badge.kb { background: var(--surface-warning, #422d1b); color: var(--tone-warning, #ffb66d); }
-.dashboard-holdings-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px; padding: 0 15px 10px; color: var(--text-secondary, #8ba4c1); }
-.dashboard-holdings-tools small { font-size: 10px; line-height: 1.6; }
-.dashboard-holdings-tools button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-default, #29415f); border-radius: 5px; padding: 5px 7px; background: var(--surface-panel, #10243b); color: var(--text-secondary, #aec7e0); font-size: 10px; cursor: pointer; }
-.dashboard-holdings-tools button:disabled { opacity: .5; }
 .dashboard-holdings-accounts { display: grid; gap: 6px; padding: 0 15px 10px; color: var(--text-secondary, #839fba); font-size: 10px; }
 .dashboard-holdings-accounts:empty { display: none; }
 .dashboard-holdings-accounts label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px; max-width: 100%; }
@@ -151,7 +155,8 @@
 .dashboard-orders-table td { padding: 0; }
 .dashboard-orders-table .data-message { min-height: 180px; }
 .dashboard-recent-orders { container: atlas-recent-orders / inline-size; }
-.dashboard-recent-orders .dashboard-orders-scroll { min-width: 0; max-height: 360px; overflow: auto; overflow-anchor: none; }
+.dashboard-recent-orders .dashboard-orders-scroll { min-width: 0; overflow: auto; overflow-anchor: none; }
+.dashboard-account-grid .dashboard-orders-scroll { flex: 1 1 0; min-height: 0; }
 .dashboard-recent-orders .recent-orders-head { display: grid; grid-template-columns: auto minmax(48px, 1fr) auto; height: auto; min-height: 49px; gap: 10px; padding-block: 10px; }
 .recent-orders-head h2 { white-space: nowrap; }
 .recent-orders-head .recent-orders-brokers { justify-content: flex-end; flex-wrap: wrap; gap: 5px; padding: 0; }
@@ -224,6 +229,9 @@
     grid-template-columns: minmax(0, .46fr) minmax(0, .54fr);
   }
   .dashboard-market-grid .dashboard-news { grid-column: 1 / -1; height: 300px; }
+}
+@container atlas-dashboard (max-width: 720px) {
+  .dashboard-account-grid { --dashboard-account-card-height: 308px; }
 }
 @container atlas-dashboard (max-width: 680px) {
   .guest-content .trading-grid.dashboard-market-grid { grid-template-columns: minmax(0, 1fr); }
