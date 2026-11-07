@@ -4,6 +4,7 @@ import { BROKERS, getBroker } from '../utils/brokers'
 import { ASSET_METRICS, hasAmount, summarizeAssets, toggleAssetBroker } from '../utils/assetSummary'
 import useAssetAccounts from '../hooks/useAssetAccounts'
 import './AssetsPage.css'
+import RecentOrders from './RecentOrders'
 
 const number = value => new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(value)
 const amount = value => hasAmount(value) ? `${number(value)}원` : '—'
@@ -55,7 +56,7 @@ function AssetHoldingsTable({ holdings }) {
   </div>
 }
 
-export default function AssetsPage({ currentUser, integrationStatus, integrationVersion }) {
+export default function AssetsPage({ currentUser, integrationStatus, integrationVersion, orderHistoryTarget }) {
   const [selected, setSelected] = useState(() => BROKERS.map(({ id }) => id))
   const [accountSelection, setAccountSelection] = useState(null)
   const accountIds = accountSelection?.version === integrationVersion ? accountSelection.ids : {}
@@ -103,7 +104,8 @@ export default function AssetsPage({ currentUser, integrationStatus, integration
         {!currentUser ? <div className="data-message">로그인 후 보유종목을 확인할 수 있습니다.</div> : !readyCount ? <div className="data-message">{loading ? '선택한 증권사 계좌를 조회하고 있습니다.' : '증권사 연결 및 계좌 조회 상태를 확인해 주세요.'}</div> : !holdings.length ? <div className="data-message">조회 완료한 증권사에 보유종목이 없습니다.</div> : <AssetHoldingsTable holdings={holdings}/>}
       </article>
       <article className="panel"><div className="panel-head"><div><h2>증권사별 자산</h2></div><span>원화 기준</span></div><div className="asset-breakdown">{selectedBrokers.map(broker => <div key={broker.id}><span>{broker.name}</span><strong>{amount(accounts[broker.id].summary?.estimatedAssets)}</strong><small>{statusLabel[accounts[broker.id].status]}</small></div>)}</div></article>
-      <article className="panel preview-wide"><div className="panel-head"><div><h2>거래 내역</h2></div><span>준비 중</span></div><div className="data-message">{currentUser ? '거래 내역 조회 기능을 준비하고 있습니다.' : '로그인 후 이용할 수 있습니다.'}</div></article>
+      <RecentOrders history currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}
+        selected={orderHistoryTarget?.selected} initialAccountRefs={orderHistoryTarget?.accountRefs} reveal={Boolean(orderHistoryTarget)}/>
     </section>
   </>
 }

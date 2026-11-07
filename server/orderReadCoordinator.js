@@ -11,7 +11,7 @@ export function safeOrderFailure(broker, error) {
   const code = String(error.brokerCode ?? error.returnCode ?? '')
   const timeout = error.name === 'TimeoutError' || error.statusCode === 504
   return { broker, stage: stages.has(error.orderStage) ? error.orderStage : 'lookup',
-    category: http === 429 ? 'rate_limited' : timeout ? 'timeout' : 'broker_unavailable', timeout,
+    category: http === 429 ? 'rate_limited' : timeout ? 'timeout' : error.orderReadLimit ? 'page_limit' : error.orderPeriodUnsupported ? 'period_unsupported' : 'broker_unavailable', timeout,
     ...(Number.isInteger(http) && http >= 100 && http <= 599 ? { upstreamStatus: http } : {}),
     ...(/^-?\d{1,6}$/.test(code) ? { brokerCode: code } : {}) }
 }
@@ -21,13 +21,13 @@ export function safeOrderFailure(broker, error) {
 export function createOrderReadCoordinator({ readBroker, timeoutMs = 25_000, cancelGraceMs = 750,
   now = Date.now, onBrokerError = () => {}, maxJobs = 200 } = {}) {
   const jobs = new Map(), cooldowns = new Map()
-  return async function read(broker, account, days, accountRef, signal) {
+  return async function read(broker, account, days, accountRef, signal, range) {
     signal?.throwIfAborted()
     const credentials = broker === 'toss'
       ? [account.credentials.tossApiKey, account.credentials.tossSecretKey]
       : [account.credentials[`${broker}AppKey`], account.credentials[`${broker}SecretKey`]]
     const owner = hash([account.user.id, broker, credentials])
-    const key = hash([owner, days, accountRef])
+    const key = hash([owner, days, accountRef, range])
     for (const [id, until] of cooldowns) if (until <= now()) cooldowns.delete(id)
     const until = cooldowns.get(owner)
     if (until > now()) throw Object.assign(httpError('요청 한도 초과', 429), { retryAfterSeconds: Math.ceil((until - now()) / 1000) })
@@ -40,7 +40,7 @@ export function createOrderReadCoordinator({ readBroker, timeoutMs = 25_000, can
         let timer
         try {
           return await Promise.race([
-            Promise.resolve().then(() => readBroker(broker, account, days, accountRef, job.controller.signal)),
+            Promise.resolve().then(() => readBroker(broker, account, days, accountRef, job.controller.signal, range ? { timeBudgetMs: Math.max(1, timeoutMs - 2_000) } : undefined)),
             new Promise((_, reject) => {
               job.stop = () => reject(abortError())
               job.controller.signal.addEventListener('abort', job.stop, { once: true })

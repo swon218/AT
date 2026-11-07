@@ -52,8 +52,8 @@ export function createAddedBrokerData({ nh = nhClient, kb = kbClient } = {}) {
     return items
   }
 
-  async function nhAccounts(auth) {
-    const result = await nh.request(auth, '/n2/acctinfo', {})
+  async function nhAccounts(auth, signal) {
+    const result = await nh.request(auth, '/n2/acctinfo', {}, { signal })
     const accounts = (Array.isArray(result.Output_0) ? result.Output_0 : [])
       .filter(row => (nh.simulated ? ['03'] : ['01', '02']).includes(row.acct_type) && /^\d{11}$/.test(row.acct_no))
       .map(row => ({ id: row.acct_no, label: `${row.acct_no.slice(0, 3)}-****-${row.acct_no.slice(-4)}${row.acct_type === '03' ? ' (모의)' : ''}` }))

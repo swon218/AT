@@ -2,6 +2,7 @@
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { setTimeout as delay } from 'node:timers/promises'
+import { orderPeriodWindow } from '../src/utils/orderPeriod.js'
 if (process.env.NODE_ENV === 'production') throw new Error('Fixture is forbidden in production')
 const requests = {}, stock = { code: '005930', name: '검증 삼성전자', market: 'KOSPI', price: 71000, change: 1.2, volume: 500000 }
 const candles = Array.from({ length: 180 }, (_, i) => ({ time: new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10), open: 65000 + i * 30, high: 65800 + i * 30, low: 64400 + i * 30, close: 65200 + i * 30 + Math.sin(i / 5) * 300, volume: 10000 + i * 50 }))
@@ -80,7 +81,7 @@ function accountSummary(path, params, authorization) {
   })).filter((_, index) => brokers[index % brokers.length] === broker)
   return { ...summary, holdings }
 }
-function response(path, params, method, authorization) {
+async function response(path, params, method, authorization) {
   if (path.endsWith('/catalog')) return { items: [stock, { ...stock, code: '000660', name: '검증 SK하이닉스' }], updatedAt: Date.now(), stale: false }
   if (path.endsWith('/rankings')) return params.get('type') === 'favorites' ? { error: 'unexpected_favorites_ranking' } : { items: ranked }
   if (path.endsWith('/quote')) return ranked.find(item => item.code === params.get('symbol')) || { error: 'mock_quote_unavailable' }
@@ -94,15 +95,36 @@ function response(path, params, method, authorization) {
   }
   if (path.startsWith('/api/account/connections/')) return { connected: true, expiresAt: Date.now() + 60000 }
   if (/\/api\/account\/[^/]+\/summary/.test(path)) return accountSummary(path, params, authorization)
-  if (path === '/api/account/orders/recent') {
+  if (path.startsWith('/api/account/orders/history')) {
+    const start = params.get('from'), end = params.get('to'), day = params.get('day')
+    if (start === '2024-01-01') await delay(2_000)
     const brokers = (params.get('brokers') || 'kiwoom,toss,nh,kb').split(',')
-    const items = authorization?.endsWith('qa-holdings-1') && brokers.includes('toss')
-      ? Array.from({ length: 4 }, (_, index) => ({
-        id: `qa-order-${index}`, broker: 'toss', name: `검증 체결 ${index + 1}`, symbol: stock.code,
-        date: '2026-11-06', orderedAt: '2026-11-06T12:30:00+09:00',
-        side: 'buy', quantity: 1, filledQuantity: 1, averageFilledPrice: 71000, status: 'filled',
-      })) : []
-    return { items, brokers: brokers.map(broker => ({ broker, status: 'ready' })), range: { days: ['2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03', '2026-11-02'] } }
+    const window = orderPeriodWindow({ start, end }, params.get('before'))
+    const scenario = authorization?.endsWith('qa-holdings-1')
+    const nhAccounts = [{ id: 'a'.repeat(32), label: '주문 계좌 A' }, { id: 'b'.repeat(32), label: '주문 계좌 B' }]
+    const selectedNH = nhAccounts.find(({ id }) => id === params.get('nhAccount'))
+    const accountRef = 'c'.repeat(32)
+    const order = (broker, date, index) => ({
+      id: `qa-${broker}-${date}-${index}`, broker, name: `검증 체결 ${index + 1}`, symbol: stock.code,
+      date, accountRef: broker === 'nh' ? selectedNH?.id : accountRef, accountLabel: selectedNH?.label || '검증용 API 연결 계좌',
+      orderedAt: broker === 'nh' ? null : `${date}T12:${String(index).padStart(2, '0')}:00+09:00`,
+      side: 'buy', quantity: 1, filledQuantity: 1, averageFilledPrice: 71000, status: 'filled',
+    })
+    if (day) {
+      const broker = path.split('/').at(-2)
+      if (day < start || day > end || (broker === 'nh' ? !selectedNH : params.get(`${broker}Account`) !== accountRef)) return { error: '검증 상세 요청 범위 오류' }
+      const item = order(broker, day, Number(path.split('-').at(-1)))
+      return { item: { ...item, executions: [{ id: 'fixture-fill', at: `${day}T12:00:00+09:00`, quantity: 1, price: 71000 }] } }
+    }
+    const items = scenario ? [...window.days].reverse().flatMap(date => [
+      ...(brokers.includes('nh') && selectedNH ? [order('nh', date, 0)] : []),
+      ...(brokers.includes('toss') ? [0, 1].map(index => order('toss', date, index)) : []),
+    ]) : []
+    return { items, window, brokers: brokers.map(broker => {
+      if (scenario && broker === 'nh') return { broker, accounts: nhAccounts, selectedAccountRef: selectedNH?.id, status: selectedNH ? 'ready' : 'accountRequired' }
+      if (scenario && broker === 'kb') return { broker, status: 'error', error: 'timeout' }
+      return { broker, status: 'ready', selectedAccountRef: accountRef }
+    }) }
   }
   if (path === '/api/agent/status') return { authenticated: true, configured: true, remaining: 2, used: 0, limit: 2 }
   if (path === '/api/agent/rooms') return method === 'POST' ? room : { rooms: [room] }
@@ -124,7 +146,7 @@ const server = await createServer({ configFile: false, envDir: false, define: { 
       let text = ''; for await (const chunk of req) text += chunk
       const payload = path === '/__qa/watchlist'
         ? await watchlistResponse(url.searchParams.get('user'), text ? JSON.parse(text) : null)
-        : response(path, url.searchParams, req.method, req.headers.authorization)
+        : await response(path, url.searchParams, req.method, req.headers.authorization)
       res.writeHead(payload.error ? 503 : 200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(payload))
     }) },
   }, react(),

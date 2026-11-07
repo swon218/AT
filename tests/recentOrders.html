@@ -18,7 +18,7 @@ function Fixture() {
     React.createElement('button', {onClick: () => {setSelected(['kiwoom']); setTimeout(()=>setSelected(['kiwoom','toss','nh']),80); setTimeout(()=>setSelected(['kiwoom','toss','nh','kb']),160); setTimeout(()=>setSelected(['kiwoom','toss']),240)}}, '빠른 선택 변경 검증'),
     React.createElement('button', {onClick: async () => {const counts = await (await fetch('/__qa/metrics')).json(); setNotice(`목록·상세 요청 ${counts.requests}건 / 증권사 모의 조회 ${counts.reads}건`)}}, '요청 횟수 확인'),
     React.createElement('p', {role:'status'}, notice),
-    React.createElement('div', {style:{marginTop:'16px'}}, React.createElement(RecentOrders, {currentUser:user?{id:user}:null,integrationStatus:status,integrationVersion:0,selected,onSelectedChange:setSelected})))
+    React.createElement('div', {style:{marginTop:'16px'}}, React.createElement(RecentOrders, {history:true,currentUser:user?{id:user}:null,integrationStatus:status,integrationVersion:0,selected,onSelectedChange:setSelected})))
 }
 createRoot(document.getElementById('root')).render(React.createElement(Fixture))
 </script></body></html>

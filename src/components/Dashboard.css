@@ -151,10 +151,9 @@
 .dashboard-orders-table td { padding: 0; }
 .dashboard-orders-table .data-message { min-height: 180px; }
 .dashboard-recent-orders { container: atlas-recent-orders / inline-size; }
-.dashboard-recent-orders .dashboard-orders-scroll { max-height: 360px; overflow-y: auto; }
+.dashboard-recent-orders .dashboard-orders-scroll { min-width: 0; max-height: 360px; overflow: auto; overflow-anchor: none; }
 .dashboard-recent-orders .recent-orders-head { display: grid; grid-template-columns: auto minmax(48px, 1fr) auto; height: auto; min-height: 49px; gap: 10px; padding-block: 10px; }
 .recent-orders-head h2 { white-space: nowrap; }
-.recent-orders-more:disabled { cursor: default; }
 .recent-orders-head .recent-orders-brokers { justify-content: flex-end; flex-wrap: wrap; gap: 5px; padding: 0; }
 .dashboard-recent-orders .recent-orders-brokers button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 48px; min-width: 48px; height: 28px; padding: 0; flex: 0 0 48px; font-size: 11px; }
 .recent-orders-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; padding: 10px 14px 6px; font-size: 10px; color: var(--text-secondary, #8ba4c1); line-height: 1.6; }
@@ -162,7 +161,29 @@
 .recent-order-accounts label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 100%; }
 .recent-order-accounts select { max-width: 100%; border: 1px solid var(--border-default, #29415f); border-radius: 4px; padding: 3px 5px; background: var(--surface-panel, #10243b); color: var(--text-primary, #c9d9ec); font: inherit; }
 .recent-orders-warning { padding: 0 14px; margin: 5px 0 10px; color: var(--tone-warning, #e6b678); font-size: 10px; line-height: 1.6; }
+.recent-orders-issues, .recent-orders-load { margin: 5px 14px 10px; color: var(--text-secondary); font-size: 12px; }
+.recent-orders-issues summary { color: var(--tone-warning); cursor: pointer; }
+.recent-orders-issues[open] > div { margin-top: 8px; }
+.recent-orders-issues ul { padding-inline-start: 18px; }
+.recent-orders-load button, .recent-orders-issues button, .order-history-period button, .order-history-period input {
+  min-height: 34px; padding: 4px 9px; border: 1px solid var(--border-default); border-radius: 6px;
+  background: var(--surface-input, var(--surface-panel)); color: var(--text-primary); font: inherit;
+}
+.recent-orders-load button, .recent-orders-issues button, .order-history-period button { cursor: pointer; }
+.recent-orders-load button:disabled, .recent-orders-issues button:disabled { opacity: .65; cursor: wait; }
+.order-history-panel { min-width: 0; }
+.order-history-panel .recent-orders-head { grid-template-columns: auto minmax(48px, 1fr); }
+.order-history-panel h2 { scroll-margin-block-start: 84px; }
+.order-history-panel .dashboard-orders-scroll { max-height: min(60vh, 520px); }
+.order-history-period { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; padding: 10px 14px 4px; font-size: 12px; }
+.order-history-period label { display: grid; gap: 4px; min-width: 0; color: var(--text-secondary); }
+.order-history-period input { min-width: 0; max-width: 100%; }
+.order-history-period button[type="submit"] { background: var(--surface-selected); color: var(--text-primary); }
+.order-history-period small, .order-history-period p { flex: 1 0 100%; margin: 0; }
+.order-history-period small { color: var(--text-secondary); }
+.order-history-period p { color: var(--tone-warning); }
 .dashboard-recent-orders .recent-orders-table { min-width: 600px; }
+.dashboard-recent-orders .recent-orders-table th { position: sticky; top: 0; z-index: 1; background: var(--surface-panel); }
 .recent-orders-table .recent-order-row td { padding: 9px 10px; border-top: 1px solid var(--border-default, #17283d); color: var(--text-primary, #c5d7ed); font-size: 10px; vertical-align: middle; }
 .recent-orders-table .recent-order-row td:nth-child(4), .recent-orders-table .recent-order-row td:nth-child(5) { text-align: right; white-space: nowrap; }
 .recent-order-row strong, .recent-order-row small { display: block; }
@@ -179,7 +200,11 @@
 .recent-order-detail p { margin: 4px 0; overflow-wrap: anywhere; }
 .recent-order-detail ul { list-style: none; padding: 0; margin: 8px 0 0; }
 .recent-order-detail li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; padding-block: 4px; }
-.dashboard-recent-orders button:focus-visible, .dashboard-recent-orders select:focus-visible { outline: 2px solid var(--focus-ring, #6fc8ff); outline-offset: 2px; }
+.dashboard-recent-orders :is(button, select, input, summary, h2, .dashboard-orders-scroll):focus-visible { outline: 2px solid var(--focus-ring, #6fc8ff); outline-offset: 2px; }
+@container atlas-recent-orders (max-width: 380px) {
+  .dashboard-recent-orders:not(.order-history-panel) .recent-orders-head { grid-template-columns: 1fr auto; }
+  .dashboard-recent-orders:not(.order-history-panel) .recent-orders-brokers { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
+}
 @container atlas-recent-orders (max-width: 580px) {
   .dashboard-recent-orders .recent-orders-table { display: block; min-width: 0; width: 100%; }
   .recent-orders-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

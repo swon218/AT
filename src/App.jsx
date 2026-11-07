@@ -145,6 +145,7 @@ function App() {
   const currentOrderAccountSummary = orderAccountSummary?.requestScope === orderAccountScope ? orderAccountSummary : null
   const [dashboardHoldingsBrokers, setDashboardHoldingsBrokers] = useState(() => BROKERS.map(({ id }) => id))
   const [dashboardOrderBrokers, setDashboardOrderBrokers] = useState(() => BROKERS.map(({ id }) => id))
+  const [orderHistoryTarget, setOrderHistoryTarget] = useState(null)
 
   const chooseStock = (stock) => {
     selectionVersion.current += 1
@@ -165,10 +166,12 @@ function App() {
     setIntegrationVersion(version => version + 1)
   }
 
-  const openPage = (page) => {
+  const openPage = (page, historyTarget = null) => {
+    setOrderHistoryTarget(historyTarget)
     setActivePage(page)
     setMobileNav(false)
   }
+  const openOrderHistory = target => openPage('assets', { ...target, owner: currentUser?.id, version: integrationVersion })
   const openNews = category => { setNewsCategory(category); openPage('news') }
   const openScreen = query => { if (screen.open(query)) openPage('screen') }
   const askScreenAgent = query => {
@@ -393,9 +396,9 @@ function App() {
 
           <section className="lower-grid guest-lower-grid dashboard-account-grid">
             <DashboardHoldings key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardHoldingsBrokers} onSelectedChange={setDashboardHoldingsBrokers} onOpenAssets={() => openPage('assets')}/>
-            <RecentOrders key={`recent-orders:${currentUser?.id || 'guest'}`} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardOrderBrokers} onSelectedChange={setDashboardOrderBrokers}/>
+            <RecentOrders key={`recent-orders:${currentUser?.id || 'guest'}`} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardOrderBrokers} onSelectedChange={setDashboardOrderBrokers} onOpenHistory={openOrderHistory}/>
           </section>
-          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} watchlist={watchlist} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion}/>}
+          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} watchlist={watchlist} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} orderHistoryTarget={orderHistoryTarget?.owner === currentUser?.id && orderHistoryTarget?.version === integrationVersion ? orderHistoryTarget : null}/>}
         </div>
       </main>
       <FloatingAgent agent={{ ...agent, openScreen }} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>

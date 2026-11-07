@@ -222,3 +222,75 @@ test('calendar bridge reuses authenticated loopback calendar and rejects malform
   assert.deepEqual((await get(days[0])).days, days)
   await assert.rejects(createOrderCalendar({ secret: 'x'.repeat(32), fetcher: async () => new Response('{}') })(days[0]), { statusCode: 503 })
 })
+
+test('history pages keep all rows, filter out-of-range rows, deduplicate and use the same past account for detail', async t => {
+  const app = Fastify(); t.after(() => app.close())
+  const reads = [], ref = 'a'.repeat(32)
+  const query = { from: '2024-12-28', to: '2025-01-09', brokers: 'nh', nhAccount: ref }
+  registerRecentOrderRoutes(app, createRecentOrderHandlers({ authenticate, now, calendar: () => assert.fail('history must not use the trading-day calendar'),
+    readBroker: async (broker, account, days, accountRef) => {
+      reads.push([account.user.id, days, accountRef])
+      if (account.user.id !== 'user-a' || accountRef !== ref) return { status: 'accountRequired', accounts: [], items: [] }
+      const items = days.flatMap(day => ['1', '2', '3'].map(id => makeOrder(broker, ref, day, id)))
+      return { status: 'ready', items: [...items, items[0], makeOrder(broker, ref, '2024-01-01')], accounts: [] }
+    },
+  }))
+  const get = (path, params = query, token = 'user-a') => app.inject({
+    url: `/api/account/orders/history${path}?${new URLSearchParams(params)}`, headers: token ? { authorization: `Bearer ${token}` } : {},
+  })
+  const first = await get('')
+  assert.equal(first.statusCode, 200)
+  assert.equal(first.headers['cache-control'], 'private, no-store')
+  const latest = first.json()
+  assert.equal(latest.items.length, 21)
+  assert.equal(latest.items[0].date, '2025-01-03')
+  assert.equal(latest.items.at(-1).date, query.to)
+  assert.equal(latest.orderingIncomplete, true)
+  const older = (await get('', { ...query, before: latest.window.nextBefore })).json()
+  const items = [...older.items, ...latest.items]
+  assert.equal(items.length, 39)
+  assert.equal(new Set(items.map(item => item.id)).size, 39)
+  assert.equal(items[0].date, query.from)
+  assert.equal(older.window.nextBefore, null)
+  const order = items[0], path = `/nh/${order.id}`, detail = { ...query, day: order.date }
+  assert.equal((await get(path, detail)).json().item.id, order.id)
+  assert.deepEqual(reads.at(-1), ['user-a', [order.date], ref])
+  assert.equal((await get(path, detail, 'user-b')).statusCode, 400)
+  assert.equal((await get(path, { ...detail, nhAccount: 'b'.repeat(32) })).statusCode, 400)
+  assert.equal((await get(path, { ...detail, from: '2024-12-29' })).statusCode, 400)
+  const count = reads.length
+  for (const invalid of [{ from: '2024-02-30' }, { from: '2025-01-10' }, { to: '2026-11-07' }, { before: query.from }, { from: '2024-01-01' }]) {
+    assert.equal((await get('', { ...query, ...invalid })).statusCode, 400)
+  }
+  assert.equal((await get('', query, '')).statusCode, 401)
+  assert.equal((await get(path, detail, '')).statusCode, 401)
+  assert.equal(reads.length, count)
+})
+
+test('history preserves confirmed dates and separates broker limits, timeouts and rate limits', async () => {
+  let kbCount = 0, tossCount = 0
+  const readBroker = createBrokerHistory({
+    pause: async () => {},
+    kiwoom: async () => { throw Object.assign(new Error('private token=secret'), { upstreamStatus: 429, retryAfter: '11' }) },
+    tossAccount: async () => ({ accountSeq: 123 }),
+    toss: async () => { tossCount++; return { result: { orders: [], hasNext: true, nextCursor: String(tossCount) } } },
+    nhAccounts: async () => [{ id: '12345678901', label: '123-****-8901' }],
+    nh: { request: async () => { throw Object.assign(new Error('timeout'), { name: 'TimeoutError' }) } },
+    kb: { request: async () => {
+      if (++kbCount > 1) throw new Error('조회 기간 제한: 12345678901')
+      return { Record1: [kbRow] }
+    } },
+  })
+  const handlers = createRecentOrderHandlers({ authenticate, now, readBroker })
+  const query = { from: days[1], to: days[0] }
+  const result = await handlers.history(request('user-a', query))
+  assert.equal(result.items.length, 1)
+  assert.equal(result.items[0].broker, 'kb')
+  assert.deepEqual(result.brokers.map(({ status, error }) => [status, error]), [
+    ['error', 'rate_limited'], ['error', 'page_limit'], ['error', 'timeout'], ['partial', 'period_unsupported'],
+  ])
+  assert.equal(tossCount, 40)
+  assert.equal(result.brokers[0].retryAfterSeconds, 11)
+  assert.deepEqual(result.brokers[3].completedDays, [days[0]])
+  assert.doesNotMatch(JSON.stringify(result), /token|12345678901/)
+})
