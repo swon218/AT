@@ -25,7 +25,7 @@ function EquityCurve({ points }) {
   const low = Math.min(...points.map(p => p.value)), high = Math.max(...points.map(p => p.value))
   const range = high - low || Math.max(1, high * .01)
   const path = points.map((p, i) => `${i ? 'L' : 'M'}${20 + i / Math.max(1, points.length - 1) * 760},${125 - (p.value - low) / range * 100}`).join(' ')
-  return <div className="lab-equity"><div><span>일별 평가자산</span><span>{won(low)} ~ {won(high)}원</span></div><svg viewBox="0 0 800 145" role="img" aria-label="백테스트 일별 평가자산 추이"><path d={path} fill="none" stroke="#8d99ff" strokeWidth="2.5"/></svg><div><small>{points[0].time}</small><small>{points.at(-1).time}</small></div></div>
+  return <div className="lab-equity"><div><span>일별 평가자산</span><span>{won(low)} ~ {won(high)}원</span></div><svg viewBox="0 0 800 145" role="img" aria-label="백테스트 일별 평가자산 추이"><path d={path} fill="none" stroke="var(--tone-purple, #8d99ff)" strokeWidth="2.5"/></svg><div><small>{points[0].time}</small><small>{points.at(-1).time}</small></div></div>
 }
 
 export default function LabBacktestPanel({ candles, quality, symbol, indicators, settings, onSettingsChange, strategyName, disabled }) {

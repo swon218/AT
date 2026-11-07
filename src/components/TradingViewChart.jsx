@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, createChart,
+  CandlestickSeries, CrosshairMode, HistogramSeries, LineSeries, createChart,
 } from 'lightweight-charts'
 import { getBrokerCandleResponse } from '../services/kiwoomMarketApi'
 import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma, indicatorDisplayName } from '../utils/indicators'
 import { gapSafeSeries, isQuarantined } from '../utils/dataQuality'
+import { bindChartTheme, chartPalette, chartThemeOptions } from '../utils/chartTheme'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(Math.round(value))
 const volumeFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
@@ -103,39 +104,44 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     const container = containerRef.current
     if (!container || data.length === 0) return undefined
 
+    const palette = chartPalette()
+    const colors = chartThemeOptions(palette)
     const chart = createChart(container, {
       width: container.clientWidth,
       height: container.clientHeight,
       layout: {
-        background: { type: ColorType.Solid, color: '#0c1a2b' }, textColor: '#70849e',
+        ...colors.layout,
         fontFamily: "Inter, 'Noto Sans KR', sans-serif", fontSize: 11, attributionLogo: true,
         panes: {
           enableResize: true,
-          separatorColor: '#607895',
-          separatorHoverColor: 'rgba(75, 134, 255, .88)',
+          ...colors.layout.panes,
         },
       },
       localization: { locale: 'ko-KR', priceFormatter: (price) => won(price) },
-      grid: { vertLines: { color: '#152941' }, horzLines: { color: '#152941' } },
+      grid: colors.grid,
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: '#4d6787', labelBackgroundColor: '#315f9c' },
-        horzLine: { color: '#4d6787', labelBackgroundColor: '#315f9c' },
+        ...colors.crosshair,
       },
-      rightPriceScale: { visible: true, borderColor: '#1d334d', scaleMargins: { top: 0.08, bottom: 0.06 } },
+      rightPriceScale: { ...colors.rightPriceScale, visible: true, scaleMargins: { top: 0.08, bottom: 0.06 } },
       timeScale: {
-        borderColor: '#1d334d', timeVisible: period.endsWith('분'),
+        ...colors.timeScale, timeVisible: period.endsWith('분'),
         secondsVisible: false, rightOffset: 5, barSpacing: period === '월' ? 8 : 6,
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
     })
+    const themedPriceLines = []
+    const addThemedPriceLine = (series, options) => {
+      const line = series.createPriceLine({ ...options, axisLabelColor: chartPalette().background })
+      themedPriceLines.push(line)
+    }
     rightScaleWidthRef.current = Math.max(56, chart.priceScale('right', 0).width())
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#ff5c69', downColor: '#397ff5', wickUpColor: '#ff7a84',
-      wickDownColor: '#5c99ff', borderUpColor: '#ff5c69', borderDownColor: '#397ff5',
-      priceLineColor: '#758ca9',
+      upColor: palette.up, downColor: palette.down, wickUpColor: palette.wickUp,
+      wickDownColor: palette.wickDown, borderUpColor: palette.up, borderDownColor: palette.down,
+      priceLineColor: palette.price,
     })
     // Keep reported suspension closes in indicator calculations, matching the
     // backtest, but draw whitespace for candles without a valid OHLC range.
@@ -159,7 +165,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     volumeSeries.priceScale().applyOptions({
       visible: true,
       borderVisible: true,
-      borderColor: '#1d334d',
+      borderColor: palette.border,
       scaleMargins: { top: 0.12, bottom: 0.05 },
     })
     volumeSeries.setData(data.map((item) => isQuarantined(item) ? { time: item.time } : ({
@@ -215,10 +221,10 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
         autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
       }, nextPane)
       series.setData(rsiValues)
-      series.createPriceLine({ price: Number(rsiConfig.upper), color: rsiConfig.upperColor, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelColor: '#0c1a2b', axisLabelTextColor: rsiConfig.upperColor, title: '' })
-      series.createPriceLine({ price: Number(rsiConfig.lower), color: rsiConfig.lowerColor, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelColor: '#0c1a2b', axisLabelTextColor: rsiConfig.lowerColor, title: '' })
+      addThemedPriceLine(series, { price: Number(rsiConfig.upper), color: rsiConfig.upperColor, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelTextColor: rsiConfig.upperColor, title: '' })
+      addThemedPriceLine(series, { price: Number(rsiConfig.lower), color: rsiConfig.lowerColor, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelTextColor: rsiConfig.lowerColor, title: '' })
       const currentRsi = rsiValues.at(-1)?.value
-      if (Number.isFinite(currentRsi)) series.createPriceLine({ price: currentRsi, color: rsiConfig.color, lineVisible: false, axisLabelVisible: true, axisLabelColor: '#0c1a2b', axisLabelTextColor: rsiConfig.color, title: '' })
+      if (Number.isFinite(currentRsi)) addThemedPriceLine(series, { price: currentRsi, color: rsiConfig.color, lineVisible: false, axisLabelVisible: true, axisLabelTextColor: rsiConfig.color, title: '' })
       nextPane += 1
     }
 
@@ -264,6 +270,11 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
 
     setDefaultPaneLayout()
     restorePaneLayouts()
+    const unbindTheme = bindChartTheme(chart, palette => {
+      candleSeries.applyOptions({ upColor: palette.up, downColor: palette.down, wickUpColor: palette.wickUp, wickDownColor: palette.wickDown,
+        borderUpColor: palette.up, borderDownColor: palette.down, priceLineColor: palette.price })
+      themedPriceLines.forEach(line => line.applyOptions({ axisLabelColor: palette.background }))
+    })
     chart.panes().slice(1).forEach((pane) => pane.getHTMLElement()?.classList.add('atlas-chart-pane-divider'))
     const volumePaneElement = chart.panes()[1]?.getHTMLElement()
     const volumeLegendElement = document.createElement('div')
@@ -320,6 +331,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     document.addEventListener('pointerup', capturePaneLayouts)
 
     return () => {
+      unbindTheme()
       capturePaneLayouts()
       cancelAnimationFrame(captureFrame)
       cancelAnimationFrame(scaleWidthFrame)

@@ -1,0 +1,51 @@
+// All APIs, authentication and account data are synthetic. No real provider calls.
+import { createServer } from 'vite'
+import react from '@vitejs/plugin-react'
+if (process.env.NODE_ENV === 'production') throw new Error('Fixture is forbidden in production')
+const requests = {}, stock = { code: '005930', name: '검증 삼성전자', market: 'KOSPI', price: 71000, change: 1.2, volume: 500000 }
+const candles = Array.from({ length: 180 }, (_, i) => ({ time: new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10), open: 65000 + i * 30, high: 65800 + i * 30, low: 64400 + i * 30, close: 65200 + i * 30 + Math.sin(i / 5) * 300, volume: 10000 + i * 50 }))
+const symbol = { ...stock, ready: true, source: 'FDR:NAVER', updated_at: '2026-11-07T03:00:00+09:00' }
+const room = { id: '1', title: '테마 검증 대화', question_count: 1, updated_at: '2026-11-07T09:00:00+09:00' }
+const news = { id: 'fixture-news', title: '테마 검증을 위한 시장 뉴스', description: '밝은 화면과 어두운 화면에서 본문과 배지를 확인합니다.', url: 'https://news.naver.com', link: 'https://news.naver.com', originalLink: 'https://news.naver.com', publishedAt: '2026-11-07T09:00:00+09:00', category: 'market', source: '모의 뉴스' }
+const supabase = `let id='';const listeners=new Set();const session=()=>id?{access_token:'fixture',user:{id,email:'theme@fixture.invalid'}}:null;
+export const setQaUser=value=>{id=value;for(const fn of listeners)fn(id?'SIGNED_IN':'SIGNED_OUT',session())};
+export const initialRecoveryRequest={requested:false,failed:false};export const isSupabaseConfigured=true;
+export const supabase={auth:{initialize:async()=>({}),getSession:async()=>({data:{session:session()}}),onAuthStateChange:fn=>{listeners.add(fn);return{data:{subscription:{unsubscribe:()=>listeners.delete(fn)}}}},signOut:async()=>{setQaUser('');return{}}},from:table=>{const result=()=>({data:table==='profiles'?{nickname:'테마 검증 사용자'}:[],error:null});const q={select:()=>q,eq:()=>q,order:()=>q,update:()=>q,maybeSingle:async()=>result(),single:async()=>result(),then:(a,b)=>Promise.resolve(result()).then(a,b)};return q}};`
+function response(path, params, method, body) {
+  if (path.endsWith('/catalog')) return { items: [stock, { ...stock, code: '000660', name: '검증 SK하이닉스' }], updatedAt: Date.now(), stale: false }
+  if (path.endsWith('/rankings')) return { items: [stock] }
+  if (path.endsWith('/quote')) return stock
+  if (path.endsWith('/candles')) return path.includes('/lab/') ? { items: candles, symbol, quality: { corrected: 0, quarantined: 0, issues: [] } } : { items: candles, sourceBroker: 'kiwoom' }
+  if (path.endsWith('/symbols')) return { ready: true, items: [symbol], run: { failed: 0 } }
+  if (path.endsWith('/indices')) return { symbol: params.get('symbol'), name: '코스피', period: params.get('period'), price: 3200, change: 20, changeRate: .65, volume: 200000, asOf: '2026-11-07T15:30:00+09:00', candles: candles.map((c, i) => ({ time: c.time, close: 3000 + i, volume: c.volume })) }
+  if (path.startsWith('/api/public/news/')) return { items: [news], total: 1, hasMore: false, nextStart: null, fetchedAt: new Date().toISOString(), category: params.get('category') || 'all' }
+  if (path === '/api/account/settings') return { kiwoomConfigured: true, tossConfigured: true, nhConfigured: true, kbConfigured: true }
+  if (path.startsWith('/api/account/connections/')) return { connected: true, expiresAt: Date.now() + 60000 }
+  if (/\/api\/account\/[^/]+\/summary/.test(path)) return { estimatedAssets: 100000, totalPurchaseAmount: 70000, totalEvaluationAmount: 71000, totalEvaluationProfit: 1000, cash: 29000, orderableAmount: 29000, holdings: [{ ...stock, quantity: 1, tradableQuantity: 1, averagePrice: 70000, currentPrice: 71000, evaluationProfit: 1000, profitRate: 1.4 }] }
+  if (path === '/api/account/orders/recent') return { items: [], brokers: ['kiwoom', 'toss', 'nh', 'kb'].map(broker => ({ broker, status: 'ready' })), range: { days: ['2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03', '2026-11-02'] } }
+  if (path === '/api/agent/status') return { authenticated: true, configured: true, remaining: 2, used: 0, limit: 2 }
+  if (path === '/api/agent/rooms') return method === 'POST' ? room : { rooms: [room] }
+  if (path === '/api/agent/rooms/1/messages') return { room, question_count: 1, requests: [], messages: [
+    { id: '1', role: 'user', content: '테마 전환 후에도 이 대화가 유지되나요?', created_at: room.updated_at },
+    { id: '2', role: 'assistant', content: '현재 대화와 입력 중인 초안을 유지하면서 화면 테마만 변경합니다.', created_at: room.updated_at },
+  ] }
+  if (path === '/api/screener') return { ready: true, quality_ready: true, universe: 2, cutoff: '2026-11-06', latest_bar: '2026-11-06' }
+  return { error: 'theme_fixture_unavailable' }
+}
+const server = await createServer({ configFile: false, envDir: false, define: { 'import.meta.env.VITE_API_BASE_URL': JSON.stringify('') }, plugins: [
+  { name: 'theme-fixture', enforce: 'pre', load(id) { if (id.replaceAll('\\', '/').endsWith('/src/services/supabaseClient.js')) return supabase },
+    transform(code, id) { if (/\/(TradingViewChart|MarketIndexChart)\.jsx$/.test(id.replaceAll('\\', '/'))) return code.replace("from 'lightweight-charts'", "from '/tests/support/themeCharts.js'") },
+    configureServer(vite) { vite.middlewares.use(async (req, res, next) => {
+      if (req.url === '/__qa/metrics') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify(requests)) }
+      if (!req.url.startsWith('/api/')) return next()
+      const url = new URL(req.url, 'http://fixture.invalid'), path = url.pathname
+      requests[path] = (requests[path] || 0) + 1
+      let text = ''; for await (const chunk of req) text += chunk
+      const payload = response(path, url.searchParams, req.method, text ? JSON.parse(text) : null)
+      res.writeHead(payload.error ? 503 : 200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(payload))
+    }) },
+  }, react(),
+], server: { host: '127.0.0.1', port: 15178, strictPort: true } })
+await server.listen()
+console.log('Theme fixture: http://127.0.0.1:15178/tests/themeBrowser.html')
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void server.close().then(() => process.exit(0)) })

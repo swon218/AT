@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { AreaSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle, createChart } from 'lightweight-charts'
+import { AreaSeries, CrosshairMode, HistogramSeries, LineStyle, createChart } from 'lightweight-charts'
 import { RefreshCw } from 'lucide-react'
 import { getKiwoomIndex } from '../services/kiwoomMarketApi'
+import { bindChartTheme, chartPalette, chartThemeOptions } from '../utils/chartTheme'
+import { getTheme } from '../services/theme'
 
 const periods = [['1d', '1일'], ['1w', '1주'], ['1m', '1개월'], ['3m', '3개월'], ['1y', '1년']]
 const point = value => value == null ? '—' : value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -24,22 +26,28 @@ function IndexPlot({ data }) {
     setHover(null)
     const intraday = data.period === '1d'
     const rising = data.changeRate >= 0
-    const color = rising ? '#ff455d' : '#369bff'
+    const palette = chartPalette(getTheme(), 'index'), colors = chartThemeOptions(palette)
+    const color = rising ? palette.up : palette.down
     const chart = createChart(container, {
       width: container.clientWidth, height: container.clientHeight,
-      layout: { background: { type: ColorType.Solid, color: '#071d2d' }, textColor: '#87a8c6', fontSize: 10, fontFamily: 'inherit', panes: { separatorColor: '#17354b', separatorHoverColor: '#2e6080', enableResize: false } },
-      grid: { vertLines: { color: '#102e42' }, horzLines: { color: '#102e42' } },
-      crosshair: { mode: CrosshairMode.Normal, vertLine: { color: '#6585a4', labelBackgroundColor: '#18374e' }, horzLine: { color: '#6585a4', labelBackgroundColor: '#18374e' } },
-      rightPriceScale: { borderColor: '#17354b', minimumWidth: 66, scaleMargins: { top: .12, bottom: .08 } },
-      timeScale: { borderColor: '#17354b', timeVisible: intraday, secondsVisible: false, rightOffset: 2, tickMarkFormatter: time => formatTime(time, intraday) },
+      layout: { ...colors.layout, fontSize: 10, fontFamily: 'inherit', panes: { ...colors.layout.panes, enableResize: false } },
+      grid: colors.grid,
+      crosshair: { ...colors.crosshair, mode: CrosshairMode.Normal },
+      rightPriceScale: { ...colors.rightPriceScale, minimumWidth: 66, scaleMargins: { top: .12, bottom: .08 } },
+      timeScale: { ...colors.timeScale, timeVisible: intraday, secondsVisible: false, rightOffset: 2, tickMarkFormatter: time => formatTime(time, intraday) },
       localization: { locale: 'ko-KR', timeFormatter: time => formatTime(time, intraday) },
       handleScroll: false, handleScale: false,
     })
-    const series = chart.addSeries(AreaSeries, { lineColor: color, topColor: rising ? '#ff455d45' : '#369bff45', bottomColor: '#071d2d00', lineWidth: 2, priceFormat: { type: 'price', precision: 2, minMove: .01 } })
+    const series = chart.addSeries(AreaSeries, { lineColor: color, topColor: `${color}45`, bottomColor: `${palette.background}00`, lineWidth: 2, priceFormat: { type: 'price', precision: 2, minMove: .01 } })
     const bars = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false }, 1)
     series.setData(data.candles.map(row => ({ time: chartTime(row.time), value: row.close })))
     bars.setData(data.candles.map((row, i) => ({ time: chartTime(row.time), value: row.volume, color: row.close >= (data.candles[i - 1]?.close ?? row.close) ? '#ef5265b0' : '#419cffb0' })).filter(row => row.value !== null))
-    if (intraday && data.change !== null) series.createPriceLine({ price: data.price - data.change, color: '#60798f', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '전일' })
+    const previousClose = intraday && data.change !== null ? series.createPriceLine({ price: data.price - data.change, color: palette.price, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '전일' }) : null
+    const unbindTheme = bindChartTheme(chart, palette => {
+      const lineColor = rising ? palette.up : palette.down
+      series.applyOptions({ lineColor, topColor: `${lineColor}45`, bottomColor: `${palette.background}00` })
+      previousClose?.applyOptions({ color: palette.price })
+    }, { kind: 'index' })
     chart.panes()[1]?.setHeight(78)
     const byTime = new Map(data.candles.map(row => [String(chartTime(row.time)), row]))
     chart.subscribeCrosshairMove(event => {
@@ -55,7 +63,7 @@ function IndexPlot({ data }) {
       })
     })
     observer.observe(container)
-    return () => { observer.disconnect(); if (frame !== null) cancelAnimationFrame(frame); chart.remove() }
+    return () => { unbindTheme(); observer.disconnect(); if (frame !== null) cancelAnimationFrame(frame); chart.remove() }
   }, [data])
   return <>
     <div className="index-chart-readout">{hover ? <><span>{dateLabel(hover.time)}</span><b>{point(hover.close)}</b></> : <span>{data.period === '1d' ? '최근 거래일 · 1분 간격' : '일별 지수'}</span>}</div>

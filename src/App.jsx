@@ -32,6 +32,7 @@ import useStrategies from './hooks/useStrategies'
 import useAgentWorkspace from './hooks/useAgentWorkspace'
 import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
 import SidebarFooter from './components/SidebarFooter'
+import ThemeSwitch from './components/ThemeSwitch'
 import useBrokerConnections from './hooks/useBrokerConnections'
 import ScreenerWorkspace from './components/ScreenerWorkspace'
 import useScreener from './hooks/useScreener'
@@ -360,7 +361,7 @@ function App() {
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
           {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : activePage === 'screen' ? <><Filter/><span>조건 검색</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
-          <div className="header-actions">{brokerageDataEnabled && <span className="market-open"><i/>시장 조회</span>}<button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
+          <div className="header-actions"><ThemeSwitch/><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
         <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>

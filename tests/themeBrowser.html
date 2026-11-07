@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#08111f"><script src="/theme-init.js"></script><title>ATLAS 테마 모의 검증</title></head>
+<body><div id="root"></div><div id="qa"></div><script type="module">
+import React,{useState} from 'react'
+import {createRoot} from 'react-dom/client'
+import App from '/src/App.jsx'
+import {setQaUser} from '/src/services/supabaseClient.js'
+import {chartReport,zoomFixtureCharts} from '/tests/support/themeCharts.js'
+import '/src/styles.css'
+function Controls(){const[report,setReport]=useState(''),[open,setOpen]=useState(false);return React.createElement('aside',{style:{position:'fixed',right:8,bottom:8,zIndex:90,maxWidth:'min(450px,95vw)',maxHeight:'40vh',overflow:'auto',padding:8,background:'var(--surface-panel,#142742)',border:'1px solid var(--border-strong,#54759a)',fontSize:11}},
+ React.createElement('button',{onClick:()=>setOpen(!open)},open?'검증 도구 접기':'검증 도구 열기'),open&&React.createElement(React.Fragment,{},
+ React.createElement('button',{onClick:()=>setQaUser('qa-theme')},'모의 로그인'),React.createElement('button',{onClick:()=>setQaUser('')},'모의 로그아웃'),
+ React.createElement('button',{onClick:zoomFixtureCharts},'차트 범위 변경'),React.createElement('button',{onClick:async()=>setReport(JSON.stringify({charts:chartReport(),requests:await(await fetch('/__qa/metrics')).json()}))},'테마 검증 상태'),
+ React.createElement('pre',{'aria-label':'테마 검증 결과',style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}},report)))}
+createRoot(document.getElementById('root')).render(React.createElement(App))
+createRoot(document.getElementById('qa')).render(React.createElement(Controls))
+</script></body></html>

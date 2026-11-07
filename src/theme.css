@@ -1,0 +1,62 @@
+/* Component fallbacks retain the existing dark palette exactly. Light mode
+   supplies shared roles for every stylesheet, including gradients and alpha fills. */
+:root { color-scheme: dark; --text: var(--text-primary, #e9eef7); }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --surface-page: #f4f7fb;
+  --surface-sidebar: #ffffff;
+  --surface-header: rgba(255, 255, 255, .96);
+  --surface-panel: #ffffff;
+  --surface-field: #f8fafd;
+  --surface-raised: #eef3fa;
+  --surface-selected: #e1ecff;
+  --surface-hover: #eaf1fb;
+  --surface-success: #e4f4ed;
+  --surface-danger: #fce9ec;
+  --surface-warning: #fff3d8;
+  --surface-purple: #eeebff;
+  --surface-info: #e2f2f8;
+  --text-primary: #172b45;
+  --text-secondary: #405570;
+  --text-muted: #526984;
+  --text-on-accent: #ffffff;
+  --text-on-bright: #123344;
+  --border-default: #cfd9e7;
+  --border-strong: #a8bad0;
+  --tone-accent: #245fc5;
+  --tone-danger: #bd263e;
+  --tone-success: #087650;
+  --tone-warning: #805500;
+  --tone-purple: #6550b9;
+  --tone-info: #086f8d;
+  --fill-accent: #306ddd;
+  --fill-danger: #c6324a;
+  --fill-success: #087f5c;
+  --fill-warning: #a96c12;
+  --fill-purple: #6b57c3;
+  --fill-info: #17819a;
+  --focus-ring: #1c64d8;
+  --overlay: rgba(25, 43, 69, .36);
+  --shadow-color: rgba(27, 51, 82, .15);
+  --shadow-accent: rgba(36, 95, 197, .15);
+}
+
+.header-actions .theme-switch { display: inline-flex; align-items: center; flex-shrink: 0; gap: 2px; padding: 3px; border: 1px solid var(--border-strong, #29415f); border-radius: 8px; background: var(--surface-field, #0a1727); }
+.header-actions .theme-switch button { display: inline-flex; align-items: center; justify-content: center; width: auto; min-width: 44px; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-muted, #8da1bb); font-size: 11px; font-weight: 600; }
+.header-actions .theme-switch button[aria-pressed="true"] { border-color: var(--tone-accent, #4b86ff); color: var(--text-primary, #edf4ff); background: var(--surface-selected, #193353); }
+.header-actions .theme-switch button:hover { color: var(--text-primary, #edf4ff); background: var(--surface-hover, #172b45); }
+.header-actions .theme-switch button:focus-visible { outline: 2px solid var(--focus-ring, #78a5ff); outline-offset: 2px; z-index: 1; }
+.auth-brand > span { color: var(--text-on-accent, #dbe7fb); }
+.asset-broker-tag.kiwoom { color: var(--text-on-accent, #fff); }
+
+@media (max-width: 850px) {
+  .app-shell > main > header { flex-wrap: wrap; height: auto; min-height: 67px; padding-block: 10px; }
+  .app-shell > main > header > .global-search, .app-shell > main > header > .lab-workspace-title { flex: 1 1 170px; min-width: 0; }
+  .app-shell > main > header > .lab-workspace-title { white-space: normal; line-height: 1.5; }
+  .header-actions { margin-left: auto; }
+  .header-actions .theme-switch button:last-child { display: inline-flex; }
+}
+@media (max-width: 540px) {
+  .app-shell > main > header > .global-search, .app-shell > main > header > .lab-workspace-title { flex-basis: calc(100% - 50px); }
+  .app-shell > main > header > .header-actions { flex-basis: 100%; justify-content: flex-end; }
+}
