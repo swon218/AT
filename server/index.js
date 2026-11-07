@@ -25,10 +25,22 @@ import { registerAgentRoutes } from './agent.js'
 import { registerScreenRoutes } from './screener.js'
 
 const app = Fastify({ logger: true })
-await app.register(cors, {
+const corsOptions = {
   origin: config.frontendOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+}
+await app.register(cors, {
+  delegator(request, callback) {
+    const preview = config.frontendPreviewOrigin
+    if (!preview || preview === config.frontendOrigin || request.headers.origin !== preview) {
+      callback(null, corsOptions)
+      return
+    }
+
+    const method = request.method === 'OPTIONS' ? request.headers['access-control-request-method'] : request.method
+    callback(null, { ...corsOptions, origin: method === 'GET' ? preview : false, methods: ['GET'] })
+  },
 })
 
 app.get('/api/health', async () => ({ ok: true, ...publicConfigurationStatus() }))

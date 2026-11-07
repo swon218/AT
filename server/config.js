@@ -1,9 +1,16 @@
 import 'dotenv/config'
 
+function exactHttpsOrigin(value) {
+  const origin = value?.trim()
+  if (!origin?.startsWith('https://') || !URL.canParse(origin)) return ''
+  return new URL(origin).origin === origin ? origin : ''
+}
+
 export const config = {
   port: Number(process.env.PORT || 3000),
   host: process.env.HOST || '127.0.0.1',
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://127.0.0.1:5173',
+  frontendPreviewOrigin: exactHttpsOrigin(process.env.FRONTEND_PREVIEW_ORIGIN),
   kiwoomHost: process.env.KIWOOM_API_HOST || 'https://api.kiwoom.com',
   kiwoomAppKey: process.env.KIWOOM_APP_KEY || process.env.kiwoom_app_key || '',
   kiwoomSecretKey: process.env.KIWOOM_SECRET_KEY || process.env.kiwoom_secret_key || '',
