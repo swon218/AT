@@ -94,6 +94,9 @@ nav p{font-size:10px}nav a{font-size:14px}
 .holdings-broker-tabs{display:flex;align-items:center;gap:5px}.holdings-broker-tabs button{height:27px;min-width:48px;padding:0 10px;border:1px solid var(--border-default, #2a405d);border-radius:6px;background:var(--surface-panel, #0a1727);color:var(--text-muted, #7f94af);font-size:10px;font-weight:700;cursor:pointer}.holdings-broker-tabs button.active{color:var(--text-primary, #fff);background:var(--surface-selected, #1b3657);border-color:var(--tone-accent, #4b86ff)}
 @media(max-width:540px){.holdings-broker-tabs button{min-width:43px;padding:0 8px}}
 :is(.asset-holdings-scroll, .dashboard-holdings-scroll) {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--text-muted, #758aa8) var(--surface-field, #0b1929);

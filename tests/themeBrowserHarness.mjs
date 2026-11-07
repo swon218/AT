@@ -94,7 +94,16 @@ function response(path, params, method, authorization) {
   }
   if (path.startsWith('/api/account/connections/')) return { connected: true, expiresAt: Date.now() + 60000 }
   if (/\/api\/account\/[^/]+\/summary/.test(path)) return accountSummary(path, params, authorization)
-  if (path === '/api/account/orders/recent') return { items: [], brokers: ['kiwoom', 'toss', 'nh', 'kb'].map(broker => ({ broker, status: 'ready' })), range: { days: ['2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03', '2026-11-02'] } }
+  if (path === '/api/account/orders/recent') {
+    const brokers = (params.get('brokers') || 'kiwoom,toss,nh,kb').split(',')
+    const items = authorization?.endsWith('qa-holdings-1') && brokers.includes('toss')
+      ? Array.from({ length: 4 }, (_, index) => ({
+        id: `qa-order-${index}`, broker: 'toss', name: `검증 체결 ${index + 1}`, symbol: stock.code,
+        date: '2026-11-06', orderedAt: '2026-11-06T12:30:00+09:00',
+        side: 'buy', quantity: 1, filledQuantity: 1, averageFilledPrice: 71000, status: 'filled',
+      })) : []
+    return { items, brokers: brokers.map(broker => ({ broker, status: 'ready' })), range: { days: ['2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03', '2026-11-02'] } }
+  }
   if (path === '/api/agent/status') return { authenticated: true, configured: true, remaining: 2, used: 0, limit: 2 }
   if (path === '/api/agent/rooms') return method === 'POST' ? room : { rooms: [room] }
   if (path === '/api/agent/rooms/1/messages') return { room, question_count: 1, requests: [], messages: [

@@ -21,7 +21,9 @@
 .asset-account-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-secondary, #91a4bd); }
 .asset-account-picker select { max-width: 100%; padding: 5px 8px; border: 1px solid var(--border-default, #2a405d); border-radius: 5px; background: var(--surface-panel, #102138); color: var(--text-primary, #dbe7fb); }
 .asset-metric-note { display: block; margin-top: 10px; color: var(--text-secondary, #91a4bd); font-size: 11px; line-height: 1.5; }
-.asset-preview-grid > .panel.asset-holdings { min-width: 0; min-height: 0; align-self: start; overflow: clip; }
+.asset-preview-grid > .panel:not(.preview-wide) { min-width: 0; min-height: 0; align-self: stretch; }
+.asset-preview-grid > .panel.asset-holdings { display: flex; flex-direction: column; overflow: clip; }
+.asset-holdings > .panel-head { flex: none; }
 .asset-holdings-table { width: 100%; min-width: 650px; border-collapse: separate; border-spacing: 0; white-space: nowrap; font-size: 12px; }
 .asset-holdings-table th, .asset-holdings-table td { padding: 13px 12px; border-bottom: 1px solid var(--border-default, #17283d); text-align: right; }
 .asset-holdings-table th { position: sticky; top: 0; z-index: 1; background: var(--surface-panel, #0d1a2b); color: var(--text-secondary, #91a4bd); font-size: 11px; font-weight: 500; }

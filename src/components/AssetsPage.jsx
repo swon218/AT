@@ -21,9 +21,9 @@ function AssetHoldingsTable({ holdings }) {
     const fitRows = () => {
       const lastVisibleRow = table.tBodies[0].rows[visibleHoldingRows - 1]
       const contentHeight = lastVisibleRow.getBoundingClientRect().bottom - table.getBoundingClientRect().top
-      // Classic scrollbars take up space inside the viewport. Overlay scrollbars don't.
+      // Include the native bar in the starting height; flex can fill a taller grid row.
       const scrollbarHeight = viewport.offsetHeight - viewport.clientHeight
-      viewport.style.maxHeight = `${Math.ceil(contentHeight) + scrollbarHeight}px`
+      viewport.style.blockSize = `${Math.ceil(contentHeight) + scrollbarHeight}px`
     }
     fitRows()
     let frame
@@ -36,7 +36,7 @@ function AssetHoldingsTable({ holdings }) {
     return () => {
       observer.disconnect()
       cancelAnimationFrame(frame)
-      viewport.style.removeProperty('max-height')
+      viewport.style.removeProperty('block-size')
     }
   }, [needsHeightLimit])
 
