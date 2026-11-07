@@ -57,6 +57,29 @@ async function watchlistResponse(user, body) {
   watchlists.set(user, next)
   return { data: next }
 }
+function accountSummary(path, params, authorization) {
+  const holding = { ...stock, quantity: 1, tradableQuantity: 1, averagePrice: 70000, currentPrice: 71000, evaluationAmount: 71000, evaluationProfit: 1000, profitRate: 1.4 }
+  const summary = { estimatedAssets: 100000, totalPurchaseAmount: 70000, totalEvaluationAmount: 71000, totalEvaluationProfit: 1000, cash: 29000, orderableAmount: 29000 }
+  const scenario = authorization?.match(/fixture-qa-holdings-(0|1|3|4|6)$/)
+  if (!scenario) return { ...summary, holdings: [holding] }
+
+  const count = Number(scenario[1])
+  const broker = path.split('/')[3]
+  if (count === 6 && broker === 'nh') {
+    const accounts = [{ id: 'qa-nh-a', label: '모의 NH 계좌 A' }, { id: 'qa-nh-b', label: '모의 NH 계좌 B' }]
+    const selected = accounts.find(account => account.id === params.get('accountId'))
+    return {
+      ...summary, accounts, accountRequired: !selected,
+      holdings: selected ? [{ ...holding, code: '000660', name: selected.label, quantity: 7 }] : [],
+    }
+  }
+  const brokers = ['kiwoom', 'toss', 'kb']
+  const holdings = Array.from({ length: count }, (_, index) => ({
+    ...holding, code: String(index + 1).padStart(6, '0'),
+    name: `검증 보유종목 ${index + 1}`, quantity: index + 1,
+  })).filter((_, index) => brokers[index % brokers.length] === broker)
+  return { ...summary, holdings }
+}
 function response(path, params, method, authorization) {
   if (path.endsWith('/catalog')) return { items: [stock, { ...stock, code: '000660', name: '검증 SK하이닉스' }], updatedAt: Date.now(), stale: false }
   if (path.endsWith('/rankings')) return params.get('type') === 'favorites' ? { error: 'unexpected_favorites_ranking' } : { items: ranked }
@@ -70,7 +93,7 @@ function response(path, params, method, authorization) {
     return { kiwoomConfigured: configured, tossConfigured: configured, nhConfigured: configured, kbConfigured: configured }
   }
   if (path.startsWith('/api/account/connections/')) return { connected: true, expiresAt: Date.now() + 60000 }
-  if (/\/api\/account\/[^/]+\/summary/.test(path)) return { estimatedAssets: 100000, totalPurchaseAmount: 70000, totalEvaluationAmount: 71000, totalEvaluationProfit: 1000, cash: 29000, orderableAmount: 29000, holdings: [{ ...stock, quantity: 1, tradableQuantity: 1, averagePrice: 70000, currentPrice: 71000, evaluationProfit: 1000, profitRate: 1.4 }] }
+  if (/\/api\/account\/[^/]+\/summary/.test(path)) return accountSummary(path, params, authorization)
   if (path === '/api/account/orders/recent') return { items: [], brokers: ['kiwoom', 'toss', 'nh', 'kb'].map(broker => ({ broker, status: 'ready' })), range: { days: ['2026-11-06', '2026-11-05', '2026-11-04', '2026-11-03', '2026-11-02'] } }
   if (path === '/api/agent/status') return { authenticated: true, configured: true, remaining: 2, used: 0, limit: 2 }
   if (path === '/api/agent/rooms') return method === 'POST' ? room : { rooms: [room] }

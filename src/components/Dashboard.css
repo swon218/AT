@@ -99,13 +99,25 @@
 .news-story-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .news-story-tags span { border-radius: 4px; background: var(--surface-raised, #102e43); padding: 2px 6px; color: var(--text-secondary, #9fc3df); font-size: 10px; }
 .dashboard-index-panel button:focus-visible, .dashboard-news button:focus-visible, .dashboard-news a:focus-visible { outline: 2px solid var(--focus-ring, #6fc8ff); outline-offset: -2px; }
-.dashboard-account-grid .dashboard-holdings-table { overflow-x: auto; }
-.dashboard-account-grid .dashboard-holding-row { min-width: 455px; }
-.dashboard-holdings .dashboard-holdings-head { flex-wrap: wrap; gap: 10px; height: auto; min-height: 49px; padding-block: 10px; box-sizing: border-box; }
-.dashboard-holdings .holdings-broker-tabs { flex-wrap: wrap; }
+.guest-content .dashboard-account-grid > .dashboard-holdings { min-height: 0; align-self: start; overflow: clip; }
+.dashboard-holdings .dashboard-holdings-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; height: auto; min-height: 49px; padding-block: 10px; }
+.dashboard-holdings-head h2 { white-space: nowrap; }
+.dashboard-holdings-head .holdings-broker-tabs { justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
+.dashboard-holdings-more { justify-self: end; }
 .dashboard-holdings .holdings-broker-tabs button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 48px; min-width: 48px; height: 28px; padding: 0; flex: 0 0 48px; font-size: 11px; }
 .dashboard-holdings button:disabled { cursor: default; }
 .dashboard-holdings button:focus-visible, .dashboard-holdings select:focus-visible { outline: 2px solid var(--focus-ring, #6fc8ff); outline-offset: 2px; }
+.dashboard-holdings-table { width: 100%; min-width: 455px; border-collapse: separate; border-spacing: 0; white-space: nowrap; text-align: right; font-size: 11px; }
+.dashboard-holdings-table th, .dashboard-holdings-table td { padding: 0 15px; border-bottom: 1px solid var(--border-default, #17283d); }
+.dashboard-holdings-table th { height: 34px; color: var(--text-secondary, #7f9ab9); font-size: 10px; font-weight: 500; }
+.dashboard-holdings-table td { height: 46px; }
+.dashboard-holdings-table th:first-child, .dashboard-holdings-table td:first-child { text-align: left; }
+.dashboard-holding-stock { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 7px; }
+.dashboard-holding-stock strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dashboard-holding-stock small { grid-column: 2; color: var(--text-muted, #647a95); font-size: 9px; }
+.broker-holding-badge { grid-row: 1 / 3; display: grid; place-items: center; width: 35px; height: 22px; border-radius: 5px; font-size: 9px; font-weight: 800; }
+.broker-holding-badge.kiwoom { background: var(--surface-raised, #163765); color: var(--tone-accent, #73a5ff); }
+.broker-holding-badge.toss { background: var(--surface-raised, #302d66); color: var(--text-secondary, #a7a1ff); }
 .broker-holding-badge.nh { background: var(--surface-warning, #40371b); color: var(--tone-warning, #f0cb63); }
 .broker-holding-badge.kb { background: var(--surface-warning, #422d1b); color: var(--tone-warning, #ffb66d); }
 .dashboard-holdings-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px; padding: 0 15px 10px; color: var(--text-secondary, #8ba4c1); }
@@ -202,6 +214,7 @@
   .dashboard-summary-card { min-height: 165px; padding: 12px 10px 8px; }
 }
 @media (max-width: 540px) {
+  .dashboard-holdings-table th, .dashboard-holdings-table td { padding-inline: 10px; }
   .dashboard-market-grid .dashboard-index-panel { height: 480px; }
   .index-quote strong { font-size: 29px; }
 }

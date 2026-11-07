@@ -7,7 +7,7 @@ import { hasAmount, summarizeAssets, toggleAssetBroker } from '../utils/assetSum
 const number = value => new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(value)
 const signedAmount = value => hasAmount(value) ? `${value > 0 ? '+' : ''}${number(value)}원` : '—'
 
-export default function DashboardHoldings({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange }) {
+export default function DashboardHoldings({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange, onOpenAssets }) {
   const [accountSelection, setAccountSelection] = useState(null)
   const accountIds = accountSelection?.version === integrationVersion ? accountSelection.ids : {}
   const [refreshVersion, setRefreshVersion] = useState(0)
@@ -15,9 +15,9 @@ export default function DashboardHoldings({ currentUser, integrationStatus, inte
   const { holdings, readyCount } = summarizeAssets(selected, accounts)
   const loading = selected.some(id => accounts[id].status === 'loading')
 
-  return <article className="panel holdings dashboard-holdings">
+  return <article className="panel dashboard-holdings">
     <div className="panel-head dashboard-holdings-head">
-      <div><h2>보유종목</h2></div>
+      <h2>보유종목</h2>
       <div className="holdings-broker-tabs" role="group" aria-label="보유종목 증권사 선택">
         {BROKERS.map(broker => {
           const active = selected.includes(broker.id)
@@ -26,6 +26,7 @@ export default function DashboardHoldings({ currentUser, integrationStatus, inte
           </button>
         })}
       </div>
+      <button type="button" className="dashboard-news-more dashboard-holdings-more" aria-label="보유종목 더보기" onClick={onOpenAssets}>더보기</button>
     </div>
     <div className="dashboard-holdings-tools">
       <small>{selected.length}개 선택</small>
@@ -40,14 +41,16 @@ export default function DashboardHoldings({ currentUser, integrationStatus, inte
             </select></label>
         })}
       </div>
-      {!holdings.length ? <div className="data-message">{loading ? '선택한 증권사 보유종목을 조회하고 있습니다.' : readyCount === selected.length ? '선택한 증권사에 보유종목이 없습니다.' : '선택한 증권사의 보유종목을 확인할 수 없습니다.'}</div> : <div className="dashboard-holdings-table">
-        <div className="dashboard-holding-row head"><span>증권사 · 종목</span><span>보유수량</span><span>수익률</span><span>평가손익</span></div>
-        <div className="dashboard-holding-scroll">{holdings.map((item, index) => <div className="dashboard-holding-row" key={`${item.broker}:${item.code}:${index}`}>
-          <span><span className={`broker-holding-badge ${item.broker}`}>{getBroker(item.broker).shortName}</span><strong>{item.name}</strong><small>{item.code}</small></span>
-          <span>{hasAmount(item.quantity) ? `${number(item.quantity)}주` : '—'}</span>
-          <span className={hasAmount(item.profitRate) ? item.profitRate >= 0 ? 'up' : 'down' : ''}>{hasAmount(item.profitRate) ? `${item.profitRate > 0 ? '+' : ''}${item.profitRate.toFixed(2)}%` : '—'}</span>
-          <span className={hasAmount(item.evaluationProfit) ? item.evaluationProfit >= 0 ? 'up' : 'down' : ''}>{signedAmount(item.evaluationProfit)}</span>
-        </div>)}</div>
+      {!holdings.length ? <div className="data-message">{loading ? '선택한 증권사 보유종목을 조회하고 있습니다.' : readyCount === selected.length ? '선택한 증권사에 보유종목이 없습니다.' : '선택한 증권사의 보유종목을 확인할 수 없습니다.'}</div> : <div className="dashboard-holdings-scroll" role="region" aria-label="대시보드 보유종목 스크롤 영역" tabIndex={0}>
+        <table className="dashboard-holdings-table" aria-label="보유종목 미리보기">
+          <thead><tr><th scope="col">증권사 · 종목</th><th scope="col">보유수량</th><th scope="col">수익률</th><th scope="col">평가손익</th></tr></thead>
+          <tbody>{holdings.slice(0, 3).map((item, index) => <tr key={`${item.broker}:${item.code}:${index}`}>
+            <td><span className="dashboard-holding-stock"><span className={`broker-holding-badge ${item.broker}`}>{getBroker(item.broker).shortName}</span><strong>{item.name}</strong><small>{item.code}</small></span></td>
+            <td>{hasAmount(item.quantity) ? `${number(item.quantity)}주` : '—'}</td>
+            <td className={hasAmount(item.profitRate) ? item.profitRate >= 0 ? 'up' : 'down' : ''}>{hasAmount(item.profitRate) ? `${item.profitRate > 0 ? '+' : ''}${item.profitRate.toFixed(2)}%` : '—'}</td>
+            <td className={hasAmount(item.evaluationProfit) ? item.evaluationProfit >= 0 ? 'up' : 'down' : ''}>{signedAmount(item.evaluationProfit)}</td>
+          </tr>)}</tbody>
+        </table>
       </div>}
     </>}
   </article>

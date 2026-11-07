@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Check, LogIn, RefreshCw } from 'lucide-react'
 import { BROKERS, getBroker } from '../utils/brokers'
 import { ASSET_METRICS, hasAmount, summarizeAssets, toggleAssetBroker } from '../utils/assetSummary'
@@ -8,6 +8,52 @@ import './AssetsPage.css'
 const number = value => new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(value)
 const amount = value => hasAmount(value) ? `${number(value)}원` : '—'
 const statusLabel = { guest: '로그인 필요', unconfigured: 'API 미연결', loading: '조회 중', error: '조회 실패', accountRequired: '계좌 선택 필요', ready: '조회 완료' }
+const visibleHoldingRows = 4
+
+function AssetHoldingsTable({ holdings }) {
+  const scrollRef = useRef(null)
+  const needsHeightLimit = holdings.length > visibleHoldingRows
+
+  useLayoutEffect(() => {
+    if (!needsHeightLimit) return
+    const viewport = scrollRef.current
+    const table = viewport.querySelector('table')
+    const fitRows = () => {
+      const lastVisibleRow = table.tBodies[0].rows[visibleHoldingRows - 1]
+      const contentHeight = lastVisibleRow.getBoundingClientRect().bottom - table.getBoundingClientRect().top
+      // Classic scrollbars take up space inside the viewport. Overlay scrollbars don't.
+      const scrollbarHeight = viewport.offsetHeight - viewport.clientHeight
+      viewport.style.maxHeight = `${Math.ceil(contentHeight) + scrollbarHeight}px`
+    }
+    fitRows()
+    let frame
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(fitRows)
+    })
+    observer.observe(viewport)
+    observer.observe(table)
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+      viewport.style.removeProperty('max-height')
+    }
+  }, [needsHeightLimit])
+
+  return <div ref={scrollRef} className="asset-holdings-scroll" role="region" aria-label="자산 현황 보유종목 스크롤 영역" tabIndex={0}>
+    <table className="asset-holdings-table" aria-label="선택한 증권사 보유종목">
+      <thead><tr><th scope="col">증권사</th><th scope="col">종목</th><th scope="col">보유수량</th><th scope="col">평균단가</th><th scope="col">평가금액</th><th scope="col">수익률</th></tr></thead>
+      <tbody>{holdings.map((item, index) => <tr key={`${item.broker}:${item.code}:${index}`}>
+        <td><span className={`asset-broker-tag ${item.broker}`}>{getBroker(item.broker).shortName}</span></td>
+        <td><strong>{item.name}</strong><small>{item.code}</small></td>
+        <td>{hasAmount(item.quantity) ? `${number(item.quantity)}주` : '—'}</td>
+        <td>{amount(item.averagePrice)}</td>
+        <td>{amount(item.evaluationAmount)}</td>
+        <td className={hasAmount(item.profitRate) ? item.profitRate >= 0 ? 'up' : 'down' : ''}>{hasAmount(item.profitRate) ? `${item.profitRate > 0 ? '+' : ''}${number(item.profitRate)}%` : '—'}</td>
+      </tr>)}</tbody>
+    </table>
+  </div>
+}
 
 export default function AssetsPage({ currentUser, integrationStatus, integrationVersion }) {
   const [selected, setSelected] = useState(() => BROKERS.map(({ id }) => id))
@@ -54,7 +100,7 @@ export default function AssetsPage({ currentUser, integrationStatus, integration
     </section>
     <section className="preview-grid asset-preview-grid">
       <article className="panel asset-holdings"><div className="panel-head"><div><h2>보유종목</h2></div><span>조회 완료 {readyCount}/{selected.length}개</span></div>
-        {!currentUser ? <div className="data-message">로그인 후 보유종목을 확인할 수 있습니다.</div> : !readyCount ? <div className="data-message">{loading ? '선택한 증권사 계좌를 조회하고 있습니다.' : '증권사 연결 및 계좌 조회 상태를 확인해 주세요.'}</div> : !holdings.length ? <div className="data-message">조회 완료한 증권사에 보유종목이 없습니다.</div> : <div className="asset-holdings-scroll"><table className="asset-holdings-table" aria-label="선택한 증권사 보유종목"><thead><tr><th>증권사</th><th>종목</th><th>보유수량</th><th>평균단가</th><th>평가금액</th><th>수익률</th></tr></thead><tbody>{holdings.map((item, index) => <tr key={`${item.broker}:${item.code}:${index}`}><td><span className={`asset-broker-tag ${item.broker}`}>{getBroker(item.broker).shortName}</span></td><td><strong>{item.name}</strong><small>{item.code}</small></td><td>{hasAmount(item.quantity) ? `${number(item.quantity)}주` : '—'}</td><td>{amount(item.averagePrice)}</td><td>{amount(item.evaluationAmount)}</td><td className={hasAmount(item.profitRate) ? item.profitRate >= 0 ? 'up' : 'down' : ''}>{hasAmount(item.profitRate) ? `${item.profitRate > 0 ? '+' : ''}${number(item.profitRate)}%` : '—'}</td></tr>)}</tbody></table></div>}
+        {!currentUser ? <div className="data-message">로그인 후 보유종목을 확인할 수 있습니다.</div> : !readyCount ? <div className="data-message">{loading ? '선택한 증권사 계좌를 조회하고 있습니다.' : '증권사 연결 및 계좌 조회 상태를 확인해 주세요.'}</div> : !holdings.length ? <div className="data-message">조회 완료한 증권사에 보유종목이 없습니다.</div> : <AssetHoldingsTable holdings={holdings}/>}
       </article>
       <article className="panel"><div className="panel-head"><div><h2>증권사별 자산</h2></div><span>원화 기준</span></div><div className="asset-breakdown">{selectedBrokers.map(broker => <div key={broker.id}><span>{broker.name}</span><strong>{amount(accounts[broker.id].summary?.estimatedAssets)}</strong><small>{statusLabel[accounts[broker.id].status]}</small></div>)}</div></article>
       <article className="panel preview-wide"><div className="panel-head"><div><h2>거래 내역</h2></div><span>준비 중</span></div><div className="data-message">{currentUser ? '거래 내역 조회 기능을 준비하고 있습니다.' : '로그인 후 이용할 수 있습니다.'}</div></article>
