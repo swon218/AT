@@ -147,19 +147,8 @@ function App() {
   const [dashboardOrderBrokers, setDashboardOrderBrokers] = useState(() => BROKERS.map(({ id }) => id))
   const [orderHistoryTarget, setOrderHistoryTarget] = useState(null)
 
-  const chooseStock = (stock) => {
-    selectionVersion.current += 1
-    setSelectionRevision(selectionVersion.current)
-    setSelected(stock)
-  }
-
   const searchCredentialScope = `${currentUser?.id || 'guest'}:${integrationStatus.kiwoomConfigured}:${integrationVersion}`
   const watchlistQuotes = useWatchlistQuotes(watchlist.rows, searchCredentialScope, activePage === 'dashboard' && rankingType === 'favorites')
-  const chooseSearchStock = (stock) => {
-    chooseStock(stock)
-    setActivePage('order')
-    setMobileNav(false)
-  }
 
   const onIntegrationStatusChange = (status) => {
     setIntegrationStatus(status)
@@ -170,6 +159,13 @@ function App() {
     setOrderHistoryTarget(historyTarget)
     setActivePage(page)
     setMobileNav(false)
+  }
+  const openStockOrder = (stock) => {
+    selectionVersion.current += 1
+    setSelectionRevision(selectionVersion.current)
+    setSelected(stock)
+    openPage('order')
+    if (activePage !== 'order') window.scrollTo(0, 0)
   }
   const openOrderHistory = target => openPage('assets', { ...target, owner: currentUser?.id, version: integrationVersion })
   const openNews = category => { setNewsCategory(category); openPage('news') }
@@ -259,10 +255,7 @@ function App() {
     return () => { active = false; authListener.subscription.unsubscribe() }
   }, [loadNickname])
 
-  useEffect(() => {
-    if (activePage !== 'order') return
-    setOrderBroker('kiwoom')
-  }, [activePage, currentUser?.id])
+  useEffect(() => { setOrderBroker('kiwoom') }, [currentUser?.id])
 
   useEffect(() => { setOrderAccountId('') }, [orderBroker, currentUser?.id, integrationVersion])
 
@@ -331,13 +324,11 @@ function App() {
     setRankingAvailable(false)
     setRankingError('')
     setRankingList([])
-    const version = selectionVersion.current
     getKiwoomRankings(rankingType, 20)
       .then((stocks) => {
         if (!active) return
         setRankingList(stocks)
         setRankingAvailable(true)
-        if (stocks.length > 0 && activePage === 'dashboard' && selectionVersion.current === version) setSelected(stocks[0])
       })
       .catch((error) => {
         if (!active) return
@@ -377,18 +368,18 @@ function App() {
       <main>
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
-          {brokerageDataEnabled ? <GlobalStockSearch onSelect={chooseSearchStock} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : activePage === 'screen' ? <><Filter/><span>조건 검색</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
+          {brokerageDataEnabled ? <GlobalStockSearch onSelect={openStockOrder} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : activePage === 'screen' ? <><Filter/><span>조건 검색</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
           <div className="header-actions"><ThemeSwitch/><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
         <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
-          {activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => chooseSearchStock({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }} onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('dashboard') }}/> : activePage === 'dashboard' ? <>
+          {activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }} onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('dashboard') }}/> : activePage === 'dashboard' ? <>
           <DashboardWelcome/>
 
           <MarketSummary credentialScope={searchCredentialScope}/>
 
           <section className="trading-grid dashboard-market-grid">
-            <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={chooseStock} watchlist={watchlist} quotes={watchlistQuotes}/>
+            <MarketRankings categories={rankingCategories} type={rankingType} onTypeChange={setRankingType} stocks={rankingList} loading={rankingLoading} available={rankingAvailable} error={rankingError} selectedCode={selected?.code} onSelect={openStockOrder} watchlist={watchlist} quotes={watchlistQuotes}/>
 
             <MarketIndexChart credentialScope={searchCredentialScope}/>
             <DashboardNews onOpenNews={openNews}/>
