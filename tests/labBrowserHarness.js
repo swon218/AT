@@ -30,16 +30,23 @@ db.close()
 const { registerLabRoutes } = await import('../server/lab.js')
 const app = Fastify()
 let mode = 'normal', requests = [], releases = []
-app.addHook('onRequest', async request => {
+app.addHook('onRequest', async (request, reply) => {
   if (request.url.startsWith('/api/')) requests.push(request.url)
+  if (mode === 'catalog-error' && request.url === '/api/public/lab/symbols') return reply.code(503).send({ error: 'fixture 실험실 종목 목록 실패' })
+  if (mode === 'candles-error' && request.url.includes('/lab/candles?symbol=005930')) return reply.code(503).send({ error: 'fixture 실험실 일봉 조회 실패' })
   if (mode === 'candles-delayed' && request.url.includes('/lab/candles?symbol=005930')) await new Promise(resolve => releases.push(resolve))
 })
 registerLabRoutes(app)
-app.get('/api/public/market/kiwoom/rankings', async (_request, reply) => {
-  if (mode === 'ranking-error') return reply.code(502).send({ error: 'fixture 순위 실패' })
-  if (mode === 'ranking-delayed') await new Promise(resolve => releases.push(resolve))
+app.get('/api/public/market/kiwoom/rankings', async (request, reply) => {
+  if (request.query.limit === '1' && mode === 'ranking-error') return reply.code(502).send({ error: 'fixture 순위 실패' })
+  if (request.query.limit === '1' && mode === 'ranking-delayed') await new Promise(resolve => releases.push(resolve))
   return { items: [{ code: '000660', name: 'SK하이닉스', market: 'KOSPI' }] }
 })
+const catalog = [{ code: '035420', name: 'NAVER', market: 'KOSPI' }, { code: '005930', name: '삼성전자', market: 'KOSPI' }]
+app.get('/api/public/market/kiwoom/catalog', async () => ({ items: catalog, updatedAt: Date.now(), stale: false }))
+app.get('/api/public/market/kiwoom/quote', async request => catalog.find(stock => stock.code === request.query.symbol) || {})
+app.get('/api/public/market/kiwoom/candles', async () => ({ items: [], sourceBroker: 'kiwoom' }))
+app.get('/api/public/company/:symbol', async () => ({ status: 'ready', data: {} }))
 app.post('/__qa/mode/:mode', async request => {
   for (const release of releases) release()
   releases = []; requests = []; mode = request.params.mode

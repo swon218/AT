@@ -2,16 +2,17 @@
 .lab-quality{margin:0 20px 12px;padding:10px 12px;border:1px solid var(--border-default, #534831);border-radius:6px;background:var(--surface-raised, #26261f);color:var(--tone-warning, #dec89a);font-size:11px;line-height:1.7}.lab-quality p{margin:0 0 7px}.lab-quality summary{cursor:pointer}.lab-quality .lab-trades{margin-top:8px;max-height:200px}
 .order-preview-grid>.lab-chart-panel{overflow-y:auto;display:block;min-width:0;scrollbar-color:var(--border-strong, #314968) var(--surface-field, #0c1a2b)}
 .lab-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 20px 14px}
+.lab-heading>div:first-child{min-width:0}
+.lab-heading-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}
 .lab-eyebrow{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:1.6px;color:var(--text-secondary, #929fff)}.lab-eyebrow svg{width:15px;height:15px}
-.lab-heading h2{margin:9px 0 0;font-size:20px;color:var(--text-primary, #edf3ff)}.lab-heading h2 small{margin-left:6px;font-size:11px;font-weight:400;color:var(--text-muted, #8096b4)}
+.lab-heading h2{margin:9px 0 0;font-size:20px;overflow-wrap:anywhere;color:var(--text-primary, #edf3ff)}.lab-heading h2 small{margin-left:6px;font-size:11px;font-weight:400;color:var(--text-muted, #8096b4)}
 .lab-daily-badge{padding:7px 10px;border:1px solid var(--border-default, #414974);border-radius:7px;color:var(--text-secondary, #afb8ff);background:var(--surface-raised, #282b4c);font-size:11px;white-space:nowrap}
-.lab-symbol-controls{position:relative;z-index:5;display:grid;grid-template-columns:minmax(0,1fr) 36px;gap:8px;padding:0 20px 12px}
 .lab-chart-panel input,.lab-chart-panel select{min-width:0;color:var(--text-primary, #dfeafa);background:var(--surface-panel, #081524);border:1px solid var(--border-default, #29415e);border-radius:6px;padding:9px;font:inherit;font-size:12px;color-scheme:inherit}
 .lab-chart-panel input:focus,.lab-chart-panel select:focus{outline:2px solid var(--focus-ring, #737ef5);outline-offset:1px}
-.lab-symbol-controls>.lab-stock-search{width:100%;min-width:0}.lab-stock-search input{padding:0;border:0;background:transparent;font-size:13px}.lab-stock-search .stock-search-list button:disabled{opacity:.45;cursor:not-allowed}.lab-stock-search .stock-search-list button:disabled:hover{background:transparent}
-.lab-symbol-controls>button,.lab-export{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--border-default, #334961);border-radius:6px;background:var(--surface-raised, #182940);color:var(--text-primary, #c2d1e5);cursor:pointer}
+.lab-refresh,.lab-export{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--border-default, #334961);border-radius:6px;background:var(--surface-raised, #182940);color:var(--text-primary, #c2d1e5);cursor:pointer}
+.lab-refresh{width:36px;height:36px;flex:none}
+.lab-refresh:focus-visible{outline:2px solid var(--focus-ring, #737ef5);outline-offset:2px}
 .lab-data-meta{display:flex;flex-wrap:wrap;gap:5px 15px;padding:0 20px 12px;color:var(--text-secondary, #8397b2);font-size:10px}
-/* Keep every chart overlay below the search controls, including sticky OHLC labels. */
 .order-preview-grid>.lab-chart-panel .main-chart.lab-history-chart{position:relative;z-index:0;isolation:isolate;height:440px;min-height:440px;flex:none;border-top:1px solid var(--border-default, #21354d);border-bottom:1px solid var(--border-default, #21354d)}
 .lab-history-chart>.lab-chart-placeholder{height:100%}
 .lab-backtest{padding:20px}.lab-section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.lab-section-heading h3{font-size:14px;margin:0;color:var(--text-primary, #e0eaff)}.lab-section-heading>span{font-size:10px;color:var(--text-secondary, #91a4be)}
@@ -23,6 +24,6 @@
 .lab-equity{padding:14px;margin-top:12px;border:1px solid var(--border-default, #2b3f5b);border-radius:8px;background:var(--surface-panel, #0a1729)}.lab-equity>div{display:flex;justify-content:space-between;font-size:10px;color:var(--text-secondary, #94a7c2);gap:10px}.lab-equity svg{display:block;width:100%;height:auto}
 .lab-trades{overflow:auto;max-height:320px;border:1px solid var(--border-default, #293e59);border-radius:7px}.lab-trades table{width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap}.lab-trades th,.lab-trades td{text-align:right;padding:10px;border-bottom:1px solid var(--border-default, #1e324b)}.lab-trades th{position:sticky;top:0;background:var(--surface-raised, #172a43);color:var(--text-secondary, #9db3d0)}.lab-trades td{color:var(--text-primary, #bdcce0)}.lab-trades .lab-positive{color:var(--tone-danger, #ff8a98)}.lab-trades .lab-negative{color:var(--tone-accent, #79aafa)}
 .lab-method{margin-top:20px;border-top:1px solid var(--border-default, #243853);padding-top:15px}.lab-method summary{cursor:pointer;font-size:11px;color:var(--text-secondary, #9eafd0)}
-@media(max-width:1100px){.lab-input-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lab-condition-grid{grid-template-columns:1fr}.lab-heading,.lab-backtest{padding:16px}.lab-symbol-controls{padding:0 16px 12px}.lab-section-heading>span{max-width:130px;text-align:right;line-height:1.5}}
+@media(max-width:1100px){.lab-input-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lab-condition-grid{grid-template-columns:1fr}.lab-heading,.lab-backtest{padding:16px}.lab-section-heading>span{max-width:130px;text-align:right;line-height:1.5}}
 @media(max-width:850px){.lab-mode main{margin-left:0}.lab-mode .order-preview-grid>.lab-chart-panel{height:auto;max-height:none;overflow:visible;display:block}.lab-mode .preview-order{height:auto;min-height:600px}.lab-mode .lab-workspace-title{white-space:nowrap}.lab-condition-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:540px){.lab-condition-grid{grid-template-columns:1fr}.lab-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.lab-heading h2{font-size:18px}.lab-daily-badge{font-size:10px}.lab-data-meta{padding:0 16px 12px}.order-preview-grid>.lab-chart-panel .main-chart.lab-history-chart{height:370px;min-height:370px}}

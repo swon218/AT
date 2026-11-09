@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { getKiwoomRankings, getKiwoomStockQuote } from './services/kiwoomMarketApi'
 import GlobalStockSearch from './components/GlobalStockSearch'
+import StockSearch from './components/StockSearch'
 import MarketRankings from './components/MarketRankings'
 import DashboardWelcome from './components/DashboardWelcome'
 import DashboardHoldings from './components/DashboardHoldings'
@@ -40,6 +41,7 @@ import useWatchlist from './hooks/useWatchlist'
 import useWatchlistQuotes from './hooks/useWatchlistQuotes'
 import ScreenerWorkspace from './components/ScreenerWorkspace'
 import useScreener from './hooks/useScreener'
+import useLabWorkspace from './hooks/useLabWorkspace'
 import { describeQuery } from './utils/screener'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
@@ -89,12 +91,12 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], crede
   )
 }
 
-function ChartWorkspace({ selected, period, onPeriodChange, currentUser, watchlist, integrationStatus = {}, broker, onBrokerChange, accountSummary, accountLoading, accountError, onAccountRefresh, onAccountChange, accountId = '', accountOptions = [], integrationVersion = 0, indicatorsOnly = false, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, strategyStorage }) {
+function ChartWorkspace({ selected, period, onPeriodChange, currentUser, watchlist, integrationStatus = {}, broker, onBrokerChange, accountSummary, accountLoading, accountError, onAccountRefresh, onAccountChange, accountId = '', accountOptions = [], integrationVersion = 0, indicatorsOnly = false, labWorkspace, indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, strategyStorage }) {
   const configured = !indicatorsOnly && isBrokerConfigured(integrationStatus, broker)
   const credentialScope = `${broker}:${currentUser?.id || 'guest'}:${configured}:${integrationVersion}`
   return (
     <section className="preview-grid order-preview-grid" aria-label={indicatorsOnly ? '실험실' : '주식 주문'}>
-      {indicatorsOnly ? <LabChartPanel indicators={indicatorConfigs} strategyName={strategyName} settings={backtestSettings} onSettingsChange={onBacktestSettingsChange}/> : <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} credentialScope={credentialScope} broker={broker} watchlist={watchlist}/>}
+      {indicatorsOnly ? <LabChartPanel workspace={labWorkspace} indicators={indicatorConfigs} strategyName={strategyName} settings={backtestSettings} onSettingsChange={onBacktestSettingsChange}/> : <StockChartPanel stock={selected} period={period} onPeriodChange={onPeriodChange} indicators={indicatorConfigs} credentialScope={credentialScope} broker={broker} watchlist={watchlist}/>}
       <article className="panel preview-order"><OrderEntryPanel key={`${currentUser?.id || 'guest'}:${broker}:${integrationVersion}`} onAccountChange={onAccountChange} accountId={accountId} accountOptions={accountOptions} indicatorsOnly={indicatorsOnly} stock={selected} authenticated={Boolean(currentUser)} integrationStatus={integrationStatus} broker={broker} onBrokerChange={onBrokerChange} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh} indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/></article>
     </section>
   )
@@ -105,6 +107,7 @@ function App() {
   const [newsCategory, setNewsCategory] = useState('all')
   const brokerageDataEnabled = !['lab', 'screen', 'agent', 'news', 'company'].includes(activePage)
   const showStockSearch = brokerageDataEnabled || activePage === 'company'
+  const labWorkspace = useLabWorkspace(activePage === 'lab')
   const [selected, setSelected] = useState(defaultStock)
   const [analysisStock, setAnalysisStock] = useState(null)
   const [orderPeriod, setOrderPeriod] = useState('15분')
@@ -372,7 +375,11 @@ function App() {
       <main>
         <header>
           <button className="menu-button" onClick={() => setMobileNav(true)}><Menu/></button>
-          {showStockSearch ? <GlobalStockSearch onSelect={activePage === 'company' ? setAnalysisStock : openStockOrder} credentialScope={searchCredentialScope}/> : <div className="lab-workspace-title">{activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : activePage === 'screen' ? <><Filter/><span>조건 검색</span></> : <><FlaskConical/><span>실험실 · 백테스팅</span></>}</div>}
+          {activePage === 'lab' ? <StockSearch catalogItems={labWorkspace.catalog?.items} ready={Boolean(labWorkspace.catalog?.ready)}
+            error={labWorkspace.catalogError || labWorkspace.catalogMessage}
+            onRetry={labWorkspace.refresh} onSelect={labWorkspace.selectStock}/>
+            : showStockSearch ? <GlobalStockSearch onSelect={activePage === 'company' ? setAnalysisStock : openStockOrder} credentialScope={searchCredentialScope}/>
+              : <div className="lab-workspace-title">{activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : <><Filter/><span>조건 검색</span></>}</div>}
           <div className="header-actions"><ThemeSwitch/><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
@@ -393,7 +400,7 @@ function App() {
             <DashboardHoldings key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardHoldingsBrokers} onSelectedChange={setDashboardHoldingsBrokers} onOpenAssets={() => openPage('assets')}/>
             <RecentOrders key={`recent-orders:${currentUser?.id || 'guest'}`} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} selected={dashboardOrderBrokers} onSelectedChange={setDashboardOrderBrokers} onOpenHistory={openOrderHistory}/>
           </section>
-          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} watchlist={watchlist} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} orderHistoryTarget={orderHistoryTarget?.owner === currentUser?.id && orderHistoryTarget?.version === integrationVersion ? orderHistoryTarget : null}/>}
+          </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} watchlist={watchlist} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} labWorkspace={labWorkspace} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} orderHistoryTarget={orderHistoryTarget?.owner === currentUser?.id && orderHistoryTarget?.version === integrationVersion ? orderHistoryTarget : null}/>}
         </div>
       </main>
       <FloatingAgent agent={{ ...agent, openScreen }} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'company' ? '기업 분석' : activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
