@@ -1,0 +1,54 @@
+.kakao-status,
+.kakao-note {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.kakao-status span,
+.kakao-note {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.kakao-status:focus-visible,
+.kakao-actions button:focus-visible {
+  outline: 2px solid var(--tone-accent);
+  outline-offset: 2px;
+}
+
+.kakao-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kakao-actions:empty {
+  display: none;
+}
+
+.kakao-actions button {
+  min-height: 40px;
+  max-width: 100%;
+  padding: 6px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.kakao-actions button:not(:disabled):hover {
+  background: var(--surface-hover);
+  border-color: var(--tone-accent);
+}
+
+.kakao-actions button:disabled {
+  opacity: .6;
+  cursor: default;
+}

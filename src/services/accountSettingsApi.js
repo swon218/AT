@@ -14,6 +14,7 @@ async function parsePayload(response) {
 
 async function authorizedRequest(path, options = {}, expectedUserId) {
   const { data } = await supabase.auth.getSession()
+  options.signal?.throwIfAborted()
   const accessToken = data.session?.access_token
   if (!accessToken) throw new Error('로그인이 필요합니다.')
   if (expectedUserId && data.session?.user?.id !== expectedUserId) throw new Error('로그인 사용자가 변경되었습니다.')
@@ -52,4 +53,23 @@ export function saveIntegrationSettings(settings, expectedUserId) {
     method: 'PUT',
     body: JSON.stringify(settings),
   }, expectedUserId)
+}
+
+export function kakaoConnectionRequest(action, userId, { body, signal } = {}) {
+  return authorizedRequest(`/api/account/kakao${action ? `/${action}` : ''}`, {
+    method: action ? 'POST' : 'GET',
+    ...(action ? { body: JSON.stringify(body ?? {}) } : {}),
+    signal,
+    cache: 'no-store',
+  }, userId)
+}
+
+export function kakaoLaunchUrl(value) {
+  const expected = new URL(API_BASE_URL || window.location.origin, window.location.origin)
+  const url = new URL(value)
+  if (url.origin !== expected.origin || url.username || url.password || url.hash
+    || url.pathname !== '/api/account/kakao/authorize' || !/^[\w-]{43}$/.test(url.searchParams.get('t') ?? '')) {
+    throw new Error('카카오 인증 주소를 확인할 수 없습니다.')
+  }
+  return url
 }

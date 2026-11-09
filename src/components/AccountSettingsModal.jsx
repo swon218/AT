@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Activity, Bot, CheckCircle2, KeyRound, LockKeyhole, UserRound, X } from 'lucide-react'
 import { supabase } from '../services/supabaseClient'
 import { getIntegrationSettings, saveIntegrationSettings } from '../services/accountSettingsApi'
+import KakaoConnectionSection from './KakaoConnectionSection'
 
 const emptyCredentials = {
   kiwoomAppKey: '',
@@ -50,9 +51,10 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
   const [integrationAvailable, setIntegrationAvailable] = useState(true)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('error')
+  const userId = user?.id
 
   useEffect(() => {
-    if (!open || !user) return undefined
+    if (!open || !userId) return undefined
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     let active = true
@@ -62,7 +64,7 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
     setClearBrokers([])
 
     Promise.allSettled([
-      supabase.from('profiles').select('nickname').eq('id', user.id).single(),
+      supabase.from('profiles').select('nickname').eq('id', userId).single(),
       getIntegrationSettings(),
     ]).then(([profileResult, integrationResult]) => {
       if (!active) return
@@ -90,7 +92,7 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [open, user, onClose])
+  }, [open, userId, onClose])
 
   if (!open || !user) return null
 
@@ -181,6 +183,7 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
             <SecretField label="Telegram Bot Token" value={credentials.telegramBotToken} placeholder={status.telegramConfigured ? '저장됨 · 변경할 때만 입력' : '123456789:AA...'} disabled={!integrationAvailable || loading} onChange={(value) => updateCredential('telegramBotToken', value)}/>
           </section>
 
+          <KakaoConnectionSection key={userId} userId={userId}/>
           {!integrationAvailable && <p className="account-security-warning"><LockKeyhole/>VPS 암호화 저장 기능 연결 전에는 닉네임만 저장할 수 있습니다.</p>}
           {message && <p className={`auth-message ${messageType}`} role="status">{message}</p>}
           <button type="submit" className="auth-submit account-save" disabled={loading || saving}>{saving ? '저장 중...' : '설정 저장'}</button>

@@ -29,6 +29,10 @@ export const config = {
   supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || '',
   openDartKey: process.env.OpenDart_api_key || '',
   credentialEncryptionKey: process.env.ATLAS_CREDENTIAL_ENCRYPTION_KEY || '',
+  kakaoRestKey: process.env.KAKAO_REST_API_KEY || '',
+  kakaoClientSecret: process.env.KAKAO_CLIENT_SECRET || '',
+  kakaoAdminKey: process.env.KAKAO_ADMIN_KEY || '',
+  kakaoRedirectUri: process.env.KAKAO_REDIRECT_URI || '',
 }
 
 export function publicConfigurationStatus() {

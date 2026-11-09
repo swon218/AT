@@ -24,8 +24,9 @@ import { registerAddedBrokerRoutes } from './addedBrokers.js'
 import { registerAgentRoutes } from './agent.js'
 import { registerScreenRoutes } from './screener.js'
 import { registerCompanyDartRoutes } from './companyDart.js'
+import { kakaoSafeRequestLog, registerKakaoConnectionRoutes } from './kakaoConnection.js'
 
-const app = Fastify({ logger: true })
+const app = Fastify({ logger: { serializers: { req: kakaoSafeRequestLog } } })
 await app.register(cors, {
   origin: config.frontendOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -46,6 +47,7 @@ registerScreenRoutes(app)
 registerNewsRoutes(app)
 registerAccountConnectionRoutes(app)
 registerCompanyDartRoutes(app)
+registerKakaoConnectionRoutes(app)
 
 async function tossMarketCredentials(request) {
   const authorization = request.headers.authorization || ''
