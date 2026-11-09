@@ -48,6 +48,18 @@
 }
 .company-connection { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; }
 .company-connection svg { flex: none; color: var(--tone-info, #85d4f1); }
+.company-status { display: grid; justify-items: start; gap: 5px; color: var(--text-secondary, #b6cce2); }
+.company-status button, .company-page-buttons button { cursor: pointer; }
+.company-status button {
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong, #466583);
+  border-radius: 6px;
+  background: var(--surface-raised, #15283c);
+  color: var(--text-primary, #edf4ff);
+  font: inherit;
+  font-size: 12px;
+}
+.company-analysis a { color: var(--tone-accent, #8bb6ff); }
 
 .company-tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .company-tabs button {
@@ -69,7 +81,7 @@
   font-weight: 700;
 }
 .company-tabpanel { min-width: 0; border-radius: 10px; }
-.company-analysis :is(button, input, select, [tabindex]):focus-visible {
+.company-analysis :is(a, button, input, select, [tabindex]):focus-visible {
   outline: 2px solid var(--focus-ring, #8eb7ff);
   outline-offset: 2px;
 }
@@ -103,7 +115,8 @@
   border-radius: 6px;
   font-size: 12px;
 }
-.company-metadata > div { display: flex; gap: 5px; }
+.company-metadata > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.company-values dd { max-width: 23ch; overflow-wrap: anywhere; text-align: right; }
 .company-values + .company-metadata { margin: 7px 0 0; }
 
 .company-table-scroll {
@@ -117,6 +130,10 @@
 .company-table-scroll table { width: 100%; min-width: 385px; border-collapse: collapse; font-size: 12px; text-align: left; }
 .company-table-scroll :is(th, td) { padding: 9px 11px; border-bottom: 1px solid var(--border-default, #284057); }
 .company-table-scroll th { white-space: nowrap; font-weight: 600; }
+.company-table-scroll th small { display: block; padding-block: 3px; font-weight: 400; }
+.company-table-scroll td { overflow-wrap: anywhere; }
+.company-table-scroll td:first-child, .company-table-scroll td:last-child { white-space: nowrap; }
+.company-table-scroll .company-excerpt { min-width: 200px; line-height: 1.65; }
 .company-table-scroll thead, .company-table-group {
   background: var(--surface-raised, #15283c);
   color: var(--text-secondary, #b6cce2);
@@ -128,7 +145,7 @@
 .company-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 9px; margin-bottom: 12px; }
 .company-filters > label, .company-choice { color: var(--text-secondary, #a3b9d0); font-size: 12px; }
 .company-filters > label { display: grid; gap: 5px; min-width: 0; }
-.company-filters :is(input[type="date"], select, .company-query) {
+.company-filters :is(input[type="date"], select), .company-query {
   min-height: 38px;
   max-width: 100%;
   padding: 6px 9px;
@@ -139,6 +156,9 @@
   font: inherit;
 }
 .company-query:disabled { color: var(--text-muted, #819ab6); background: var(--surface-raised, #15283c); }
+.company-query:enabled { cursor: pointer; }
+.company-page-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding-top: 12px; font-size: 12px; }
+.company-risk-caption { margin-top: 14px; }
 .company-choice { min-width: 0; border: 0; margin: 0; padding: 0; }
 .company-choice > div { display: flex; gap: 5px; margin-top: 5px; }
 .company-choice label { display: flex; align-items: center; gap: 5px; min-height: 38px; padding: 5px 8px; border: 1px solid var(--border-default, #284057); border-radius: 6px; cursor: pointer; }
@@ -158,6 +178,16 @@
   font-size: 13px;
 }
 .company-chart-placeholder svg { color: var(--tone-info, #85d4f1); }
+.company-trend { margin: 0; padding: 10px; background: var(--surface-field, #0a1727); border-radius: 7px; font-size: 12px; }
+.company-trend svg { display: block; width: 100%; max-height: 235px; }
+.company-trend svg text { font-size: 10px; fill: var(--text-secondary, #a3b9d0); }
+.company-zero-axis { stroke: var(--border-strong, #466583); stroke-dasharray: 4 3; }
+.company-series { color: var(--tone-accent, #8bb6ff); }
+.company-series.operating { color: var(--tone-info, #85d4f1); }
+.company-series.net { color: var(--tone-purple, #bdabff); }
+.company-series path { fill: none; stroke: currentColor; stroke-width: 2; }
+.company-series circle { fill: currentColor; }
+.company-trend-legend { display: flex; flex-wrap: wrap; gap: 5px 12px; }
 
 @container atlas-company (max-width: 660px) {
   .company-grid-two, .company-grid-three { grid-template-columns: minmax(0, 1fr); }

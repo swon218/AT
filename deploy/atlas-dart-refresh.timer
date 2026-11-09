@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh a bounded batch of stored ATLAS company views
+
+[Timer]
+OnCalendar=*:0/15
+RandomizedDelaySec=30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

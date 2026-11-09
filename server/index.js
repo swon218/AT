@@ -23,6 +23,7 @@ import { registerMarketCalendarRoutes } from './marketCalendar.js'
 import { registerAddedBrokerRoutes } from './addedBrokers.js'
 import { registerAgentRoutes } from './agent.js'
 import { registerScreenRoutes } from './screener.js'
+import { registerCompanyDartRoutes } from './companyDart.js'
 
 const app = Fastify({ logger: true })
 await app.register(cors, {
@@ -44,6 +45,7 @@ registerAgentRoutes(app)
 registerScreenRoutes(app)
 registerNewsRoutes(app)
 registerAccountConnectionRoutes(app)
+registerCompanyDartRoutes(app)
 
 async function tossMarketCredentials(request) {
   const authorization = request.headers.authorization || ''

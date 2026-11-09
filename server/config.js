@@ -27,6 +27,7 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || '',
   supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || '',
+  openDartKey: process.env.OpenDart_api_key || '',
   credentialEncryptionKey: process.env.ATLAS_CREDENTIAL_ENCRYPTION_KEY || '',
 }
 

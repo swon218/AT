@@ -1,0 +1,16 @@
+[Unit]
+Description=ATLAS Open DART catalog and cached company refresh
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=atlas
+WorkingDirectory=/opt/atlas
+EnvironmentFile=/etc/atlas/atlas.env
+ExecStartPre=-/usr/bin/node /opt/atlas/deploy/company_dart.js sync-codes
+ExecStart=/usr/bin/node /opt/atlas/deploy/company_dart.js refresh 4
+TimeoutStartSec=15min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
