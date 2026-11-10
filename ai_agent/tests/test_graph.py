@@ -286,3 +286,21 @@ async def test_cancelled_public_news_consumer_cannot_cancel_another_members_look
     assert (await second)['items'] == []
     assert first_budget.external == 1 and second_budget.external == 0
     assert not source.pending
+
+
+@pytest.mark.asyncio
+async def test_global_timeout_preserves_completed_peer_before_join(tools):
+    plan = delegation('news')
+    plan.output[0]['arguments'] = json.dumps({'tasks': [json.loads(plan.output[0]['arguments'])['tasks'][0], json.loads(delegation('technical').output[0]['arguments'])['tasks'][0]]})
+    async def delayed_plan(_items):
+        await asyncio.sleep(.3)
+        return plan
+    async def slow_peer(_items):
+        await asyncio.sleep(2)
+    provider = RoleProvider(orchestrator=[delayed_plan], news=news_script(), technical=[slow_peer])
+    result = await ResearchGraph(replace(tools.settings, seconds=.5), provider, tools).run('삼성전자 뉴스와 일봉 조건검색', [])
+    assert result['error_code'] == 'execution_timeout'
+    assert result['status'] == 'partial'
+    assert result['answer']['sources'] and all(source['id'].startswith('n_') for source in result['answer']['sources'])
+    assert 'technical' in result['answer']['content']
+    assert result['usage']['status'] == 'unknown'

@@ -37,6 +37,7 @@ class ResearchGraph:
         self.settings, self.tools = settings, tools
         self.execution = Execution(settings, provider, on_step)
         self.branches, self.assignments, self.public_cache = {}, set(), {}
+        self.completed = {}
         self.common_lock = asyncio.Lock()
         self.orchestrator_items = []
         builder = StateGraph(GraphState)
@@ -219,6 +220,7 @@ class ResearchGraph:
                   'user_confirmation': user_confirmation,
                   'alert_action': action, 'usage': dict(self.execution.role_usage.get(agent, {})),
                   'elapsed_ms': round((time.monotonic() - started) * 1000)}
+        self.completed[(state['wave'], agent)] = (report, tools)
         event_status = 'success'
         if status in ('failed', 'partial'):
             event_status = 'error' if status == 'failed' else 'partial'
@@ -273,10 +275,9 @@ class ResearchGraph:
             raise RunLimit('specialist_round_limit')
         return final
 
-    async def review(self, state):
-        reports = sorted([report for report in state['reports'] if report['wave'] == state['wave']], key=lambda r: r['agent'])
+    def collect(self, reports):
         for report in reports:
-            branch = self.branches[report['agent']]
+            branch = self.completed[(report['wave'], report['agent'])][1]
             for key, source in branch.evidence.items():
                 if key in self.tools.evidence and self.tools.evidence[key] != source:
                     # Same content-addressed ID may have a historical flag. Other differences must not overwrite.
@@ -289,6 +290,10 @@ class ResearchGraph:
             self.tools.resolved.update(branch.resolved)
             self.tools.coverage = unique(self.tools.coverage + branch.coverage)
             self.tools.result_sets = unique(self.tools.result_sets + branch.result_sets)
+
+    async def review(self, state):
+        reports = sorted([report for report in state['reports'] if report['wave'] == state['wave']], key=lambda r: r['agent'])
+        self.collect(reports)
         await self.execution.event('tool', 'delegate_research', 'success', 'orchestrator',
                                    result={'agents': [report['agent'] for report in reports], 'wave': state['wave']})
         self.orchestrator_items.append({'type': 'function_call_output', 'call_id': self.delegation_call,
@@ -298,7 +303,12 @@ class ResearchGraph:
         return {}
 
     def result(self, state, code=None):
-        reports = state.get('reports', [])
+        # A global timeout can arrive while a completed peer is waiting at the join.
+        reports = [self.completed[key][0] for key in sorted(self.completed)]
+        try:
+            self.collect(reports)
+        except RunLimit as exc:
+            code = str(exc)
         action = next((report['alert_action'] for report in reports if report.get('alert_action')), None)
         if action and not code:
             answer = {'content': '알림 조건을 확인해 주세요.', 'claims': [], 'sources': [], 'coverage': [], 'result_sets': [], 'as_of': self.tools.now.isoformat()}
@@ -314,6 +324,9 @@ class ResearchGraph:
         incomplete = [report for report in reports if report['status'] in ('failed', 'partial')]
         if incomplete:
             answer['content'] += '\n\n미완료 범위: ' + ', '.join(report['agent'] + ' (' + ', '.join(report['error_codes'] or ['partial_data']) + ')' for report in incomplete)
+        missing = [task['agent'] for task in state.get('tasks', []) if (state.get('wave'), task['agent']) not in self.completed]
+        if code and missing:
+            answer['content'] += '\n\n미완료 담당: ' + ', '.join(missing)
         answer['execution'] = {'architecture': ARCHITECTURE, 'agent_usage': self.execution.role_usage,
                                'elapsed_ms': round((time.monotonic() - self.execution.started) * 1000),
                                'reports': [{key: report[key] for key in ('agent', 'assignment', 'wave', 'status', 'error_codes', 'needs_confirmation', 'queried_at', 'as_of', 'evidence_ids', 'elapsed_ms')} for report in reports]}
