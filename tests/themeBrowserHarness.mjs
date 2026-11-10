@@ -16,6 +16,7 @@ const ranked = [stock, { ...stock, code: '035420', name: '검증 NAVER' }]
 const watchlists = new Map()
 const faults = new Map()
 const alertRules = new Map(), alertMessages = new Map()
+const indicatorQa = process.env.ATLAS_INDICATOR_FIXTURE === '1'
 const supabase = `let id=sessionStorage.getItem('atlas.qa.user')||'';const listeners=new Set();const session=()=>id?{access_token:'fixture-'+id,user:{id,email:'theme@fixture.invalid'}}:null;
 export const setQaUser=value=>{id=value;sessionStorage.setItem('atlas.qa.user',id);for(const fn of listeners)fn(id?'SIGNED_IN':'SIGNED_OUT',session())};
 const request=(params,body)=>fetch('/__qa/watchlist?'+new URLSearchParams(params),body?{method:'POST',body:JSON.stringify(body)}:{}).then(res=>res.json());
@@ -26,6 +27,16 @@ export const supabase={
   rpc:(_name,body)=>request({user:id},body),
   from:table=>{
     let user=id;
+    if(table==='strategies'){
+      const key='atlas.qa.strategies:'+user;let mutation,where={};
+      const finish=()=>{const rows=JSON.parse(sessionStorage.getItem(key)||'[]');if(!mutation)return {data:rows,error:null};
+        const [method,value]=mutation;const index=rows.findIndex(r=>r.id===where.id&&r.revision===where.revision);const old=rows[index];
+        if(method!=='insert'&&!old)return {data:null,error:null};
+        const data={...old,...value,id:old?.id||crypto.randomUUID(),revision:(old?.revision||0)+1,updated_at:new Date().toISOString()};
+        if(method==='insert')rows.unshift(data);else if(method==='delete')rows.splice(index,1);else rows[index]=data;
+        sessionStorage.setItem(key,JSON.stringify(rows));return {data,error:null};};
+      const q={select:()=>q,eq:(k,v)=>{where[k]=v;return q},order:()=>q,range:()=>q,insert:v=>{mutation=['insert',v];return q},update:v=>{mutation=['update',v];return q},delete:()=>{mutation=['delete'];return q},maybeSingle:async()=>finish(),then:(a,b)=>Promise.resolve(finish()).then(a,b)};return q;
+    }
     const result=()=>table==='watchlist_items'?request({user}):{data:table==='profiles'?{nickname:'테마 검증 사용자'}:[],error:null};
     const q={select:()=>q,eq:(_column,value)=>{user=value;return q},order:()=>q,update:()=>q,abortSignal:()=>q,maybeSingle:async()=>result(),single:async()=>result(),then:(a,b)=>Promise.resolve(result()).then(a,b)};
     return q
@@ -89,8 +100,16 @@ async function response(path, params, method, authorization, body) {
   if (path.endsWith('/catalog')) return { items: [stock, { ...stock, code: '000660', name: '검증 SK하이닉스' }], updatedAt: Date.now(), stale: false }
   if (path.endsWith('/rankings')) return params.get('type') === 'favorites' ? { error: 'unexpected_favorites_ranking' } : { items: ranked }
   if (path.endsWith('/quote')) return ranked.find(item => item.code === params.get('symbol')) || { error: 'mock_quote_unavailable' }
-  if (path.endsWith('/candles')) return path.includes('/lab/') ? { items: candles, symbol, quality: { corrected: 0, quarantined: 0, issues: [] } } : { items: candles, sourceBroker: 'kiwoom' }
-  if (path.endsWith('/symbols')) return { ready: true, items: [symbol], run: { failed: 0 } }
+  if (path.endsWith('/candles')) {
+    const code = params.get('symbol'), interval = params.get('interval')
+    if (indicatorQa && interval === '주') await delay(700)
+    const items = !indicatorQa ? candles : candles.map(c => {
+      const offset = (code === stock.code ? 0 : 100000) + (interval === '주' ? 10000 : interval === '월' ? 20000 : 0)
+      return { ...c, open: c.open + offset, high: c.high + offset, low: c.low + offset, close: c.close + offset }
+    })
+    return path.includes('/lab/') ? { items, symbol: code === '035420' ? { ...symbol, ...ranked[1] } : symbol, quality: { corrected: 0, quarantined: 0, issues: [] } } : { items, sourceBroker: 'kiwoom' }
+  }
+  if (path.endsWith('/symbols')) return { ready: true, items: indicatorQa ? [symbol, { ...symbol, ...ranked[1] }] : [symbol], run: { failed: 0 } }
   if (path.endsWith('/indices')) return { symbol: params.get('symbol'), name: '코스피', period: params.get('period'), price: 3200, change: 20, changeRate: .65, volume: 200000, asOf: '2026-11-07T15:30:00+09:00', candles: candles.map((c, i) => ({ time: c.time, close: 3000 + i, volume: c.volume })) }
   if (path.startsWith('/api/public/news/')) return { items: [news], total: 1, hasMore: false, nextStart: null, fetchedAt: new Date().toISOString(), category: params.get('category') || 'all' }
   if (path === '/api/account/settings') {
@@ -170,6 +189,11 @@ async function response(path, params, method, authorization, body) {
     const answer = { kind: 'concept', claims: [], sources: [], coverage: [], result_sets: [] }
     const proposed = question.includes('20만원') ? ranked.find(row => question.includes(row.name) || (row.code === '035420' && question.includes('네이버'))) : null
     let content = price ? `${stock.name} · 저장 조건 변경 초안` : stock && percent ? `${stock.name} · 전일 종가 대비 ${percent[1]}% 하락 알림 초안` : '관심종목을 확인해 주세요.'
+    if (indicatorQa && question === '지표 화면 검증') {
+      answer.result_sets.push({ id: 'fixture-indicators', coverage: { kind: 'indicator', name: '검증 삼성전자', as_of: '2026-11-06', seed_date: '2026-01-02', unavailable: [{ metric: 'obv_ma', label: 'OBV 평균(500, SMA)', reason: '계산 준비 봉 부족' }] },
+        items: [{ id: 'fixture-atr', name: 'atr_percent', label: 'ATR%(14)', value: 2.12345, previous: 1.75, unit: '%' }] })
+      content = '확정 일봉 지표입니다.'
+    }
     if (proposed) {
       const condition = { code: proposed.code, kind: 'price_touch', threshold: 200000, frequency: 'once', expires_on: addAlertDays(koreanAlertDay(), 7) }
       const baseRevision = alert_editor?.revision ?? null

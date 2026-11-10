@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
-import { createIndicatorConfig } from '../src/utils/indicators.js'
+import { INDICATOR_CATALOG, createIndicatorConfig } from '../src/utils/indicators.js'
 import { DEFAULT_BACKTEST } from '../src/utils/backtest.js'
 import { createStrategyRepository, strategyPayload, strategyError, STRATEGY_CONFLICT } from '../src/services/strategyRepository.js'
 
@@ -78,7 +78,7 @@ test('Supabase migration enforces ownership, grants, revision and cascade in Pos
     grant usage on schema public, auth to authenticated, anon;
     insert into auth.users values ('${A}'), ('${B}');`)
   const migration = await readFile(new URL('../deploy/STRATEGIES_SUPABASE.sql', import.meta.url), 'utf8')
-  await db.exec(migration)
+  await db.exec(migration.replace('between 1 and 12', 'between 1 and 5'))
   const as = async id => { await db.exec('reset role; set role authenticated;'); await db.query("select set_config('request.jwt.claim.sub', $1, false)", [id]) }
   const insert = (owner, name = 'First') => db.query('insert into public.strategies(user_id,name,indicators,backtest_settings) values ($1,$2,$3,$4) returning *', [owner, name, JSON.stringify(input().indicators), JSON.stringify(input().backtest_settings)])
   await as(A)
@@ -118,6 +118,23 @@ test('Supabase migration enforces ownership, grants, revision and cascade in Pos
     await assert.rejects(db.query('select * from public.strategies'), /permission denied/)
     await assert.rejects(insert(A, 'guest'), /permission denied/)
     await assert.rejects(db.query('delete from public.strategies'), /permission denied/)
+  })
+  await t.test('incremental migration preserves v1 and accepts 12 while rejecting 13', async () => {
+    await as(A)
+    const all = INDICATOR_CATALOG.map(({ id }) => createIndicatorConfig(id))
+    const set = value => db.query('update public.strategies set indicators=$1 where id=$2 returning *', [JSON.stringify(value), row.id])
+    await assert.rejects(set(all), /strategies_indicators_check/)
+    await db.exec('reset role;')
+    const patch = await readFile(new URL('../deploy/STRATEGY_INDICATORS_12_SUPABASE.sql', import.meta.url), 'utf8')
+    await db.exec(patch)
+    await db.exec(patch)
+    await as(A)
+    const original = (await db.query('select * from public.strategies where id=$1', [row.id])).rows[0]
+    assert.deepEqual(original.indicators, row.indicators)
+    assert.equal(original.revision, 2)
+    assert.equal((await set(all)).rows[0].schema_version, 1)
+    assert.deepEqual((await db.query('select indicators from public.strategies where id=$1', [row.id])).rows[0].indicators, all)
+    await assert.rejects(set([...all, all[0]]), /strategies_indicators_check/)
   })
   await t.test('rerunning migration preserves rows; account deletion cascades', async () => {
     await db.exec('reset role;')

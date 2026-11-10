@@ -1,5 +1,6 @@
 import { Download, Play } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { ADVANCED_BY_ID } from '../utils/advancedIndicatorCatalog'
 import { RULES, runBacktest, validateIndicators } from '../utils/backtest'
 import { backtestWindow } from '../utils/dataQuality'
 
@@ -54,6 +55,7 @@ export default function LabBacktestPanel({ candles, quality, symbol, indicators,
   }
   return <div className="lab-backtest">
     <div className="lab-section-heading"><h3>매매 조건과 검증</h3><span>종가 신호 → 다음 봉 시가 체결</span></div>
+    {indicators.some(c => Object.hasOwn(ADVANCED_BY_ID, c.id)) && <p className="lab-help">새 보조지표는 차트와 조건 검색에서 사용할 수 있습니다. 이 백테스트의 매수·매도 규칙은 아래 표시된 기존 조건을 지원합니다.</p>}
     <div className="lab-input-grid">
       <label>시작일<input type="date" min={candles[0]?.time} max={last?.time} value={settings.start || candles[0]?.time || ''} onChange={e => update({ start: e.target.value })}/></label>
       <label>종료일<input type="date" min={candles[0]?.time} max={last?.time} value={settings.end || last?.time || ''} onChange={e => update({ end: e.target.value })}/></label>

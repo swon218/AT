@@ -6,6 +6,10 @@ const absNumber = (value) => {
   const parsed = Number(String(value ?? '').replace(/,/g, '').trim())
   return Number.isFinite(parsed) ? Math.abs(parsed) : 0
 }
+const chartVolume = value => {
+  const text = String(value ?? '').replace(/,/g, '').trim()
+  return text && Number.isFinite(Number(text)) ? Math.abs(Number(text)) : null
+}
 
 function todayInSeoul() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/-/g, '')
@@ -45,7 +49,7 @@ export async function getCandles(symbol, interval, limit = 200, { requester = re
   const items = rows.map((row) => ({
     time: normalizeTime(row.dt || row.cntr_tm),
     open: absNumber(row.open_pric), high: absNumber(row.high_pric),
-    low: absNumber(row.low_pric), close: absNumber(row.cur_prc), volume: absNumber(row.trde_qty),
+    low: absNumber(row.low_pric), close: absNumber(row.cur_prc), volume: chartVolume(row.trde_qty),
   })).filter((row) => row.time && row.open && row.high && row.low && row.close).reverse().slice(-limit)
   cache.set(key, { at: Date.now(), items })
   return items

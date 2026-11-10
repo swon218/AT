@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  CandlestickSeries, CrosshairMode, HistogramSeries, LineSeries, createChart,
+  CandlestickSeries, CrosshairMode, HistogramSeries, LineSeries, createChart, createSeriesMarkers,
 } from 'lightweight-charts'
 import { getBrokerCandleResponse } from '../services/kiwoomMarketApi'
-import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma, indicatorDisplayName } from '../utils/indicators'
+import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma, indicatorDisplayName, isLowerIndicator } from '../utils/indicators'
+import { advancedSeries } from '../utils/advancedIndicators'
+import { ADVANCED_BY_ID, validAdvancedConfig } from '../utils/advancedIndicatorCatalog'
+import { advancedPlot, alignedPlot } from '../utils/indicatorPlots'
 import { gapSafeSeries, isQuarantined } from '../utils/dataQuality'
 import { bindChartTheme, chartPalette, chartThemeOptions } from '../utils/chartTheme'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(Math.round(value))
 const volumeFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
-const formatVolume = (value) => volumeFormatter.format(Math.max(0, Number(value) || 0))
+const formatVolume = value => Number.isFinite(value) ? volumeFormatter.format(value) : '—'
+const EMPTY = []
+const advancedValid = config => Object.hasOwn(ADVANCED_BY_ID, config.id) && validAdvancedConfig(config)
 
 function normalizeCandles(rows) {
   return rows
@@ -20,11 +25,12 @@ function normalizeCandles(rows) {
         : /^\d{4}-\d{2}-\d{2}$/.test(rawTime ?? '')
           ? rawTime
           : Math.floor(new Date(rawTime).getTime() / 1000)
-      if (isQuarantined(row)) return { time, quality: 'quarantined' }
+      if (isQuarantined(row) || ['open', 'high', 'low', 'close'].some(field => row[field] == null || row[field] === '' || !Number.isFinite(Number(row[field])))) return { time, quality: 'quarantined' }
+      const volume = row.volume == null || row.volume === '' ? null : Number(row.volume)
       return {
         quality: row.quality,
         time, open: Math.abs(Number(row.open)), high: Math.abs(Number(row.high)), low: Math.abs(Number(row.low)),
-        close: Math.abs(Number(row.close)), volume: Math.abs(Number(row.volume ?? 0)),
+        close: Math.abs(Number(row.close)), volume: Number.isFinite(volume) && volume >= 0 ? volume : null,
       }
     })
     .filter((row) => row.time && (isQuarantined(row) || [row.open, row.high, row.low, row.close].every(Number.isFinite)))
@@ -35,27 +41,32 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
+  const stopResizeRef = useRef(null)
   const paneLayoutsRef = useRef({})
   const rightScaleWidthRef = useRef(72)
-  const [data, setData] = useState([])
+  const [loaded, setLoaded] = useState(null)
+  const sourceKey = JSON.stringify([stock?.code, period, credentialScope, broker])
+  const data = loaded?.key === sourceKey && loaded.supplied === suppliedCandles ? loaded.candles : EMPTY
   const [legend, setLegend] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [manualExtraHeight, setManualExtraHeight] = useState(null)
   const indicatorKey = JSON.stringify(indicators)
-  const lowerIndicatorCount = indicators.filter((config) => config.id === 'rsi' || config.id === 'macd').length
-  const defaultExtraHeight = lowerIndicatorCount > 1 ? (lowerIndicatorCount - 1) * 170 : 0
-  const scrollContentStyle = manualExtraHeight != null
-    ? { height: `calc(100% + ${manualExtraHeight}px)` }
-    : { height: lowerIndicatorCount > 1 ? `${100 + ((lowerIndicatorCount - 1) * 20)}%` : '100%' }
+  const lowerIndicatorCount = indicators.filter(config => isLowerIndicator(config) && (!Object.hasOwn(ADVANCED_BY_ID, config.id) || advancedValid(config))).length
+  const defaultExtraHeight = Math.max(0, (lowerIndicatorCount - 1) * 112)
+  const scrollContentStyle = { height: `calc(100% + ${manualExtraHeight ?? defaultExtraHeight}px)`, minHeight: lowerIndicatorCount ? `${260 + lowerIndicatorCount * 90}px` : undefined }
 
-  useEffect(() => setManualExtraHeight(null), [lowerIndicatorCount])
+  useEffect(() => {
+    setManualExtraHeight(null)
+    return () => stopResizeRef.current?.()
+  }, [lowerIndicatorCount])
 
   const startBottomResize = (event) => {
     const content = scrollContentRef.current
     const viewport = content?.parentElement
     if (!content || !viewport) return
     event.preventDefault()
+    stopResizeRef.current?.()
     const startY = event.clientY
     const startExtraHeight = Math.max(0, content.offsetHeight - viewport.clientHeight)
     const move = (moveEvent) => {
@@ -65,14 +76,19 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     const stop = () => {
       document.removeEventListener('pointermove', move)
       document.removeEventListener('pointerup', stop)
+      document.removeEventListener('pointercancel', stop)
+      stopResizeRef.current = null
     }
+    stopResizeRef.current = stop
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', stop)
+    document.addEventListener('pointercancel', stop)
   }
 
   useEffect(() => {
     let active = true
-    setData([])
+    const setData = candles => setLoaded({ key: sourceKey, supplied: suppliedCandles, candles })
+    setData(EMPTY)
     setLegend(null)
     setError('')
     if (suppliedCandles !== undefined) {
@@ -98,7 +114,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       .finally(() => active && setLoading(false))
 
     return () => { active = false }
-  }, [stock?.code, period, credentialScope, broker, suppliedCandles, onSourceChange])
+  }, [sourceKey, suppliedCandles, onSourceChange])
 
   useEffect(() => {
     const container = containerRef.current
@@ -168,7 +184,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       borderColor: palette.border,
       scaleMargins: { top: 0.12, bottom: 0.05 },
     })
-    volumeSeries.setData(data.map((item) => isQuarantined(item) ? { time: item.time } : ({
+    volumeSeries.setData(data.map((item) => !Number.isFinite(item.volume) ? { time: item.time } : ({
       time: item.time, value: item.volume,
       color: item.close >= item.open ? 'rgba(255,92,105,.42)' : 'rgba(57,127,245,.42)',
     })))
@@ -207,7 +223,8 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
         priceFormat: { type: 'custom', formatter: formatVolume, minMove: 1 },
         priceLineVisible: false, lastValueVisible: false,
       }, 1)
-      series.setData(plot(segment => calculateSma(segment, Math.max(1, Number(volumeMaConfig.period) || 20), 'volume')))
+      series.setData(gapSafeSeries(data.map(bar => Number.isFinite(bar.volume) ? bar : { ...bar, quality: 'quarantined' }),
+        segment => calculateSma(segment, Math.max(1, Number(volumeMaConfig.period) || 20), 'volume')))
     }
 
     let nextPane = 2
@@ -246,6 +263,45 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     const paneKeys = ['main', 'volume']
     if (rsiConfig) paneKeys.push('rsi')
     if (macdConfig) paneKeys.push('macd')
+    const paneLegends = []
+    let trendMarkers
+    for (const config of indicators.filter(advancedValid)) {
+      const values = advancedSeries(data, config)
+      if (config.id === 'supertrend') {
+        for (const [direction, color] of [[1, config.upColor], [-1, config.downColor]]) {
+          const line = chart.addSeries(LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
+          line.setData(alignedPlot(data, values.supertrend, i => values.supertrend_direction[i] === direction))
+        }
+        if (config.showFlips) trendMarkers = createSeriesMarkers(candleSeries, data.flatMap(({ time }, i) => {
+          const direction = values.supertrend_flip[i]
+          return direction ? [{ time, position: direction === 1 ? 'belowBar' : 'aboveBar', shape: 'circle', size: 0.55,
+            color: direction === 1 ? config.upColor : config.downColor, text: direction === 1 ? '상승 전환' : '하락 전환' }] : []
+        }))
+        continue
+      }
+      if (!isLowerIndicator(config)) continue
+      const spec = advancedPlot(config)
+      const format = value => !Number.isFinite(value) ? '—' : spec.unit === '주' ? `${formatVolume(value)}주`
+        : `${value.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}${spec.unit}`
+      const options = { priceScaleId: 'right', priceLineVisible: false, lastValueVisible: false,
+        priceFormat: { type: 'custom', minMove: spec.unit === '주' ? 1 : 0.01, formatter: format } }
+      if (spec.bounded) options.autoscaleInfoProvider = () => ({ priceRange: { minValue: 0, maxValue: 100 } })
+      const plotLines = spec.lines.map(([key, color, title]) => {
+        const line = chart.addSeries(LineSeries, { ...options, color, lineWidth: 2 }, nextPane)
+        line.setData(alignedPlot(data, values[key]))
+        return { line, key, title }
+      })
+      const anchor = plotLines[0]?.line || chart.addSeries(LineSeries, { ...options, color: 'transparent' }, nextPane)
+      if (!plotLines.length) anchor.setData(data.map(({ time }) => ({ time, value: 50 })))
+      for (const price of spec.levels) addThemedPriceLine(anchor, { price, color: palette.border, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelTextColor: palette.text })
+      const badge = document.createElement('div')
+      badge.className = 'tv-volume-legend'
+      const update = i => { badge.textContent = [indicatorDisplayName(config), ...plotLines.map(({ key, title }) => `${title === 'ATR_PERCENT' ? 'ATR%' : title} ${format(values[key][i])}`)].join(' · ') }
+      update(data.length - 1)
+      paneLegends.push({ paneIndex: nextPane, badge, update })
+      paneKeys.push(config.id)
+      nextPane += 1
+    }
     const capturePaneLayouts = () => {
       chart.panes().forEach((pane, index) => {
         const key = paneKeys[index]
@@ -275,25 +331,25 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
         borderUpColor: palette.up, borderDownColor: palette.down, priceLineColor: palette.price })
       themedPriceLines.forEach(line => line.applyOptions({ axisLabelColor: palette.background }))
     })
-    chart.panes().slice(1).forEach((pane) => pane.getHTMLElement()?.classList.add('atlas-chart-pane-divider'))
-    const volumePaneElement = chart.panes()[1]?.getHTMLElement()
     const volumeLegendElement = document.createElement('div')
     const volumeLegendValue = document.createElement('b')
     volumeLegendElement.className = 'tv-volume-legend'
     volumeLegendElement.append('거래량 ', volumeLegendValue)
     volumeLegendValue.textContent = isQuarantined(data.at(-1)) ? '—' : formatVolume(data.at(-1)?.volume)
-    volumePaneElement?.append(volumeLegendElement)
     chart.timeScale().fitContent()
     const scaleWidthFrame = requestAnimationFrame(() => {
       rightScaleWidthRef.current = Math.max(56, chart.priceScale('right', 0).width())
     })
-    chart.subscribeCrosshairMove((param) => {
+    const moveCrosshair = (param) => {
       const time = typeof param.time === 'object' && param.time
         ? `${param.time.year}-${String(param.time.month).padStart(2, '0')}-${String(param.time.day).padStart(2, '0')}` : param.time
-      const nextLegend = data.find(row => row.time === time) || data.at(-1)
+      const index = data.findIndex(row => row.time === time)
+      const nextLegend = index < 0 ? data.at(-1) : data[index]
       setLegend(nextLegend)
       volumeLegendValue.textContent = isQuarantined(nextLegend) ? '—' : formatVolume(nextLegend.volume)
-    })
+      paneLegends.forEach(({ update }) => update(index < 0 ? data.length - 1 : index))
+    }
+    chart.subscribeCrosshairMove(moveCrosshair)
 
     let previousContainerWidth = container.clientWidth
     let previousContainerHeight = container.clientHeight
@@ -320,14 +376,20 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       if (resizeFrame === null) resizeFrame = requestAnimationFrame(resizeChart)
     })
     resizeObserver.observe(container)
-    let captureEnabled = false
-    const paneResizeObservers = chart.panes().map((pane) => {
-      const observer = new ResizeObserver(() => { if (captureEnabled) capturePaneLayouts() })
-      const element = pane.getHTMLElement()
-      if (element) observer.observe(element)
-      return observer
+    const paneResizeObserver = new ResizeObserver(capturePaneLayouts)
+    // Chart panes are mounted by Lightweight Charts during its first paint.
+    const captureFrame = requestAnimationFrame(() => {
+      chart.panes().forEach((pane, index) => {
+        const element = pane.getHTMLElement()
+        if (!element) return
+        paneResizeObserver.observe(element)
+        if (index === 0) return
+        element.classList.add('atlas-chart-pane-divider')
+        const badge = index === 1 ? volumeLegendElement : paneLegends.find(item => item.paneIndex === index)?.badge
+        // Pane element is a table row. Place labels in its center chart cell.
+        if (badge) (element.cells?.[1] || element).append(badge)
+      })
     })
-    const captureFrame = requestAnimationFrame(() => { captureEnabled = true })
     document.addEventListener('pointerup', capturePaneLayouts)
 
     return () => {
@@ -335,11 +397,14 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       capturePaneLayouts()
       cancelAnimationFrame(captureFrame)
       cancelAnimationFrame(scaleWidthFrame)
-      paneResizeObservers.forEach((observer) => observer.disconnect())
+      paneResizeObserver.disconnect()
       document.removeEventListener('pointerup', capturePaneLayouts)
       resizeObserver.disconnect()
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       volumeLegendElement.remove()
+      paneLegends.forEach(({ badge }) => badge.remove())
+      chart.unsubscribeCrosshairMove(moveCrosshair)
+      trendMarkers?.detach()
       chart.remove()
     }
   }, [data, period, indicatorKey])

@@ -3,16 +3,24 @@
 All inputs are validated, completed lab OHLCV. Never model arithmetic or live data.
 """
 import math
+from . import advanced_indicators
+from .screen_models import AdvancedMetric
 
-VERSION = 'daily-indicators-v1'
+VERSION = 'daily-indicators-v2'
 NAMES = {'open': '시가', 'high': '고가', 'low': '저가', 'close': '종가', 'volume': '거래량',
          'sma': 'SMA', 'ema': 'EMA', 'rsi': 'RSI', 'volume_sma': '거래량 SMA',
          'bb_lower': '볼린저 하단', 'bb_middle': '볼린저 중심', 'bb_upper': '볼린저 상단',
-         'macd': 'MACD', 'macd_signal': 'MACD 시그널', 'macd_histogram': 'MACD 히스토그램'}
+         'macd': 'MACD', 'macd_signal': 'MACD 시그널', 'macd_histogram': 'MACD 히스토그램',
+         'atr': 'ATR', 'atr_percent': 'ATR%', 'adx': 'ADX', 'plus_di': '+DI', 'minus_di': '−DI',
+         'stoch_k': '스토캐스틱 K', 'stoch_d': '스토캐스틱 D', 'obv': 'OBV', 'obv_ma': 'OBV 평균',
+         'mfi': 'MFI', 'cci': 'CCI', 'supertrend': '슈퍼트렌드', 'supertrend_direction': '슈퍼트렌드 방향',
+         'supertrend_flip': '슈퍼트렌드 전환'}
 OPERATORS = {'lt': '<', 'lte': '≤', 'gt': '>', 'gte': '≥', 'crosses_above': '상향 교차', 'crosses_below': '하향 교차'}
 
 
 def key(m):
+    if isinstance(m, AdvancedMetric):
+        return ':'.join(str(v) for v in m.model_dump(exclude_none=True).values())
     if m.name in ('open', 'high', 'low', 'close', 'volume'): return m.name
     if m.name.startswith('macd'): return f'{m.name}:{m.period}:{m.slow}:{m.signal}'
     if m.name.startswith('bb_'): return f'{m.name}:{m.period}:{m.multiplier:g}'
@@ -20,6 +28,15 @@ def key(m):
 
 
 def label(m):
+    if isinstance(m, AdvancedMetric):
+        settings = [str(m.period)] if m.period is not None else []
+        if m.adx_period is not None: settings.append(f'평활 {m.adx_period}')
+        if m.k_smoothing is not None: settings.append(f'K {m.k_smoothing}')
+        if m.d_smoothing is not None: settings.append(f'D {m.d_smoothing}')
+        if m.average_type is not None: settings.append(m.average_type)
+        if m.source is not None: settings.append(m.source.upper())
+        if m.atr_multiplier is not None: settings.append(f'배수 {m.atr_multiplier:g}')
+        return NAMES[m.name] + (f'({", ".join(settings)})' if settings else '')
     if m.name in ('open', 'high', 'low', 'close', 'volume'): return NAMES[m.name]
     if m.name.startswith('macd'): return f'{NAMES[m.name]}({m.period}, {m.slow}, {m.signal})'
     if m.name.startswith('bb_'): return f'{NAMES[m.name]}({m.period}, {m.multiplier:g})'
@@ -46,6 +63,7 @@ def ema(values, period):
 
 
 def series(candles, m):
+    if isinstance(m, AdvancedMetric): return advanced_indicators.series(candles, m)
     name, period = m.name, m.period
     if name in ('open', 'high', 'low', 'close', 'volume'): return [c[name] for c in candles]
     values = [c['volume' if name == 'volume_sma' else 'close'] for c in candles]
@@ -87,6 +105,12 @@ def series(candles, m):
 
 
 def warmup(m):
+    if isinstance(m, AdvancedMetric):
+        if m.name == 'obv': return 1
+        if m.name in ('plus_di', 'minus_di', 'mfi'): return m.period + 1
+        if m.name == 'adx': return m.period + m.adx_period
+        if m.name.startswith('stoch_'): return m.period + m.k_smoothing - 1 + ((m.d_smoothing or 1) - 1)
+        return m.period
     if m.name in ('open', 'high', 'low', 'close', 'volume'): return 1
     if m.name == 'rsi': return m.period + 1
     if m.name.startswith('macd'): return m.slow + (m.signal-1 if m.name != 'macd' else 0)
@@ -94,6 +118,9 @@ def warmup(m):
 
 
 def latest_pair(candles, m):
+    if not candles: return None, None
+    if isinstance(m, AdvancedMetric) and m.name == 'cci':
+        candles = candles[-(m.period+1):]
     if m.name.startswith('bb_'):
         # Screening needs two points, whereas the chart needs the whole series.
         # Use the exact same window arithmetic without O(bars * period) work.
@@ -108,6 +135,13 @@ def latest_pair(candles, m):
         return points[1], points[0]
     points = series(candles, m)
     return points[-1], points[-2] if len(points) > 1 else None
+
+
+def metric_unit(name):
+    if name in ('open', 'high', 'low', 'close', 'sma', 'ema', 'atr', 'supertrend') or name.startswith(('bb_', 'macd')): return '원'
+    if name in ('volume', 'volume_sma', 'obv', 'obv_ma'): return '주'
+    if name == 'atr_percent': return '%'
+    return ''
 
 
 def compare(operator, left, right, previous_left, previous_right):

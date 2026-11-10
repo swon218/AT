@@ -12,6 +12,7 @@ const number = (value) => {
 function candleFromToss(row) {
   const timestamp = String(row.timestamp || '')
   const milliseconds = new Date(timestamp).getTime()
+  const volume = row.volume == null || String(row.volume).trim() === '' ? null : Number(row.volume)
   return {
     time: Number.isFinite(milliseconds) ? Math.floor(milliseconds / 1000) : timestamp.slice(0, 10),
     sourceTime: timestamp,
@@ -19,7 +20,7 @@ function candleFromToss(row) {
     high: number(row.highPrice),
     low: number(row.lowPrice),
     close: number(row.closePrice),
-    volume: Math.max(0, number(row.volume)),
+    volume: Number.isFinite(volume) && volume >= 0 ? volume : null,
   }
 }
 
@@ -48,7 +49,7 @@ function aggregateCandles(items, interval) {
     existing.high = Math.max(existing.high, item.high)
     existing.low = Math.min(existing.low, item.low)
     existing.close = item.close
-    existing.volume += item.volume
+    existing.volume = existing.volume === null || item.volume === null ? null : existing.volume + item.volume
   })
   return [...groups.values()]
 }

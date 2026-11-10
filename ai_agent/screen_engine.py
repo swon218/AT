@@ -4,9 +4,10 @@ import hashlib
 import json
 import math
 from threading import Lock
-from .indicators import VERSION, key, label, condition_label, latest_pair, warmup, compare
+from .indicators import VERSION, key, label, condition_label, latest_pair, warmup, compare, metric_unit
 from .market import market_context
 from .screener import RsiScreener, ScanBusy, ScanChanged
+from .screen_models import AdvancedMetric
 
 
 class ScreenSnapshotChanged(Exception):
@@ -29,6 +30,16 @@ def metrics_for(query):
     return dict(sorted(found.items()))
 
 
+def bars_from_rows(rows):
+    return [{'time': r[1], 'close': r[2], 'open': r[4], 'high': r[5], 'low': r[6], 'volume': r[7]} for r in rows]
+
+
+REASONS = {'insufficient_warmup': '계산 준비 봉 부족', 'indicator_unavailable': '유효한 지표값 없음',
+           'missing_sessions': '거래일 누락', 'stale_data': '기준일 일봉 미수집', 'quality_records_missing': '품질 기록 누락',
+           'quarantined_ohlc': '격리 일봉 포함', 'invalid_ohlc': '가격 데이터 오류', 'invalid_volume': '거래량 누락 또는 오류',
+           'symbol_not_found': '수집 목록에 없는 종목', 'screen_timeout': '조회 시간 제한'}
+
+
 class ScreenEngine:
     def __init__(self):
         self.lock, self.scanners = Lock(), OrderedDict()
@@ -49,7 +60,7 @@ class ScreenEngine:
                 if len(self.scanners) >= 8:
                     _, old = self.scanners.popitem(last=False); old.close()
                 def evaluate(rows):
-                    candles = [{'time': r[1], 'close': r[2], 'open': r[4], 'high': r[5], 'low': r[6], 'volume': r[7]} for r in rows]
+                    candles = bars_from_rows(rows)
                     values, previous = {}, {}
                     for k, m in metrics.items():
                         latest, prior = latest_pair(candles, m)
@@ -58,7 +69,8 @@ class ScreenEngine:
                         values[k], previous[k] = latest, prior
                     return {'values': values, 'previous': previous}
                 required = max(warmup(m) for m in metrics.values()) + int(crossing)
-                self.scanners[signature] = RsiScreener(evaluator=evaluate, required_bars=required)
+                self.scanners[signature] = RsiScreener(evaluator=evaluate, required_bars=required,
+                                                        allow_zero_volume=any(isinstance(m, AdvancedMetric) for m in metrics.values()))
             self.scanners.move_to_end(signature)
             data = self.scanners[signature].scan(settings, query.market, context['latest_completed'])
             if query.snapshot_id is not None and query.snapshot_id != data['data_version']:
@@ -66,6 +78,53 @@ class ScreenEngine:
             return data, context
         finally:
             self.lock.release()
+
+    def lookup(self, settings, query, now):
+        context = market_context(now, settings.calendar_through)
+        cutoff = context['latest_completed']
+        metrics = {key(metric): metric for metric in query.metrics}
+
+        def evaluate(rows):
+            candles = bars_from_rows(rows)
+            found, unavailable = [], []
+            for metric in metrics.values():
+                info = {'metric': key(metric), 'name': metric.name, 'label': label(metric), 'unit': metric_unit(metric.name)}
+                value, previous = latest_pair(candles, metric)
+                if value is None or not math.isfinite(value):
+                    reason = 'insufficient_warmup' if len(rows) < warmup(metric) else 'indicator_unavailable'
+                    unavailable.append({**info, 'reason': REASONS[reason], 'code': reason})
+                else:
+                    found.append({**info, 'value': value, 'previous': previous if previous is not None and math.isfinite(previous) else None})
+            return {'metrics': found, 'unavailable': unavailable, 'seed_date': rows[0][1],
+                    'previous_date': rows[-2][1] if len(rows) > 1 else None}
+
+        reader = RsiScreener(evaluator=evaluate, required_bars=1, allow_zero_volume=True)
+        try:
+            data = reader.scan(settings, 'ALL', cutoff, symbol=query.code)
+        finally:
+            reader.close()
+        subject = data.get('subject', {'code': query.code, 'name': query.code, 'market': ''})
+        row = data['items'][0] if data['items'] else {}
+        excluded = data['excluded'] or ({'symbol_not_found' if not data['universe'] else 'screen_timeout': 1} if not row else {})
+        coverage = {'kind': 'indicator', **subject, 'as_of': cutoff, 'bars': row.get('bars', 0), 'seed_date': row.get('seed_date'),
+                    'previous_date': row.get('previous_date'), 'excluded': excluded, 'unavailable': row.get('unavailable', []),
+                    'calculation_version': VERSION, 'data_version': data['data_version'], 'calendar_source': context['calendar_source']}
+        items = []
+        for value in row.get('metrics', []):
+            item = {**value, **subject, 'as_of': cutoff, 'source': '실험실 확정 일봉 DB / ' + VERSION}
+            if value['name'] in ('supertrend_direction', 'supertrend_flip'):
+                meaning = {-1: '하락', 0: '전환 없음', 1: '상승'}[value['value']]
+            else:
+                meaning = f"{value['value']:.4f}{value['unit']}"
+            item['excerpt'] = f"{subject['name']}({subject['code']}), 확정 일봉 {cutoff}, {value['label']} = {meaning}"
+            if value['name'] in ('obv', 'obv_ma'):
+                item['excerpt'] += f" (누적 시작 {row['seed_date']})"
+            item['id'] = 'i_' + digest(item)
+            items.append(item)
+        status = 'empty' if not items else 'partial' if coverage['unavailable'] else 'success'
+        return {'status': status, 'items': items, 'coverage': coverage, 'as_of': cutoff, 'source': '실험실 확정 일봉 DB',
+                'result_id': 's_' + digest([coverage, [item['id'] for item in items]]),
+                'warnings': ['실험실에 수집된 확정 일봉 기준입니다. 장중·분봉 또는 사용자 차트 설정을 조회하지 않습니다.', context['warning']]}
 
     def execute(self, settings, query, now, snapshot=None):
         data, context = snapshot if snapshot is not None else self.scan(settings, query, now)
@@ -112,7 +171,7 @@ class ScreenEngine:
         return {'status': 'partial' if coverage['not_scanned'] or data['excluded'] else 'success' if matches else 'empty',
                 'items': page, 'coverage': coverage, 'query': normalized, 'query_id': query_id,
                 'result_id': 's_' + digest([query_id, coverage, [r['id'] for r in page]]),
-                'snapshot_id': data['data_version'], 'columns': [{'key': k, 'label': label(m)} for k, m in metrics_for(query).items()],
+                'snapshot_id': data['data_version'], 'columns': [{'key': k, 'label': label(m), 'unit': metric_unit(m.name)} for k, m in metrics_for(query).items()],
                 'as_of': context['latest_completed'], 'source': '실험실 일봉 DB',
                 'warnings': ['수집된 종목의 확정 일봉 기준입니다. 장중 실시간 조건검색이 아닙니다.',
                              '표시 수치는 반올림되며 조건 판정은 반올림 전 수치로 수행합니다.', context['warning']]}

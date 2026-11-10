@@ -1,3 +1,5 @@
+import { ADVANCED_DEFAULTS, ADVANCED_INDICATORS, ADVANCED_BY_ID } from './advancedIndicatorCatalog.js'
+
 export const INDICATOR_CATALOG = [
   {
     id: 'ma', name: '이동평균선 MA', shortName: 'MA', description: '일정 기간의 종가 평균을 연결해 가격의 추세 방향을 확인합니다.',
@@ -30,7 +32,7 @@ export const INDICATOR_CATALOG = [
     },
   },
   {
-    id: 'rsi', name: 'RSI', shortName: 'RSI', description: '최근 상승과 하락 강도를 0~100으로 나타내 과매수·과매도 구간을 판단합니다.',
+    id: 'rsi', name: 'RSI', shortName: 'RSI', pane: 'lower', description: '최근 상승과 하락 강도를 0~100으로 나타내 과매수·과매도 구간을 판단합니다.',
     help: {
       overview: '최근 봉들의 상승폭과 하락폭을 비교해 0부터 100 사이로 나타내는 모멘텀 지표입니다. 가격 움직임이 한쪽으로 지나치게 쏠렸는지 확인할 때 사용합니다.',
       inputs: ['기간: RSI 계산에 사용할 봉의 개수입니다. 기본값은 14입니다.', '하단값: 과매도 참고 기준입니다. 일반적으로 30을 사용합니다.', '상단값: 과매수 참고 기준입니다. 일반적으로 70을 사용합니다.', 'RSI선·상단선·하단선 색상: 차트에 표시되는 각 선의 색상입니다.'],
@@ -40,7 +42,7 @@ export const INDICATOR_CATALOG = [
     },
   },
   {
-    id: 'macd', name: 'MACD', shortName: 'MACD', description: '단기·장기 지수이동평균의 차이와 시그널선을 이용해 추세 전환을 확인합니다.',
+    id: 'macd', name: 'MACD', shortName: 'MACD', pane: 'lower', description: '단기·장기 지수이동평균의 차이와 시그널선을 이용해 추세 전환을 확인합니다.',
     help: {
       overview: '빠른 지수이동평균과 느린 지수이동평균의 차이를 MACD선으로 나타내고, 그 평균인 시그널선과 비교해 추세와 모멘텀 변화를 확인합니다.',
       inputs: ['단기 기간: 빠른 지수이동평균 기간이며 기본값은 12입니다.', '장기 기간: 느린 지수이동평균 기간이며 기본값은 26입니다.', '시그널 기간: MACD선의 평균 기간이며 기본값은 9입니다.', 'MACD선·시그널선·상승·하락 색상: 선과 히스토그램의 표시 색상입니다.'],
@@ -49,7 +51,12 @@ export const INDICATOR_CATALOG = [
       caution: '후행성이 있으며 횡보 구간에서는 교차 신호가 반복될 수 있습니다. 추세 방향과 거래량 같은 추가 조건 없이 단독으로 사용하면 잘못된 신호가 많아질 수 있습니다.',
     },
   },
+  ...ADVANCED_INDICATORS,
 ]
+
+export const INDICATOR_LIMIT = INDICATOR_CATALOG.length
+export const isLowerIndicator = config => INDICATOR_CATALOG.some(item => item.id === config.id && item.pane === 'lower')
+  && (config.id !== 'dmi' || config.showAdx || config.showPlus || config.showMinus || config.showLevels)
 
 export const INDICATOR_DEFAULTS = {
   ma: { type: 'SMA', shortPeriod: 5, shortColor: '#f4c542', longPeriod: 20, longColor: '#4b86ff' },
@@ -57,6 +64,7 @@ export const INDICATOR_DEFAULTS = {
   'volume-ma': { period: 20, color: '#f4c542' },
   rsi: { period: 14, lower: 30, upper: 70, color: '#35cf9c', upperColor: '#ff5c69', lowerColor: '#4b86ff' },
   macd: { fast: 12, slow: 26, signal: 9, macdColor: '#4b86ff', signalColor: '#ffb84d', positiveColor: '#ff5c69', negativeColor: '#397ff5' },
+  ...ADVANCED_DEFAULTS,
 }
 
 export function createIndicatorConfig(id) {
@@ -69,7 +77,8 @@ export function indicatorDisplayName(config) {
   if (config.id === 'volume-ma') return `거래량 MA ${config.period}`
   if (config.id === 'rsi') return `RSI ${config.period}`
   if (config.id === 'macd') return `MACD ${config.fast}, ${config.slow}, ${config.signal}`
-  return config.id
+  if (config.id === 'atr') return `${config.display === 'percent' ? 'ATR%' : 'ATR'} ${config.period}`
+  return ADVANCED_BY_ID[config.id]?.shortName || config.id
 }
 
 export function calculateSma(candles, period = 20, field = 'close') {

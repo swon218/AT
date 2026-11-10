@@ -1,0 +1,21 @@
+{
+  "bars": [
+    {"time":"2026-01-02","open":10,"high":11,"low":9,"close":10,"volume":5},
+    {"time":"2026-01-05","open":13,"high":14,"low":12,"close":13,"volume":7},
+    {"time":"2026-01-06","open":11,"high":13,"low":10,"close":11,"volume":4},
+    {"time":"2026-01-07","open":11,"high":13,"low":11,"close":11,"volume":6},
+    {"time":"2026-01-08","open":17,"high":18,"low":16,"close":17,"volume":8},
+    {"time":"2026-01-09","open":7,"high":8,"low":6,"close":7,"volume":9}
+  ],
+  "cases": [
+    {"config":{"id":"atr","period":2},"expected":{"atr":[null,3,3,2.5,4.75,7.875],"atr_percent":[null,23.07692307692308,27.27272727272727,22.72727272727273,27.94117647058824,112.5]}},
+    {"config":{"id":"dmi","period":2,"adxPeriod":2},"expected":{"adx":[null,null,null,20],"plus_di":[null,null,42.85714285714286,27.27272727272727],"minus_di":[null,null,28.57142857142857,18.18181818181818]}},
+    {"config":{"id":"stochastic","period":2,"kPeriod":1,"dPeriod":2},"expected":{"stoch_k":[null,80,25,33.33333333333333,85.71428571428571,8.333333333333333],"stoch_d":[null,null,52.5,29.16666666666667]}},
+    {"config":{"id":"obv","maPeriod":2,"maType":"SMA"},"expected":{"obv":[0,7,3,3,11,2],"obv_ma":[null,3.5,5,3,7,6.5]}},
+    {"config":{"id":"obv","maPeriod":2,"maType":"EMA"},"expected":{"obv_ma":[null,3.5,3.1666666666666665,3.0555555555555554]}},
+    {"config":{"id":"mfi","period":2},"expected":{"mfi":[null,null,66.7481662591687,60.6936416184971,100,68.34170854271356]}},
+    {"config":{"id":"cci","period":3,"source":"close"},"expected":{"cci":[null,null,-20,-50,100,-87.5]}},
+    {"config":{"id":"cci","period":3,"source":"hlc3"},"expected":{"cci":[null,null,-7.142857142857143]}},
+    {"config":{"id":"supertrend","period":2,"multiplier":1},"expected":{"supertrend":[null,16,14.5,14.5,12.25,14.875],"supertrend_direction":[null,-1,-1,-1,1,-1],"supertrend_flip":[null,0,0,0,1,-1]}}
+  ]
+}

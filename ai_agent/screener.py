@@ -4,6 +4,7 @@ from collections import Counter, OrderedDict
 from datetime import datetime
 import hashlib
 from itertools import groupby
+from math import isfinite
 from pathlib import Path
 import sqlite3
 from threading import Lock
@@ -16,8 +17,7 @@ MAX_BARS = 2000
 BATCH_SIZE = 64
 MAX_FLOAT = '1.7976931348623157e308'
 # Keep finite/tradable checks in SQLite before indicator calculations.
-VALID_BAR = ' AND '.join(
-    ["c.tradable != 0"] +
+VALID_OHLCV = ' AND '.join(
     [f"(typeof(c.{x}) IN ('integer','real') AND c.{x}>0 AND c.{x}<={MAX_FLOAT})" for x in ('open', 'high', 'low', 'close')] +
     ['c.low<=min(c.open,c.close)', 'c.high>=max(c.open,c.close)',
      f"(typeof(c.volume) IN ('integer','real') AND c.volume>=0 AND c.volume<={MAX_FLOAT})"]
@@ -33,9 +33,10 @@ class ScanChanged(Exception):
 
 
 class RsiScreener:
-    def __init__(self, ttl=60, clock=time.monotonic, evaluator=None, required_bars=15):
+    def __init__(self, ttl=60, clock=time.monotonic, evaluator=None, required_bars=15, allow_zero_volume=False):
         self.ttl, self.clock = ttl, clock
         self.evaluator, self.required_bars = evaluator, required_bars
+        self.valid_bar = ('(c.tradable != 0 OR c.volume = 0)' if allow_zero_volume else 'c.tradable != 0') + ' AND ' + VALID_OHLCV
         self.lock, self.entries = Lock(), OrderedDict()
 
     def close(self):
@@ -61,7 +62,7 @@ class RsiScreener:
             raise
         return db
 
-    def scan(self, settings, market, cutoff):
+    def scan(self, settings, market, cutoff, symbol=None):
         path = Path(settings.lab_path).resolve()
         if not settings.lab_path or not path.is_file():
             raise FileNotFoundError('lab_data_not_ready')
@@ -95,7 +96,7 @@ class RsiScreener:
                 if fingerprint(path) != version:
                     entry['results'].clear()
                     raise ScanChanged()
-                cache_key = (version, market, cutoff, settings.screen_symbols, VERSION)
+                cache_key = (version, market, cutoff, settings.screen_symbols, VERSION, symbol)
                 for k, (at, _) in list(entry['results'].items()):
                     if now - at >= self.ttl or k[0] != version:
                         del entry['results'][k]
@@ -104,7 +105,8 @@ class RsiScreener:
                 previous = existing[1] if existing else None
                 result = ({**previous, 'cache_hit': True, 'resumed': 0} if hit else
                           self._scan(db, market, cutoff, settings.screen_symbols,
-                                     now + max(0.001, settings.tool_seconds - 1), previous))
+                                     now + max(0.001, settings.tool_seconds - 1), previous,
+                                     **({'symbol': symbol} if symbol is not None else {})))
             finally:
                 # Release every snapshot, including cache hits, SQL interrupts and
                 # failures. A persistent read transaction would conceal WAL commits
@@ -135,13 +137,16 @@ class RsiScreener:
         finally:
             self.lock.release()
 
-    def _scan(self, db, market, cutoff, max_symbols, deadline, previous=None):
+    def _scan(self, db, market, cutoff, max_symbols, deadline, previous=None, symbol=None):
         values = list(previous['items']) if previous else []
         excluded = Counter(previous['excluded']) if previous else Counter()
         scanned = previous['scanned'] if previous else 0
         all_sessions = tuple(expected_sessions(str(calendar().first_session.date()), cutoff))
         db.set_progress_handler(lambda: int(self.clock() >= deadline), 10000)
-        where, params = ('active=1', ()) if market == 'ALL' else ('active=1 AND market=?', (market,))
+        if symbol is not None:
+            where, params = 'active=1 AND code=?', (symbol,)
+        else:
+            where, params = ('active=1', ()) if market == 'ALL' else ('active=1 AND market=?', (market,))
         total = db.execute('SELECT count(*) FROM symbols WHERE ' + where, params).fetchone()[0]
         symbols = db.execute('SELECT code,name,market FROM symbols WHERE ' + where + ' ORDER BY code LIMIT ? OFFSET ?', (*params, max(0, max_symbols - scanned), scanned)).fetchall()
         quality_ready = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='current_candle_quality' AND type='view'").fetchone())
@@ -160,7 +165,7 @@ class RsiScreener:
                 ranges = ','.join('(?,?)' for _ in starts)
                 parameters = tuple(value for row in starts for value in row)
                 bars = db.execute(f'''WITH selected(code,start) AS (VALUES {ranges})
-                SELECT c.code,c.date,c.close,CASE WHEN {VALID_BAR} THEN 1 ELSE 0 END usable,
+                SELECT c.code,c.date,c.close,CASE WHEN {self.valid_bar} THEN 1 ELSE 0 END usable,
                        c.open,c.high,c.low,c.volume
                     FROM selected s CROSS JOIN candles c
                     ON c.code=s.code AND c.date>=s.start AND c.date<=? ORDER BY c.code,c.date''', (*parameters, cutoff)).fetchall()
@@ -207,6 +212,8 @@ class RsiScreener:
                         reason = 'quality_records_missing'
                     elif dates != all_sessions[bisect_left(all_sessions, rows[0][1]):bisect_right(all_sessions, cutoff)]:
                         reason = 'missing_sessions'
+                    elif any(not isinstance(row[7], (int, float)) or not isfinite(row[7]) or row[7] < 0 for row in rows):
+                        reason = 'invalid_volume'
                     elif any(not row[3] for row in rows):
                         reason = 'invalid_ohlc'
                 if reason:
@@ -221,7 +228,10 @@ class RsiScreener:
             if self.clock() >= deadline:
                 break
         values.sort(key=lambda row: (row.get('rsi', 0), row['code']))
-        return {'items': values, 'universe': total, 'scanned': scanned, 'valid': len(values), 'excluded': dict(excluded)}
+        result = {'items': values, 'universe': total, 'scanned': scanned, 'valid': len(values), 'excluded': dict(excluded)}
+        if symbol is not None and symbols:
+            result['subject'] = dict(zip(('code', 'name', 'market'), symbols[0]))
+        return result
 
 
 SCREENER = RsiScreener()

@@ -290,6 +290,27 @@ class ResearchTools:
                                  'query': result['query'], 'snapshot_id': result['snapshot_id']})
         return result
 
+    async def get_stock_indicators(self, args):
+        if args.code not in self.budget.codes and len(self.budget.codes) >= self.settings.symbols:
+            raise ToolError('symbol_limit')
+        self.budget.codes.add(args.code)
+        try:
+            result = await asyncio.to_thread(self.screen_engine.lookup, self.settings, args, self.now)
+        except ScanChanged:
+            raise ToolError('screen_data_changed', True)
+        except ScanBusy:
+            raise ToolError('screen_busy', True)
+        except FingerprintUnavailable:
+            raise ToolError('screen_snapshot_unverified', True)
+        except FileNotFoundError:
+            raise ToolError('lab_data_not_ready')
+        for item in result['items']:
+            self.remember({k: item[k] for k in ('id', 'code', 'name', 'market', 'excerpt', 'source', 'as_of')})
+        coverage = result['coverage']
+        self.coverage.append(coverage)
+        self.result_sets.append({'id': result['result_id'], 'items': result['items'], 'coverage': coverage})
+        return result
+
     async def get_stock_news(self, args):
         if args.code not in self.resolved:
             raise ToolError('symbol_not_resolved')

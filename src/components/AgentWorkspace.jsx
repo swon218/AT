@@ -107,6 +107,25 @@ function WatchlistConfirmation({ agent, message, latest }) {
   </section>
 }
 
+const indicatorValue = (value, name, unit) => {
+  if (!Number.isFinite(value)) return '—'
+  if (name === 'supertrend_direction' || name === 'supertrend_flip') return value === 1 ? '상승' : value === -1 ? '하락' : '전환 없음'
+  return `${value.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}${unit || ''}`
+}
+
+function IndicatorResult({ result }) {
+  const { coverage, items } = result
+  return <details className="agent-execution agent-indicator-result" open>
+    <summary>{coverage.name} · 확정 일봉 지표 · {coverage.as_of}</summary>
+    <div className="screen-table-wrap"><table className="screen-table">
+      <thead><tr><th>지표·설정</th><th>기준일</th><th>이전 봉</th></tr></thead>
+      <tbody>{items.map(item => <tr key={item.id}><th scope="row">{item.label}</th><td>{indicatorValue(item.value, item.name, item.unit)}</td><td>{indicatorValue(item.previous, item.name, item.unit)}</td></tr>)}
+      {coverage.unavailable.map(item => <tr key={item.metric}><th scope="row">{item.label}</th><td colSpan={2}>{item.reason}</td></tr>)}</tbody>
+    </table></div>
+    <p>실험실 확정 일봉{coverage.previous_date ? ` · 이전 봉 ${coverage.previous_date}` : ''}{coverage.seed_date ? ` · 계산 이력 시작 ${coverage.seed_date}` : ''}</p>
+  </details>
+}
+
 function Conversation({ agent, compact = false, onExpand }) {
   const bottom = useRef(null)
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }) }, [agent.active.id, agent.active.messages.length])
@@ -127,6 +146,7 @@ function Conversation({ agent, compact = false, onExpand }) {
         <div className="agent-message-meta"><span>{message.role === 'assistant' ? 'ATLAS AI' : '나'}</span><time dateTime={message.createdAt}>{timeLabel(message.createdAt)}</time></div>
         <div className={message.role === 'assistant' ? 'agent-assistant-message' : 'agent-user-message'}>{message.content.split('\n').map((line, i) => <p key={i}>{line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => part.startsWith('**') ? <strong key={j}>{part.slice(2, -2)}</strong> : part.startsWith('`') ? <code key={j}>{part.slice(1, -1)}</code> : part)}</p>)}</div>
         {message.answer?.watchlistConfirmation && <WatchlistConfirmation agent={agent} message={message} latest={latest}/>}
+        {message.answer?.result_sets?.filter(set => set.coverage?.kind === 'indicator' && (set.items.length || set.coverage.unavailable?.length)).map(set => <IndicatorResult key={set.id} result={set}/>)}
         {!!message.answer?.sources?.length && <ul className="agent-sources">{message.answer.sources.map(source => <li key={source.id}>{safeAgentLink(source.url) ? <a href={safeAgentLink(source.url)} target="_blank" rel="noopener noreferrer">{source.title || source.id}</a> : <span>{source.excerpt || source.id}</span>}<small>{source.source} · {source.published_at || source.as_of} · {source.scope === 'title_and_snippet' ? '제목·요약' : '확정 일봉'}</small></li>)}</ul>}
         {agent.openScreen && message.answer?.result_sets?.filter(set => set.coverage?.kind === 'screen' && importQuery(set.query)).map(set => <button type="button" className="agent-expand-result" key={set.id} onClick={() => agent.openScreen(set.query)}>조건검색에서 조건 열기 · 최신 데이터로 다시 조회<ArrowUpRight size={14}/></button>)}
         <div className="agent-message-state"><Check size={12}/><span>{message.role === 'assistant' ? `${agent.active.requests?.find(r => r.id === message.request_id)?.status === 'partial' ? '부분 완료' : '완료'} · ${message.answer?.as_of || ''}` : '질문 저장됨'}</span></div>

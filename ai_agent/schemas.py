@@ -1,6 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
-from .screen_models import StockScreen
+from .screen_models import IndicatorLookup, StockScreen
 
 
 class Strict(BaseModel):
@@ -49,10 +49,17 @@ class AlertStatus(Strict):
 
 
 TOOL_MODELS = {'resolve_symbol': Resolve, 'get_market_context': Context, 'screen_rsi': Screen,
-               'screen_stocks': StockScreen, 'get_stock_news': News, 'get_news_details': Details,
+               'screen_stocks': StockScreen, 'get_stock_indicators': IndicatorLookup, 'get_stock_news': News, 'get_news_details': Details,
                'get_alert_editor': Context, 'propose_alert': AlertProposal, 'get_alert_status': AlertStatus}
+METRIC_GUIDE = ('Legacy metrics use period/slow/signal/multiplier (unused fields=1; defaults RSI14, BB20/2, MACD12/26/9). '
+                'Advanced metrics use null for unused fields and for defaults: ATR/ATR% 14; DMI/ADX DI14, ADX smoothing14; '
+                'stoch K/D 14/3/3; OBV raw has no period, obv_ma SMA20; MFI14; CCI20 HLC3; Supertrend ATR10 ×3. '
+                'Specify any user parameters. ATR% uses percent points. Supertrend direction is +1 up or -1 down, '
+                'supertrend_flip is +1 up flip, -1 down flip, 0 unchanged. ADX is strength; OBV/MFI are not investor money flow.')
+
 DESCRIPTIONS = {
-    'screen_stocks': 'Shared manual/AI daily-stock screener over the collected lab DB. Build 1..8 conditions with all/any. Metrics: OHLCV, SMA/EMA/RSI(period), Bollinger bands(period,multiplier), volume_sma, MACD(period=fast,slow,signal). Unused period/slow/signal/multiplier=1. Right constant: value set, metric=null, factor=1; right metric: value=null, metric set, factor scales it. Crosses compare previous and latest completed bars. Default daily RSI14, Bollinger20/2, MACD12/26/9; clearly disclose chosen defaults, clarify material ambiguities (e.g. low touch vs close below). snapshot_id=null first, reuse returned snapshot_id for later pages. Conditions cannot access private accounts, execute SQL/code or place orders. Prefer this shared engine for indicator searches; actual coverage/exclusions are mandatory.',
+    'screen_stocks': 'Shared daily screener over collected completed candles. Build 1..8 conditions with all/any. Right constant: value set, metric=null, factor=1; right metric: value=null, metric set, factor scales it. Crosses compare previous and latest values. For an up Supertrend flip use supertrend_flip >= 1. snapshot_id=null first; reuse for later pages. Disclose the effective parameters, exclusions and as-of date. ' + METRIC_GUIDE,
+    'get_stock_indicators': 'Read 1..8 indicator outputs for ONE stock code from the same completed daily data and engine as screen_stocks. Resolve a stock name first; clarify ambiguity. Use for values, not for market-wide screens or general explanations. No live/intraday values or browser chart settings. Cite each evidence excerpt and disclose parameters, exclusions and date. ' + METRIC_GUIDE,
     'resolve_symbol': 'Resolve an exact Korean stock name/code against the collected catalog. Multiple matches require clarification; partial catalog is disclosed.',
     'get_market_context': 'Server KST time, XKRX calendar, overnight/today boundaries and latest completed daily session. No realtime price.',
     'screen_rsi': 'Read-only local daily SQLite; calculate Wilder RSI(14) on completed bars. Sorted RSI ascending, code ascending. Limited collected universe, quality exclusions and pagination. Never realtime.',

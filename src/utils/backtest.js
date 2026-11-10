@@ -1,5 +1,6 @@
-import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma } from './indicators.js'
+import { calculateBollinger, calculateEma, calculateMacd, calculateRsi, calculateSma, INDICATOR_LIMIT } from './indicators.js'
 import { backtestWindow } from './dataQuality.js'
+import { ADVANCED_BY_ID, validAdvancedConfig } from './advancedIndicatorCatalog.js'
 
 export const RULES = [
   { id: 'ma-up', indicator: 'ma', label: 'MA 단기선 > 장기선' },
@@ -25,7 +26,7 @@ function number(value, min, max, name, integer = false) {
 }
 
 export function validateIndicators(indicators) {
-  if (!Array.isArray(indicators) || indicators.length > 5 || new Set(indicators.map(i => i.id)).size !== indicators.length) throw new Error('지표 조합을 확인하세요.')
+  if (!Array.isArray(indicators) || indicators.length > INDICATOR_LIMIT || indicators.some(i => !i || typeof i.id !== 'string') || new Set(indicators.map(i => i.id)).size !== indicators.length) throw new Error('지표 조합을 확인하세요.')
   const period = (v, name) => number(v, 1, 500, name, true)
   for (const c of indicators) {
     if (c.id === 'ma') {
@@ -39,6 +40,8 @@ export function validateIndicators(indicators) {
     } else if (c.id === 'macd') {
       period(c.fast, 'MACD 단기'); period(c.slow, 'MACD 장기'); period(c.signal, 'MACD 시그널')
       if (c.fast >= c.slow) throw new Error('MACD 단기 기간은 장기 기간보다 작아야 합니다.')
+    } else if (Object.hasOwn(ADVANCED_BY_ID, c.id)) {
+      if (!validAdvancedConfig(c)) throw new Error(`${ADVANCED_BY_ID[c.id].shortName} 기간·기준선·표시 설정을 확인하세요.`)
     } else throw new Error('지원하지 않는 지표입니다.')
   }
 }
@@ -89,7 +92,8 @@ function signals(candles, indicators) {
 
 export function runBacktest(candles, indicators, settings) {
   validateIndicators(indicators)
-  const window = backtestWindow(candles, indicators, settings)
+  const supported = indicators.filter(c => !Object.hasOwn(ADVANCED_BY_ID, c.id))
+  const window = backtestWindow(candles, supported, settings)
   candles = window.candles
   candles.forEach((c, i) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(c.time) || (i && candles[i - 1].time >= c.time)
@@ -109,7 +113,7 @@ export function runBacktest(candles, indicators, settings) {
     }
   }
   const { start, end } = window
-  const evaluate = signals(candles, indicators)
+  const evaluate = signals(candles, supported)
   const used = [...new Set([...settings.entry, ...settings.exit])]
   const first = candles.findIndex(c => c.time >= start)
   const last = candles.findLastIndex(c => c.time <= end)

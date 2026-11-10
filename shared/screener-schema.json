@@ -1,10 +1,150 @@
 {
   "$defs": {
+    "AdvancedMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "atr",
+            "atr_percent",
+            "adx",
+            "plus_di",
+            "minus_di",
+            "stoch_k",
+            "stoch_d",
+            "obv",
+            "obv_ma",
+            "mfi",
+            "cci",
+            "supertrend",
+            "supertrend_direction",
+            "supertrend_flip"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "period": {
+          "anyOf": [
+            {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Period"
+        },
+        "adx_period": {
+          "anyOf": [
+            {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Adx Period"
+        },
+        "k_smoothing": {
+          "anyOf": [
+            {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "K Smoothing"
+        },
+        "d_smoothing": {
+          "anyOf": [
+            {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "D Smoothing"
+        },
+        "average_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "SMA",
+                "EMA"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Average Type"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "close",
+                "hlc3"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "atr_multiplier": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 0.1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Atr Multiplier"
+        }
+      },
+      "required": [
+        "name",
+        "period",
+        "adx_period",
+        "k_smoothing",
+        "d_smoothing",
+        "average_type",
+        "source",
+        "atr_multiplier"
+      ],
+      "title": "AdvancedMetric",
+      "type": "object"
+    },
     "Condition": {
       "additionalProperties": false,
       "properties": {
         "left": {
-          "$ref": "#/$defs/Metric"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Metric"
+            },
+            {
+              "$ref": "#/$defs/AdvancedMetric"
+            }
+          ],
+          "title": "Left"
         },
         "operator": {
           "enum": [
@@ -119,9 +259,13 @@
               "$ref": "#/$defs/Metric"
             },
             {
+              "$ref": "#/$defs/AdvancedMetric"
+            },
+            {
               "type": "null"
             }
-          ]
+          ],
+          "title": "Metric"
         },
         "factor": {
           "maximum": 1000,

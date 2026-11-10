@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, Bot, ChevronLeft, ChevronRight, Database, Filter, Plus, RotateCcw, Search, Trash2 } from 'lucide-react'
-import { condition, constant, defaultQuery, describeQuery, isPrice, metric, metricNames, operators, presets, relative } from '../utils/screener'
+import { advancedMetricFields, condition, constant, defaultQuery, describeQuery, isAdvancedMetric, isPrice, metric, metricNames, operators, presets, relative } from '../utils/screener'
 import './ScreenerWorkspace.css'
 
 function MetricEditor({ value, onChange, label }) {
   const update = (name, v) => onChange({ ...value, [name]: Number(v) })
+  const advanced = isAdvancedMetric(value.name)
+  const defaults = advanced ? metric(value.name) : null
   return <div className="screen-metric"><label>{label}<select aria-label={label} value={value.name} onChange={e => onChange(metric(e.target.value))}>{Object.entries(metricNames).map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label>
-    {!isPrice(value.name) && <div className="screen-params"><label>{value.name.startsWith('macd') ? '단기' : '기간'}<input aria-label={`${label} 기간`} type="number" min="1" max="500" required value={value.period} onChange={e => update('period', e.target.value)}/></label>
+    {advanced ? <div className="screen-params">{advancedMetricFields.filter(([key]) => defaults[key] !== null).map(([key, title, options]) => <label key={key}>{title}{options
+      ? <select aria-label={`${label} ${title}`} value={value[key] ?? defaults[key]} onChange={e => onChange({ ...value, [key]: e.target.value })}>{Object.entries(options).map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select>
+      : <input aria-label={`${label} ${title}`} type="number" min={key === 'atr_multiplier' ? .1 : 1} max={key === 'atr_multiplier' ? 20 : 500} step={key === 'atr_multiplier' ? .1 : 1} required value={value[key] ?? defaults[key]} onChange={e => update(key, e.target.value)}/>}</label>)}</div>
+      : !isPrice(value.name) && <div className="screen-params"><label>{value.name.startsWith('macd') ? '단기' : '기간'}<input aria-label={`${label} 기간`} type="number" min="1" max="500" required value={value.period} onChange={e => update('period', e.target.value)}/></label>
       {value.name.startsWith('macd') && <><label>장기<input aria-label={`${label} 장기`} type="number" min="2" max="500" required value={value.slow} onChange={e => update('slow', e.target.value)}/></label><label>시그널<input aria-label={`${label} 시그널`} type="number" min="1" max="100" required value={value.signal} onChange={e => update('signal', e.target.value)}/></label></>}
       {value.name.startsWith('bb_') && <label>표준편차 배수<input aria-label={`${label} 표준편차 배수`} type="number" min="0.1" max="10" step="0.1" required value={value.multiplier} onChange={e => update('multiplier', e.target.value)}/></label>}
     </div>}
@@ -40,7 +45,7 @@ export default function ScreenerWorkspace({ screen, onOpenChart, onAskAgent, age
       </fieldset>)}</div>
       <button type="button" className="screen-add" disabled={q.conditions.length >= 8} onClick={() => update({ conditions: [...q.conditions, condition()] })}><Plus size={15}/>조건 추가 <small>{q.conditions.length}/8</small></button>
       <div className="screen-search-actions"><button type="submit" className="screen-primary" disabled={busy}><Search size={17}/>{busy ? '종목 확인 중…' : '조건 검색'}</button>{busy && <button type="button" onClick={stop}>중지</button>}</div>
-      <p className="screen-builder-note">확정 일봉으로 계산합니다. 하단 터치는 해당 일봉의 저가 ≤ 하단 밴드, 돌파는 이전·최근 일봉의 교차를 뜻합니다.</p>
+      <p className="screen-builder-note">확정 일봉으로 계산합니다. 돌파는 이전·최근 일봉의 교차를 뜻합니다. 슈퍼트렌드 방향은 1 상승·−1 하락, 전환은 1 상승 전환·−1 하락 전환·0 변화 없음입니다.</p>
     </form>
     <div className="screen-results"><div className="screen-panel-title"><h2>검색 결과 {cov && <span>{number(cov.matches)}종목</span>}</h2><label className="screen-sort">정렬<select aria-label="결과 정렬" value={q.sort} onChange={e => update({ sort: e.target.value })}><option value="code_asc">종목코드 순</option><option value="close_desc">종가 높은 순</option></select></label></div>
       {error && <p className="screen-error" role="alert">{error}</p>}
@@ -50,7 +55,7 @@ export default function ScreenerWorkspace({ screen, onOpenChart, onAskAgent, age
           {!!cov.not_scanned && <p className="screen-notice">아직 {number(cov.not_scanned)}종목을 확인하지 못했습니다. 현재 결과는 일부 범위입니다.{!busy && <button type="button" onClick={() => search(result.query)}>이어서 검색</button>}</p>}
           {excluded > 0 && <details><summary>제외 사유 보기</summary>{Object.entries(cov.excluded).map(([reason, count]) => <p key={reason}>{reasons[reason] || reason} · {number(count)}종목</p>)}</details>}
         </div>
-        <div className="screen-table-wrap"><table className="screen-table"><thead><tr><th>종목</th>{result.columns.map(c => <th key={c.key}>{c.label}</th>)}<th>확인</th></tr></thead><tbody>{result.items.map(row => <tr key={row.id}><td><strong>{row.name}</strong><small>{row.code} · {row.market}</small></td>{result.columns.map(c => <td key={c.key}>{number(row.values[c.key])}</td>)}<td><button type="button" aria-expanded={expanded === row.code} onClick={() => setExpanded(expanded === row.code ? null : row.code)}>조건 값</button><button type="button" onClick={() => onOpenChart(row)}>차트 <ArrowRight size={12}/></button></td></tr>)}</tbody></table></div>
+        <div className="screen-table-wrap"><table className="screen-table"><thead><tr><th>종목</th>{result.columns.map(c => <th key={c.key}>{c.label}{c.unit && ` (${c.unit})`}</th>)}<th>확인</th></tr></thead><tbody>{result.items.map(row => <tr key={row.id}><td><strong>{row.name}</strong><small>{row.code} · {row.market}</small></td>{result.columns.map(c => <td key={c.key}>{number(row.values[c.key])}</td>)}<td><button type="button" aria-expanded={expanded === row.code} onClick={() => setExpanded(expanded === row.code ? null : row.code)}>조건 값</button><button type="button" onClick={() => onOpenChart(row)}>차트 <ArrowRight size={12}/></button></td></tr>)}</tbody></table></div>
         {!result.items.length && <div className="screen-empty"><Search size={28}/><h3>{cov.not_scanned ? '확인한 범위에 일치 종목이 없습니다' : cov.valid === 0 ? '조건을 계산할 수 있는 종목이 없습니다' : '조건을 충족하는 종목이 없습니다'}</h3><p>{cov.valid === 0 ? '최신 일봉과 품질 제외 사유를 확인해 주세요.' : '기준값이나 조건의 연결 방식을 조정해 보세요.'}</p></div>}
         {expanded && result.items.filter(r => r.code === expanded).map(row => <div className="screen-checks" key={row.code}><strong>{row.name} · 조건별 실제 값</strong>{row.checks.map((check, i) => <p key={i}><span className={check.matched ? 'screen-pass' : ''}>{check.matched ? '충족' : '미충족'}</span>{check.label}<small>최근 {number(check.left)} / 기준 {number(check.right)}{result.query.conditions[i].operator.startsWith('crosses_') ? ` · 이전 ${number(check.previous_left)} / ${number(check.previous_right)}` : ''}</small></p>)}</div>)}
         <div className="screen-pagination"><span>{cov.page} / {pages}페이지</span><button type="button" aria-label="이전 결과" disabled={busy || !!cov.not_scanned || cov.page <= 1} onClick={() => search({ ...result.query, page: cov.page - 1 })}><ChevronLeft size={16}/></button><button type="button" aria-label="다음 결과" disabled={busy || !!cov.not_scanned || cov.page >= pages} onClick={() => search({ ...result.query, page: cov.page + 1 })}><ChevronRight size={16}/></button></div>

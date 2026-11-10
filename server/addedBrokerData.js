@@ -45,7 +45,7 @@ export function createAddedBrokerData({ nh = nhClient, kb = kbClient } = {}) {
       if (!Array.isArray(result.out2)) throw httpError('KB 차트 데이터가 없습니다.')
       items = result.out2.map(row => ({ time: time(row.dt, row.tm, minute), open: numeric(row.opn_prc_p2), high: numeric(row.hgh_prc_p2), low: numeric(row.lw_prc_p2), close: numeric(row.cls_prc_p2), volume: numeric(row.vlm) }))
     }
-    items = [...new Map(items.filter(row => row.time && [row.open, row.high, row.low, row.close].every(value => value > 0) && row.volume !== null).map(row => [row.time, row])).values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-limit)
+    items = [...new Map(items.filter(row => row.time && [row.open, row.high, row.low, row.close].every(value => value > 0)).map(row => [row.time, row])).values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-limit)
     if (!items.length) throw httpError('표시할 차트 데이터가 없습니다.')
     if (cache.size >= 300) cache.delete(cache.keys().next().value)
     cache.set(key, { items, until: Date.now() + 30_000 })

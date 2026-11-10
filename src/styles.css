@@ -249,3 +249,10 @@ nav .nav-link{width:100%;height:42px;border:0;border-radius:9px;display:flex;ali
 
 /* Keep the shared search usable when the sidebar becomes a mobile drawer. */
 @media(max-width:850px){.app-shell>main{margin-left:0}.app-shell>main>header{gap:8px}.global-search{flex:1;min-width:0;width:auto}.global-search input{min-width:0}.global-search>svg,.header-actions,.menu-button{flex-shrink:0}}
+.indicator-config-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.indicator-config-field,.indicator-config-field select{min-width:0;max-width:100%}
+.indicator-toggle-field{justify-content:space-between}
+.indicator-toggle-field input{align-self:flex-start;width:17px;height:17px;accent-color:var(--tone-accent,#4b86ff)}
+.indicator-config-title strong{overflow-wrap:anywhere}
+.indicator-config-title button{flex-shrink:0}
+.atlas-chart-pane-divider .tv-volume-legend{max-width:calc(100% - 16px);flex-wrap:wrap;overflow-wrap:anywhere}

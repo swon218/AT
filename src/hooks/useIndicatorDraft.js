@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { createIndicatorConfig } from '../utils/indicators'
+import { createIndicatorConfig, INDICATOR_DEFAULTS, INDICATOR_LIMIT } from '../utils/indicators'
 import { DEFAULT_BACKTEST, RULES } from '../utils/backtest'
 import { strategyPayload } from '../services/strategyRepository'
 
@@ -55,7 +55,11 @@ export default function useIndicatorDraft(userId, library) {
     strategyStorage: { ...library, selectedId: draft.selected?.id || '', dirty, stale, message: draft.message, draftError: draft.error, onSelect: select, onSave: save, onDelete: remove },
     onBacktestSettingsChange: update => setState(previous => ({ ...previous, backtestSettings: typeof update === 'function' ? update(previous.backtestSettings) : update, message: '', error: '' })),
     onStrategyNameChange: strategyName => change({ strategyName }),
-    onAddIndicator: id => change({ indicatorConfigs: draft.indicatorConfigs.some(item => item.id === id) ? draft.indicatorConfigs : [...draft.indicatorConfigs, createIndicatorConfig(id)] }),
+    onAddIndicator: id => setState(previous => {
+      const configs = previous.indicatorConfigs
+      if (!Object.hasOwn(INDICATOR_DEFAULTS, id) || configs.length >= INDICATOR_LIMIT || configs.some(item => item.id === id)) return previous
+      return { ...previous, indicatorConfigs: [...configs, createIndicatorConfig(id)], message: '', error: '' }
+    }),
     onUpdateIndicator: (id, patch) => change({ indicatorConfigs: draft.indicatorConfigs.map(item => item.id === id ? { ...item, ...patch } : item) }),
     onRemoveIndicator: id => {
       const ruleIds = RULES.filter(rule => rule.indicator === id).map(rule => rule.id)

@@ -8,7 +8,7 @@ create table if not exists public.strategies (
   name text not null check (name = btrim(name) and char_length(name) between 1 and 100),
   indicators jsonb not null check (
     jsonb_typeof(indicators) = 'array'
-    and jsonb_array_length(indicators) between 1 and 5
+    and jsonb_array_length(indicators) between 1 and 12
     and octet_length(indicators::text) <= 32768
   ),
   backtest_settings jsonb not null check (

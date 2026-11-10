@@ -1,7 +1,8 @@
 import { AlertTriangle, CheckCircle2, Info, KeyRound, LogIn, Minus, Plus, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { INDICATOR_CATALOG } from '../utils/indicators'
+import { INDICATOR_CATALOG, INDICATOR_LIMIT } from '../utils/indicators'
+import { validAdvancedConfig } from '../utils/advancedIndicatorCatalog'
 import { placeBrokerOrder } from '../services/orderApi'
 import { BROKERS, getBroker, isBrokerConfigured } from '../utils/brokers'
 
@@ -221,17 +222,24 @@ function ColorSetting({ label, value, onChange }) {
 }
 
 function SelectSetting({ label, value, onChange, options }) {
-  return <label className="indicator-config-field indicator-select-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+  const entries = Array.isArray(options) ? options.map(option => [option, option]) : Object.entries(options)
+  return <label className="indicator-config-field indicator-select-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{entries.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label>
 }
 
 function IndicatorHelpModal({ item, onClose }) {
+  const closeRef = useRef(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   useEffect(() => {
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') onClose()
+    const opener = document.activeElement
+    closeRef.current?.focus()
+    const handleKey = event => {
+      if (event.key === 'Escape') { event.preventDefault(); onCloseRef.current() }
+      if (event.key === 'Tab') { event.preventDefault(); closeRef.current?.focus() }
     }
-    document.addEventListener('keydown', closeOnEscape)
-    return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
+    document.addEventListener('keydown', handleKey)
+    return () => { document.removeEventListener('keydown', handleKey); opener?.focus() }
+  }, [])
 
   if (!item) return null
   const titleId = `indicator-help-${item.id}`
@@ -240,13 +248,13 @@ function IndicatorHelpModal({ item, onClose }) {
       <section className="indicator-help-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="indicator-help-modal-header">
           <h2 id={titleId}>{item.name}</h2>
-          <button type="button" onClick={onClose} aria-label="설명 닫기"><X/></button>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="설명 닫기"><X/></button>
         </header>
         <div className="indicator-help-modal-body">
           <section><h3>개요</h3><p>{item.help.overview}</p></section>
           <section><h3>입력값</h3><ul>{item.help.inputs.map((input) => <li key={input}>{input}</li>)}</ul></section>
           <section><h3>차트에서 보는 법</h3><p>{item.help.reading}</p></section>
-          <section><h3>자동매매 해석</h3><p>{item.help.automation}</p></section>
+          <section><h3>조건 해석 예시</h3><p>{item.help.automation}</p></section>
           <section><h3>주의할 점</h3><p>{item.help.caution}</p></section>
           <p className="indicator-help-notice">지표 설명은 기능 이해를 위한 참고 정보이며 투자 수익을 보장하지 않습니다.</p>
         </div>
@@ -256,6 +264,14 @@ function IndicatorHelpModal({ item, onClose }) {
   )
 }
 
+function AdvancedSetting({ field, value, onChange }) {
+  const { label, options, color, min, max, step } = field
+  if (options) return <SelectSetting {...{ label, options, value, onChange }}/>
+  if (color) return <ColorSetting {...{ label, value, onChange }}/>
+  if (typeof field.value === 'boolean') return <label className="indicator-config-field indicator-toggle-field"><span>{label}</span><input type="checkbox" checked={value} onChange={e => onChange(e.target.checked)}/></label>
+  return <NumberSetting {...{ label, min, max, step, value, onChange }}/>
+}
+
 function IndicatorConfigCard({ config, onOpenHelp, onChange, onRemove }) {
   const item = INDICATOR_CATALOG.find((indicator) => indicator.id === config.id)
   const update = (key, value) => onChange(config.id, { [key]: value })
@@ -263,12 +279,14 @@ function IndicatorConfigCard({ config, onOpenHelp, onChange, onRemove }) {
     <article className="indicator-config-card">
       <div className="indicator-config-title"><strong>{item?.name}</strong><button className="indicator-help" onClick={() => onOpenHelp(config.id)} aria-label={`${item?.name} 상세 설명 열기`}>!</button><button className="indicator-remove" onClick={() => onRemove(config.id)} aria-label={`${item?.name} 삭제`}><X/></button></div>
       <div className="indicator-config-grid">
+        {item?.fields?.map(field => <AdvancedSetting key={field.key} field={field} value={config[field.key]} onChange={value => update(field.key, value)}/>)}
         {config.id === 'ma' && <><SelectSetting label="종류" value={config.type || 'SMA'} options={['SMA', 'EMA']} onChange={(value) => update('type', value)}/><span className="indicator-grid-spacer"/><NumberSetting label="단기 기간" value={config.shortPeriod ?? config.period ?? 5} max={Math.max(1, Number(config.longPeriod || 20) - 1)} onChange={(value) => update('shortPeriod', Math.min(value, Number(config.longPeriod || 20) - 1))}/><ColorSetting label="단기선 색상" value={config.shortColor || config.color || '#f4c542'} onChange={(value) => update('shortColor', value)}/><NumberSetting label="장기 기간" value={config.longPeriod ?? 20} min={Number(config.shortPeriod ?? config.period ?? 5) + 1} onChange={(value) => update('longPeriod', Math.max(value, Number(config.shortPeriod ?? config.period ?? 5) + 1))}/><ColorSetting label="장기선 색상" value={config.longColor || '#4b86ff'} onChange={(value) => update('longColor', value)}/></>}
         {config.id === 'bollinger' && <><NumberSetting label="기간" value={config.period} onChange={(value) => update('period', value)}/><NumberSetting label="표준편차" value={config.multiplier} step={0.1} max={10} onChange={(value) => update('multiplier', value)}/><ColorSetting label="상단선 색상" value={config.upperColor} onChange={(value) => update('upperColor', value)}/><ColorSetting label="중심선 색상" value={config.middleColor} onChange={(value) => update('middleColor', value)}/><ColorSetting label="하단선 색상" value={config.lowerColor} onChange={(value) => update('lowerColor', value)}/></>}
         {config.id === 'volume-ma' && <><NumberSetting label="기간" value={config.period} onChange={(value) => update('period', value)}/><ColorSetting label="거래량 MA 색상" value={config.color} onChange={(value) => update('color', value)}/></>}
         {config.id === 'rsi' && <><NumberSetting label="기간" value={config.period} onChange={(value) => update('period', value)}/><NumberSetting label="하단값" value={config.lower} min={0} max={100} onChange={(value) => update('lower', value)}/><NumberSetting label="상단값" value={config.upper} min={0} max={100} onChange={(value) => update('upper', value)}/><ColorSetting label="RSI선 색상" value={config.color} onChange={(value) => update('color', value)}/><ColorSetting label="상단선 색상" value={config.upperColor} onChange={(value) => update('upperColor', value)}/><ColorSetting label="하단선 색상" value={config.lowerColor} onChange={(value) => update('lowerColor', value)}/></>}
         {config.id === 'macd' && <><NumberSetting label="단기 기간" value={config.fast} onChange={(value) => update('fast', value)}/><NumberSetting label="장기 기간" value={config.slow} onChange={(value) => update('slow', value)}/><NumberSetting label="시그널 기간" value={config.signal} onChange={(value) => update('signal', value)}/><ColorSetting label="MACD선 색상" value={config.macdColor} onChange={(value) => update('macdColor', value)}/><ColorSetting label="시그널선 색상" value={config.signalColor} onChange={(value) => update('signalColor', value)}/><ColorSetting label="상승 색상" value={config.positiveColor} onChange={(value) => update('positiveColor', value)}/><ColorSetting label="하락 색상" value={config.negativeColor} onChange={(value) => update('negativeColor', value)}/></>}
       </div>
+      {item?.fields && !validAdvancedConfig(config) && <small role="status">기간과 기준선 범위를 확인하세요.</small>}
     </article>
   )
 }
@@ -277,12 +295,14 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [helpIndicatorId, setHelpIndicatorId] = useState(null)
+  const atLimit = indicatorConfigs.length >= INDICATOR_LIMIT
   const searchRef = useRef(null)
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     return INDICATOR_CATALOG.filter((item) => !keyword || `${item.name} ${item.shortName}`.toLowerCase().includes(keyword))
   }, [query])
   const addFirstResult = () => {
+    if (atLimit) return
     const candidate = filtered.find((item) => !indicatorConfigs.some((config) => config.id === item.id))
     if (candidate) {
       onAddIndicator(candidate.id)
@@ -319,7 +339,7 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
           <div className="indicator-catalog-list">
             {filtered.map((item) => {
               const added = indicatorConfigs.some((config) => config.id === item.id)
-              return <button className={added ? 'added' : ''} onClick={() => { added ? onRemoveIndicator(item.id) : onAddIndicator(item.id); setQuery(''); setSearchOpen(false) }} key={item.id}><span><strong>{item.name}</strong><small>{item.shortName}</small></span><b>{added ? '추가됨' : '추가'}</b></button>
+              return <button className={added ? 'added' : ''} disabled={!added && atLimit} onClick={() => { added ? onRemoveIndicator(item.id) : onAddIndicator(item.id); setQuery(''); setSearchOpen(false) }} key={item.id}><span><strong>{item.name}</strong><small>{item.shortName}</small></span><b>{added ? '추가됨' : '추가'}</b></button>
             })}
             {filtered.length === 0 && <div className="indicator-no-result">검색 결과가 없습니다.</div>}
           </div>
