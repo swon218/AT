@@ -18,6 +18,9 @@ const outcomes = {
   session_changed: 'ATLAS 로그인 세션이 변경되었습니다. 다시 시작해 주세요.',
   cleanup_pending: '이전 계정의 연결 해제를 먼저 마쳐 주세요.',
   replacement_required: '이미 카카오 계정이 연결되어 있습니다.',
+  connection_required: '먼저 카카오 계정을 연결해 주세요.',
+  identity_mismatch: '현재 연결된 카카오 계정으로 메시지 전송에 동의해 주세요.',
+  consent_required: '카카오톡 메시지 전송에 동의해야 합니다.',
 }
 const dateTime = new Intl.DateTimeFormat('ko-KR', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul',
@@ -87,7 +90,7 @@ export default function KakaoConnectionSection({ userId }) {
     }
   }
 
-  async function connect(replace) {
+  async function connect(replace, message = false) {
     if (active.current) return
     if (replace && !window.confirm('다른 카카오 계정으로 인증하면 현재 연결을 교체합니다. 계속할까요?')) return
     let popup
@@ -106,7 +109,7 @@ export default function KakaoConnectionSection({ userId }) {
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(flow.proof))
       const proofHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
       const payload = await kakaoConnectionRequest('start', userId, {
-        body: { proofHash, replace }, signal: flow.controller.signal,
+        body: { proofHash, replace, ...(message ? { purpose: 'message' } : {}) }, signal: flow.controller.signal,
       })
       if (active.current !== flow) return
       if (payload.outcome || payload.available === false) {
@@ -131,7 +134,9 @@ export default function KakaoConnectionSection({ userId }) {
           })
           if (active.current !== flow) return
           if (value.outcome === 'pending') flow.timer = setTimeout(poll, 3000)
-          else end(flow, value, value.outcome === 'connected' ? '카카오 계정 연결을 완료했습니다.' : outcomes[value.outcome] ?? genericError)
+          else end(flow, value, value.outcome === 'connected'
+            ? (message ? '카카오톡 메시지 전송 동의를 확인했습니다.' : '카카오 계정 연결을 완료했습니다.')
+            : outcomes[value.outcome] ?? genericError)
         } catch {
           unavailable(flow)
         } finally {
@@ -165,7 +170,7 @@ export default function KakaoConnectionSection({ userId }) {
 
   return (
     <section className="account-section kakao-connection" aria-label="카카오톡 연결">
-      <div className="account-section-head"><div><Link2 aria-hidden="true"/><span><strong>카카오톡 연결</strong><small>카카오 계정을 연결합니다. 자동 알림 발송은 추후 지원됩니다.</small></span></div></div>
+      <div className="account-section-head"><div><Link2 aria-hidden="true"/><span><strong>카카오톡 연결</strong><small>카카오 계정을 연결하고 메시지 전송 동의를 관리합니다.</small></span></div></div>
       <p ref={focus} tabIndex={-1} className="kakao-status" role="status">
         {working === 'connect' ? '연결 중' : working === 'check' || !view ? '연결 확인 중' : working === 'unlink' ? '연결 해제 중' : labels[status] ?? genericError}
         {knownLink && <span>계정 {view.maskedId}{time(view.linkedAt) && ` · 연결 ${time(view.linkedAt)}`}</span>}
@@ -173,6 +178,9 @@ export default function KakaoConnectionSection({ userId }) {
       </p>
       {view?.available === false && <p className="kakao-note">카카오 계정 연결을 준비 중입니다.</p>}
       {view?.cleanupPending && <p className="kakao-note">ATLAS에서 해당 연결의 사용을 중지했습니다. 카카오에서도 연결이 해제되도록 다시 시도해 주세요.</p>}
+      {status === 'connected' && view.messageConsentAvailable && <p className="kakao-note">
+        {view.messageAuthorized ? '카카오톡 메시지 전송 동의 완료' : '카카오톡 메시지 전송 동의 필요'}
+      </p>}
       {notice && <p className="kakao-note" role="status">{notice}</p>}
       <div className="kakao-actions">
         {working === 'connect' ? <button type="button" onClick={() => end(active.current, null, outcomes.canceled, true)}>인증 취소</button>
@@ -181,6 +189,8 @@ export default function KakaoConnectionSection({ userId }) {
             {['connected', 'unavailable'].includes(status) && <button type="button" disabled={disabled} onClick={() => run('check')}>연결 확인</button>}
             {status === 'reconnect' && <button type="button" disabled={disabled || view.cleanupPending} onClick={() => connect(true)}>다시 연결</button>}
             {status === 'connected' && <button type="button" disabled={disabled || view.cleanupPending} onClick={() => connect(true)}>계정 변경</button>}
+            {status === 'connected' && view.messageConsentAvailable && !view.messageAuthorized &&
+              <button type="button" disabled={disabled || view.cleanupPending} onClick={() => connect(false, true)}>메시지 전송 동의</button>}
             {knownLink && <button type="button" disabled={disabled} onClick={confirmUnlink}>연결 해제</button>}
             {view.cleanupPending && <button type="button" disabled={disabled} onClick={() => run('unlink', { pendingOnly: true })}>연결 해제 재시도</button>}
           </>}

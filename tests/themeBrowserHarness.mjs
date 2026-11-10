@@ -2,7 +2,9 @@
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { setTimeout as delay } from 'node:timers/promises'
+import { randomUUID } from 'node:crypto'
 import { orderPeriodWindow } from '../src/utils/orderPeriod.js'
+import { addAlertDays, koreanAlertDay } from '../shared/alertRules.js'
 if (process.env.NODE_ENV === 'production') throw new Error('Fixture is forbidden in production')
 const requests = {}, stock = { code: '005930', name: '검증 삼성전자', market: 'KOSPI', price: 71000, change: 1.2, volume: 500000 }
 const candles = Array.from({ length: 180 }, (_, i) => ({ time: new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10), open: 65000 + i * 30, high: 65800 + i * 30, low: 64400 + i * 30, close: 65200 + i * 30 + Math.sin(i / 5) * 300, volume: 10000 + i * 50 }))
@@ -12,6 +14,7 @@ const news = { id: 'fixture-news', title: '테마 검증을 위한 시장 뉴스
 const ranked = [stock, { ...stock, code: '035420', name: '검증 NAVER' }]
 const watchlists = new Map()
 const faults = new Map()
+const alertRules = new Map(), alertMessages = new Map()
 const supabase = `let id=sessionStorage.getItem('atlas.qa.user')||'';const listeners=new Set();const session=()=>id?{access_token:'fixture-'+id,user:{id,email:'theme@fixture.invalid'}}:null;
 export const setQaUser=value=>{id=value;sessionStorage.setItem('atlas.qa.user',id);for(const fn of listeners)fn(id?'SIGNED_IN':'SIGNED_OUT',session())};
 const request=(params,body)=>fetch('/__qa/watchlist?'+new URLSearchParams(params),body?{method:'POST',body:JSON.stringify(body)}:{}).then(res=>res.json());
@@ -81,7 +84,7 @@ function accountSummary(path, params, authorization) {
   })).filter((_, index) => brokers[index % brokers.length] === broker)
   return { ...summary, holdings }
 }
-async function response(path, params, method, authorization) {
+async function response(path, params, method, authorization, body) {
   if (path.endsWith('/catalog')) return { items: [stock, { ...stock, code: '000660', name: '검증 SK하이닉스' }], updatedAt: Date.now(), stale: false }
   if (path.endsWith('/rankings')) return params.get('type') === 'favorites' ? { error: 'unexpected_favorites_ranking' } : { items: ranked }
   if (path.endsWith('/quote')) return ranked.find(item => item.code === params.get('symbol')) || { error: 'mock_quote_unavailable' }
@@ -126,11 +129,50 @@ async function response(path, params, method, authorization) {
       return { broker, status: 'ready', selectedAccountRef: accountRef }
     }) }
   }
-  if (path === '/api/agent/status') return { authenticated: true, configured: true, remaining: 2, used: 0, limit: 2 }
+  if (path === '/api/agent/status') return { authenticated: Boolean(authorization), configured: true, alert_tools: true, provider: { state: 'ready' }, remaining: 2, used: 0, limit: 2 }
+  if (path === '/api/agent/alerts') {
+    const user = authorization?.slice('Bearer fixture-'.length)
+    if (!user) return { error: 'invalid_authentication' }
+    const { data: watchlist } = await watchlistResponse(user)
+    const rules = alertRules.get(user) || []
+    if (method === 'POST') {
+      if (body.action === 'save') for (const rule of body.rules) {
+        if (!watchlist.some(row => row.code === rule.code)) return { error: 'alert_watchlist_required' }
+        const index = rules.findIndex(row => row.code === rule.code)
+        rules.splice(index === -1 ? rules.length : index, index === -1 ? 0 : 1, { ...rule, status: 'active' })
+      }
+      if (body.action !== 'save') {
+        const rule = rules.find(row => row.code === body.code)
+        if (rule) rule.status = body.action === 'stop' ? 'stopped' : 'active'
+      }
+      alertRules.set(user, rules)
+    }
+    return { watchlist, rules, history: [], kakao: 'ready', enabled: true, consentAvailable: true }
+  }
+  if (path === '/api/agent/rooms/1/requests' && method === 'POST') {
+    const user = authorization?.slice('Bearer fixture-'.length)
+    const { data: watchlist } = await watchlistResponse(user)
+    const messages = alertMessages.get(user) || []
+    const { question, request_id, alert_editor } = body
+    const edit = alert_editor?.draft
+    const stock = watchlist?.find(row => edit ? row.code === edit.code : question.includes(row.name))
+    const percent = /([0-9]+)%/.exec(question)
+    if (question.includes('늦은')) await delay(2500)
+    const answer = { kind: 'concept', claims: [], sources: [], coverage: [], result_sets: [] }
+    const content = stock && percent ? `${stock.name} · 전일 종가 대비 ${percent[1]}% 하락 알림 초안` : '관심종목을 확인해 주세요.'
+    if (stock && percent) answer.alertDraft = { code: stock.code, kind: edit?.kind || 'fall_lte', threshold: Number(percent[1]),
+      expires_on: edit?.expires_on || addAlertDays(koreanAlertDay(), 7), id: edit?.id || randomUUID(),
+      revision: randomUUID(), baseRevision: alert_editor?.revision ?? null, roomId: room.id, requestId: request_id }
+    messages.push({ id: String(messages.length + 3), role: 'user', content: question, request_id, created_at: room.updated_at },
+      { id: String(messages.length + 4), role: 'assistant', content, request_id, answer, created_at: room.updated_at })
+    alertMessages.set(user, messages)
+    return { id: request_id }
+  }
   if (path === '/api/agent/rooms') return method === 'POST' ? room : { rooms: [room] }
   if (path === '/api/agent/rooms/1/messages') return { room, question_count: 1, requests: [], messages: [
     { id: '1', role: 'user', content: '테마 전환 후에도 이 대화가 유지되나요?', created_at: room.updated_at },
     { id: '2', role: 'assistant', content: '현재 대화와 입력 중인 초안을 유지하면서 화면 테마만 변경합니다.', created_at: room.updated_at },
+    ...(alertMessages.get(authorization?.slice('Bearer fixture-'.length)) || []),
   ] }
   if (path === '/api/screener') return { ready: true, quality_ready: true, universe: 2, cutoff: '2026-11-06', latest_bar: '2026-11-06' }
   return { error: 'theme_fixture_unavailable' }
@@ -146,7 +188,7 @@ const server = await createServer({ configFile: false, envDir: false, define: { 
       let text = ''; for await (const chunk of req) text += chunk
       const payload = path === '/__qa/watchlist'
         ? await watchlistResponse(url.searchParams.get('user'), text ? JSON.parse(text) : null)
-        : await response(path, url.searchParams, req.method, req.headers.authorization)
+        : await response(path, url.searchParams, req.method, req.headers.authorization, text ? JSON.parse(text) : null)
       res.writeHead(payload.error ? 503 : 200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(payload))
     }) },
   }, react(),

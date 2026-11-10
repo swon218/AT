@@ -29,7 +29,7 @@ const deferred = () => {
   return { promise, resolve }
 }
 
-async function fixture(t) {
+async function fixture(t, messageConsent = false) {
   const previous = config.credentialEncryptionKey
   config.credentialEncryptionKey = settings.credentialEncryptionKey
   const pg = new PGlite()
@@ -41,6 +41,12 @@ async function fixture(t) {
     create role anon; create role authenticated; create role service_role bypassrls;
   `)
   await pg.exec(sql)
+  if (messageConsent) {
+    await pg.exec(`create function auth.uid() returns uuid language sql as $$ select null::uuid $$`)
+    for (const name of ['WATCHLIST_SUPABASE', 'ALERT_AGENT_SUPABASE']) {
+      await pg.exec(await readFile(new URL(`../deploy/${name}.sql`, import.meta.url), 'utf8'))
+    }
+  }
   const [a, b] = [randomUUID(), randomUUID()]
   const [s, s2, sb] = [randomUUID(), randomUUID(), randomUUID()]
   await pg.query('insert into auth.users values ($1),($2)', [a, b])
@@ -56,7 +62,7 @@ async function fixture(t) {
   } })
   t.after(() => app.close())
   const provider = {
-    authorize(state) { return `https://provider.fixture.invalid/?state=${state}` },
+    authorize(state, _replace, consent) { return `https://provider.fixture.invalid/?state=${state}${consent ? '&scope=talk_message' : ''}` },
     async exchange(code) { return makeTokens(code === 'alternate' ? secondId : firstId) },
     async identity(access) { return access.slice('access-'.length) },
     async refresh(tokens) { return tokens },
@@ -64,7 +70,9 @@ async function fixture(t) {
   }
   const db = async (action, payload) => (await pg.query('select public.atlas_kakao_connection($1,$2::jsonb) as value',
     [action, JSON.stringify(payload)])).rows[0].value
-  registerKakaoConnectionRoutes(app, { settings, provider, db, authenticate: async (request) => {
+  const alertStore = async (action, payload) => (await pg.query('select public.atlas_alert_rpc($1,$2::jsonb) as value',
+    [action, JSON.stringify(payload)])).rows[0].value
+  registerKakaoConnectionRoutes(app, { settings, provider, db, alertStore, messageConsent, authenticate: async (request) => {
     const index = headers.findIndex((item) => item.authorization === request.headers.authorization)
     if (index < 0) throw Object.assign(new Error('invalid bearer'), { statusCode: 401 })
     return { id: index === 1 ? b : a }
@@ -73,16 +81,17 @@ async function fixture(t) {
     method: 'POST', url: `${prefix}/${action}`, payload: body, headers: headers[account],
   })
   const get = (account = 0) => app.inject({ method: 'GET', url: prefix, headers: headers[account] })
-  async function start(account = 0, replace = false) {
+  async function start(account = 0, replace = false, purpose) {
     const proof = randomBytes(32).toString('base64url')
     const { requestId, launchUrl, outcome } = (await post('start', {
-      proofHash: createHash('sha256').update(proof).digest('hex'), replace, user_id: b,
+      proofHash: createHash('sha256').update(proof).digest('hex'), replace, purpose, user_id: b,
     }, account)).json()
     if (!launchUrl) return { outcome }
     const url = new URL(launchUrl)
     const launch = await app.inject({ url: url.pathname + url.search })
     assert.equal(launch.statusCode, 302)
     const state = new URL(launch.headers.location).searchParams.get('state')
+    if (purpose === 'message') assert.equal(new URL(launch.headers.location).searchParams.get('scope'), 'talk_message')
     assert.match(launch.headers['set-cookie'], /Secure; HttpOnly; SameSite=Lax/)
     assert.equal((await app.inject({ url: url.pathname + url.search })).statusCode, 400, 'launch token must be single use')
     const cookie = launch.headers['set-cookie'].split(';')[0]
@@ -101,6 +110,29 @@ async function fixture(t) {
   }
   return { pg, app, provider, db, a, b, s, post, get, start, callback, finish, connect, log: () => log }
 }
+
+test('message consent cannot link a different Kakao account and detects revoked consent', async t => {
+  const f = await fixture(t, true)
+  let agreed = true
+  f.provider.messageScope = async () => agreed
+  assert.equal((await f.start(0, false, 'message')).outcome, 'connection_required')
+  assert.equal((await f.connect()).messageAuthorized, false)
+  const different = await f.start(0, false, 'message')
+  await f.callback(different, 'code=alternate')
+  const wrong = (await f.finish(different)).json()
+  assert.equal(wrong.outcome, 'identity_mismatch')
+  assert.equal(wrong.maskedId, '••••5806')
+  assert.equal(wrong.messageAuthorized, false)
+  const same = await f.start(0, false, 'message')
+  await f.callback(same)
+  assert.equal((await f.finish(same, 1)).json().outcome, 'expired')
+  assert.equal((await f.finish(same)).json().messageAuthorized, true)
+  agreed = false
+  await f.pg.exec("update public.atlas_kakao_links set checked_at=now()-interval '6 seconds'")
+  const revoked = (await f.post('check')).json()
+  assert.equal(revoked.status, 'connected')
+  assert.equal(revoked.messageAuthorized, false)
+})
 
 test('authenticated linking consumes launch, state and final proof; suppresses credentials and masks the actual ID', async (t) => {
   const f = await fixture(t)

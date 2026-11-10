@@ -1,5 +1,7 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createAgentAuthenticator, createAgentStore } from './agentStore.js'
+import { alertAnswer, alertEditor, registerAlertRoutes } from './alertAgent.js'
+import { createAlertStore } from './alertStore.js'
 
 const uuid = { type: 'string', format: 'uuid' }
 const error = (code, statusCode = 400) => Object.assign(new Error(code), { statusCode })
@@ -39,6 +41,7 @@ export function registerAgentRoutes(app, {
   cookieSecret = process.env.AI_GUEST_COOKIE_SECRET || '', internalSecret = process.env.AI_INTERNAL_SECRET || '',
   publicOrigin = process.env.AI_PUBLIC_ORIGIN || 'http://127.0.0.1:5173',
   secureCookie = process.env.NODE_ENV === 'production', enabled = process.env.AI_ENABLED !== 'false',
+  alertStore = createAlertStore(), alertOptions,
 } = {}) {
   const cookieName = secureCookie ? '__Host-atlas_ai_guest' : 'atlas_ai_guest'
   const guestDays = Math.max(1, Math.min(30, Number(process.env.AI_GUEST_DAYS || 7)))
@@ -92,11 +95,20 @@ export function registerAgentRoutes(app, {
     while (Buffer.byteLength(JSON.stringify(messages)) > 24000 && messages.length > 1) messages.shift()
     return messages
   }
-  async function execute(owner, reservation) {
+  async function execute(owner, reservation, supportsAlerts, requestedEditor) {
     try {
       const context = await getContext(owner, reservation.room_id, reservation.id)
-      const result = await bridge.call('/run', { request_id: reservation.id, question: reservation.question, context })
+      const userId = owner.startsWith('u:') ? owner.slice(2) : null
+      const alerts = supportsAlerts && userId ? await alertStore('read', { user_id: userId }).catch(() => null) : null
+      const editor = alertEditor(requestedEditor, alerts?.watchlist ?? [])
+      const result = await bridge.call('/run', { request_id: reservation.id, question: reservation.question, context,
+        ...(alerts ? { alert_context: { watchlist: alerts.watchlist, draft: editor.draft } } : {}) })
       if (!['completed', 'partial', 'failed'].includes(result.status) || !result.usage || Buffer.byteLength(JSON.stringify(result.answer)) > 100000) throw error('invalid_internal_result')
+      if (alerts && result.status === 'completed' && result.alert_action) {
+        result.answer = await alertAnswer(result.alert_action, {
+          store: alertStore, userId, roomId: reservation.room_id, requestId: reservation.id, editor,
+        }) || result.answer
+      }
       await store.call('finish', owner, { request_id: reservation.id, status: result.status,
         answer: result.answer, usage: result.usage, error_code: result.error_code || null })
     } catch (exc) {
@@ -105,6 +117,7 @@ export function registerAgentRoutes(app, {
         usage: { status: 'unknown' }, error_code: 'execution_interrupted' }).catch(() => {})
     } finally { inFlight.delete(reservation.id) }
   }
+  registerAlertRoutes(app, { actor, wrap, store: alertStore, ...alertOptions })
   app.get('/api/agent/status', wrap(async (request, reply) => {
     const owner = await actor(request, reply, true)
     if (!store.configured) throw error('database_not_configured', 503)
@@ -130,7 +143,18 @@ export function registerAgentRoutes(app, {
     await maintenance()
     return store.call('request', owner, { request_id: request.params.id })
   }))
-  app.post('/api/agent/rooms/:id/requests', { schema: { params: payload({ id: uuid }), body: payload({ request_id: uuid, question: { type: 'string', minLength: 1, maxLength: 6000 } }) } }, wrap(async (request, reply) => {
+  const editorSchema = {
+    type: 'object', additionalProperties: false, properties: {
+      revision: { anyOf: [uuid, { type: 'null' }] },
+      draft: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: false, properties: {
+        id: uuid, code: { type: 'string', maxLength: 6 }, kind: { type: 'string', maxLength: 12 },
+        threshold: { type: 'string', maxLength: 12 }, expires_on: { type: 'string', maxLength: 10 },
+      } }] },
+    },
+  }
+  const requestSchema = payload({ request_id: uuid, question: { type: 'string', minLength: 1, maxLength: 6000 } })
+  requestSchema.properties.alert_editor = editorSchema
+  app.post('/api/agent/rooms/:id/requests', { schema: { params: payload({ id: uuid }), body: requestSchema } }, wrap(async (request, reply) => {
     const owner = await actor(request, reply)
     if (!enabled) throw error('agent_disabled', 503)
     await maintenance()
@@ -143,10 +167,11 @@ export function registerAgentRoutes(app, {
     const service = await bridge.call('/health')
     if (!service.key_configured) throw error('api_key_missing', 503)
     if (!request.body.question.trim()) throw error('empty_question')
-    const reservation = await store.call('reserve', owner, { room_id: request.params.id, ...request.body })
+    const { request_id, question, alert_editor } = request.body
+    const reservation = await store.call('reserve', owner, { room_id: request.params.id, request_id, question })
     if (reservation.created) {
       inFlight.set(reservation.id, { owner })
-      void execute(owner, reservation)
+      void execute(owner, reservation, service.alert_tools === true, alert_editor)
     }
     return reply.code(202).send(reservation)
   }))

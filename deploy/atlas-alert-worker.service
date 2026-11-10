@@ -1,0 +1,23 @@
+[Unit]
+Description=ATLAS KRX watchlist alert and Kakao memo worker
+After=network-online.target atlas-ai.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=atlas
+Group=atlas
+WorkingDirectory=/opt/atlas
+EnvironmentFile=/etc/atlas/atlas.env
+ExecStart=/usr/bin/node /opt/atlas/server/alertWorker.js --loop
+Restart=on-failure
+RestartSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

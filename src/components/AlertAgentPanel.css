@@ -1,0 +1,37 @@
+.agent-mode-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.agent-mode-tabs button, .agent-mode-card button {
+  min-height: 36px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel2); color: var(--text-primary, #dbe7fb);
+}
+.agent-mode-tabs button { display: inline-flex; align-items: center; gap: 7px; }
+.agent-mode-tabs button[aria-selected="true"] { border-color: var(--blue); background: var(--surface-selected, #183451); }
+.agent-mode-tabs button:focus-visible, .agent-mode-card :is(button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--blue); outline-offset: 2px;
+}
+.agent-mode-card { border: 1px solid var(--line); border-radius: 16px; padding: 20px; background: var(--panel); }
+.agent-mode-card h2, .agent-mode-card h3 { margin: 0 0 8px; color: var(--text-primary, #dbe7fb); }
+.agent-mode-card p, .agent-mode-card small, .alert-actions span { color: var(--text-secondary, #a4b5cc); }
+.alert-heading, .alert-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.alert-heading { justify-content: space-between; }
+.alert-heading p { margin: 0; }
+.agent-mode-card button:disabled { opacity: .55; cursor: not-allowed; }
+.alert-table-scroll { overflow-x: auto; max-width: 100%; margin: 12px 0; }
+.alert-agent table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 13px; }
+.alert-agent :is(th, td) { text-align: start; padding: 10px 7px; border-bottom: 1px solid var(--line); }
+.alert-agent thead { background: var(--panel2); color: var(--text-secondary, #a4b5cc); }
+.alert-agent small { display: block; margin-top: 4px; }
+.alert-agent :is(select, input:not([type="checkbox"])) {
+  min-height: 32px; padding: 5px; border: 1px solid var(--line); border-radius: 6px;
+  color: var(--text-primary, #dbe7fb); background: var(--panel2); font: inherit;
+}
+.alert-agent input[type="text"] { width: 78px; }
+.alert-agent .alert-unsaved { color: var(--tone-info, #91b7ff); }
+.alert-agent .alert-error { color: var(--red); }
+.alert-history { margin-top: 24px; scroll-margin-top: 85px; }
+.agent-trading-placeholder { display: grid; justify-items: start; gap: 8px; }
+.agent-trading-placeholder :is(h2, p) { margin: 0; }
+@media (max-width: 640px) {
+  .agent-mode-card { padding: 12px; }
+  .agent-mode-tabs { gap: 5px; }
+  .agent-mode-tabs button { padding-inline: 7px; }
+}

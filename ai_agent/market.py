@@ -61,6 +61,17 @@ def recent_order_days(day, through):
             'verified_through': through}
 
 
+def alert_session(now, through):
+    day = now.astimezone(KST).date().isoformat()
+    if day > through:
+        raise ValueError('calendar_unverified')
+    cal = calendar()
+    if not cal.is_session(day):
+        return {'date': day, 'closed': True}
+    return {'date': day, 'previous': str(cal.previous_session(day).date()),
+            'open': cal.session_open(day).isoformat(), 'close': cal.session_close(day).isoformat()}
+
+
 def wilder_rsi(closes, period=14):
     if len(closes) <= period:
         raise ValueError('insufficient_warmup')

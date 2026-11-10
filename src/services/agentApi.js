@@ -16,6 +16,14 @@ export const agentErrors = {
   execution_interrupted: '처리가 중단되었습니다. 확인되지 않은 공급자 사용량은 unknown으로 기록됩니다.',
   interrupted: '서버 재시작 또는 응답 유실로 처리가 중단되었습니다. 같은 작업을 자동 재실행하지 않습니다.',
   authentication_error: 'OpenAI API 키 인증 오류입니다.', permission_error: 'OpenAI 모델 사용 권한 오류입니다.',
+  alert_unavailable: '알림 설정을 불러오지 못했습니다. 잠시 후 다시 확인해 주세요.',
+  alert_disabled: '알림 감시를 준비 중입니다.',
+  alert_kakao_required: '카카오 계정 연결과 메시지 전송 동의를 확인해 주세요.',
+  alert_kakao_unavailable: '카카오 메시지 전송 권한을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  alert_watchlist_required: '현재 관심종목에 있는 종목만 감시할 수 있습니다.',
+  alert_expired: '만료일을 확인해 주세요. 오늘부터 30일 이내로 지정할 수 있습니다.',
+  alert_invalid: '알림 조건과 선택한 종목을 확인해 주세요.',
+  alert_dispatch_in_progress: '발송 요청을 마치는 중입니다. 잠시 후 다시 시도해 주세요.',
   billing_error: 'OpenAI 결제 오류입니다.', billing_or_rate_limit: 'OpenAI 결제 한도 또는 요청 제한 오류입니다.',
 }
 export async function agentApi(path, { method = 'GET', body, userId, signal } = {}) {

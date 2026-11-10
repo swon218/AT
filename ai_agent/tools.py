@@ -15,6 +15,7 @@ from .market import KST, market_context
 from .schemas import TOOL_MODELS
 from .screener import SCREENER, ScanBusy, ScanChanged, FingerprintUnavailable
 from .screen_engine import SCREEN_ENGINE, ScreenSnapshotChanged
+from .alert_tools import AlertTools
 
 PROMPT_VERSION = 'atlas-research-v1'
 
@@ -113,9 +114,12 @@ class NewsSource:
 
 
 class ResearchTools:
-    def __init__(self, settings, news=None, now=None, context=None, screener=None, screen_engine=None):
+    def __init__(self, settings, news=None, now=None, context=None, screener=None, screen_engine=None, alert_context=None):
         self.settings, self.news = settings, news or NewsSource(settings)
         self.now = now or datetime.now(KST)
+        self.alerts = AlertTools(alert_context, self.now)
+        self.alert_action = None
+        self.question = ''
         self.budget = Budget(settings)
         self.screener = screener or SCREENER
         self.rsi_snapshots = {}
@@ -174,6 +178,17 @@ class ResearchTools:
     def error(self, code, retryable=False):
         return {'status': 'error', 'code': code, 'retryable': retryable, 'items': [],
                 'queried_at': self.now.isoformat(), 'as_of': None, 'source': 'ATLAS', 'warnings': []}
+
+    async def get_alert_editor(self, _args):
+        return self.alerts.editor()
+
+    async def propose_alert(self, args):
+        self.alert_action = self.alerts.propose(args, self.question)
+        return {'status': 'success', 'items': [], 'alert': self.alert_action}
+
+    async def get_alert_status(self, args):
+        self.alert_action = self.alerts.status(args)
+        return {'status': 'success', 'items': [], 'alert': self.alert_action}
 
     def remember(self, value):
         self.evidence[value['id']] = value

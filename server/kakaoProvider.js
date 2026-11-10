@@ -34,11 +34,20 @@ export function createKakaoProvider(config, request = fetch) {
     }
     if (response.ok && data && typeof data === 'object' && !Array.isArray(data) && data.code == null && data.error == null) return data
     if (mode === 'refresh' && data?.error_code === 'KOE322') throw new KakaoFailure('revoked')
-    if (mode === 'identity') {
+    if (mode === 'identity' || mode === 'scope') {
       if (data?.code === -401) throw new KakaoFailure('expired')
       if (data?.code === -101 || data?.code === -103) throw new KakaoFailure('revoked')
     }
     if (mode === 'unlink' && data?.code === -101) throw new KakaoFailure('unlinked')
+    if (mode === 'scope' && data?.code === -402) throw new KakaoFailure('consent_required')
+    if (mode === 'memo') {
+      // A documented rejection can be distinguished from a lost response.
+      if (response.status === 429 && data?.code === -10) throw new KakaoFailure('quota')
+      if (response.status === 400 && [-10, -532, -533, -536].includes(data?.code)) throw new KakaoFailure('quota_exhausted')
+      if (data?.code === -402) throw new KakaoFailure('consent_required')
+      if ([-401, -101, -103].includes(data?.code)) throw new KakaoFailure('revoked')
+      if (response.status >= 400 && response.status < 500 && Number.isInteger(data?.code)) throw new KakaoFailure('rejected')
+    }
     throw new KakaoFailure('unavailable')
   }
 
@@ -59,9 +68,10 @@ export function createKakaoProvider(config, request = fetch) {
   }
 
   return {
-    authorize(state, replace) {
+    authorize(state, replace, messageConsent = false) {
       const params = new URLSearchParams({ response_type: 'code', client_id: kakaoRestKey, redirect_uri: kakaoRedirectUri, state })
       if (replace) params.set('prompt', 'login')
+      if (messageConsent) params.set('scope', 'talk_message')
       return `${AUTH}/oauth/authorize?${params}`
     },
     async exchange(code) {
@@ -70,6 +80,17 @@ export function createKakaoProvider(config, request = fetch) {
     },
     async identity(access) {
       return kakaoId(await call(`${API}/v2/user/me?property_keys=%5B%5D`, { headers: { Authorization: `Bearer ${access}` } }, 'identity'))
+    },
+    async messageScope(access, id) {
+      const params = new URLSearchParams({ scopes: JSON.stringify(['talk_message']) })
+      const data = await call(`${API}/v2/user/scopes?${params}`, { headers: { Authorization: `Bearer ${access}` } }, 'scope')
+      if (kakaoId(data) !== id || !Array.isArray(data.scopes)) throw new KakaoFailure('unavailable')
+      return data.scopes.some(item => item?.id === 'talk_message' && item.agreed === true && item.using === true)
+    },
+    async sendMemo(access, template) {
+      const data = await call(`${API}/v2/api/talk/memo/default/send`,
+        post({ template_object: JSON.stringify(template) }, { Authorization: `Bearer ${access}` }), 'memo')
+      if (data.result_code !== 0) throw new KakaoFailure('unavailable')
     },
     async refresh(previous) {
       const data = await call(`${AUTH}/oauth/token`, post({ ...base, grant_type: 'refresh_token', refresh_token: previous.refresh }), 'refresh')

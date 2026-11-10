@@ -4,6 +4,7 @@ import { authenticateAccountRequest } from './accountSettings.js'
 import { config } from './config.js'
 import { decryptCredentials, encryptCredentials } from './credentialCrypto.js'
 import { createKakaoProvider } from './kakaoProvider.js'
+import { alertSettings, createAlertStore } from './alertStore.js'
 
 const prefix = '/api/account/kakao'
 const callbackPath = `${prefix}/callback`
@@ -47,13 +48,14 @@ function origins(settings) {
   }
 }
 
-function rpcStore(settings) {
+export function kakaoRpcStore(settings = config) {
   if (!settings.supabaseUrl || !settings.supabaseSecretKey) return null
   const db = createClient(settings.supabaseUrl, settings.supabaseSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   })
   return async (action, p) => {
     const { data, error } = await db.rpc('atlas_kakao_connection', { action, p }).abortSignal(AbortSignal.timeout(10_000))
+    if (error?.message === 'alert_dispatch_in_progress') throw Object.assign(new Error(error.message), { statusCode: 409 })
     if (error) throw new Error('kakao_store_unavailable')
     return data
   }
@@ -73,7 +75,7 @@ async function authenticatedActor(request, authenticate) {
   throw Object.assign(new Error('session_changed'), { statusCode: 401 })
 }
 
-function display(rows) {
+function display(rows, messageConsentAvailable = false) {
   const active = rows.find((row) => row.status !== 'unlinking')
   const cleanupPending = rows.some((row) => row.status === 'unlinking')
   const stale = active?.status === 'connected'
@@ -87,10 +89,11 @@ function display(rows) {
     } : {}),
     cleanupPending,
     available: true,
+    ...(messageConsentAvailable ? { messageConsentAvailable, messageAuthorized: !stale && active?.status === 'connected' && active.scopes.includes('talk_message') } : {}),
   }
 }
 
-async function verifyLink(actor, read, db, provider, force) {
+export async function verifyLink(actor, read, db, provider, force) {
   const row = (await read()).find((item) => item.status !== 'unlinking')
   if (!row || row.status === 'reconnect') return
   const age = Date.now() - new Date(row.checked_at).getTime()
@@ -124,6 +127,14 @@ async function verifyLink(actor, read, db, provider, force) {
       }
     }
     if (id !== claimed.kakao_id) status = 'reconnect'
+    else if (updated.scopes.includes('talk_message') && provider.messageScope) {
+      try {
+        if (!await provider.messageScope(tokens.access, id)) updated.scopes = updated.scopes.filter(scope => scope !== 'talk_message')
+      } catch (error) {
+        if (error.kind !== 'consent_required') throw error
+        updated.scopes = updated.scopes.filter(scope => scope !== 'talk_message')
+      }
+    }
   } catch (error) {
     status = error.kind === 'revoked' || error.kind === 'expired' ? 'reconnect' : 'unavailable'
   }
@@ -153,8 +164,9 @@ function callbackPage(reply, target, requestId, statusCode = 200) {
 }
 
 export function registerKakaoConnectionRoutes(app, {
-  settings = config, db = rpcStore(settings), provider = createKakaoProvider(settings),
+  settings = config, db = kakaoRpcStore(settings), provider = createKakaoProvider(settings),
   authenticate = authenticateAccountRequest,
+  alertStore = createAlertStore(settings), messageConsent = alertSettings(settings).consent,
 } = {}) {
   const origin = origins(settings)
   const enabled = Boolean(db && origin && settings.credentialEncryptionKey
@@ -169,6 +181,7 @@ export function registerKakaoConnectionRoutes(app, {
       return await handler(request, reply, actor, () => db('read', actor))
     } catch (error) {
       if (error.statusCode === 401) return reply.code(401).send({ error: '로그인 세션을 확인해 주세요.' })
+      if (error.statusCode === 409) return reply.code(409).send({ error: '발송 요청을 마치는 중입니다. 잠시 후 다시 시도해 주세요.' })
       return reply.code(503).send({ error: '일시적으로 카카오 연결을 확인할 수 없습니다.' })
     }
   }
@@ -176,30 +189,34 @@ export function registerKakaoConnectionRoutes(app, {
 
   app.get(prefix, guarded(async (_request, _reply, actor, read) => {
     await verifyLink(actor, read, db, provider, false)
-    return display(await read())
+    return display(await read(), messageConsent)
   }))
   app.post(`${prefix}/check`, guarded(async (_request, _reply, actor, read) => {
     await verifyLink(actor, read, db, provider, true)
-    return display(await read())
+    return display(await read(), messageConsent)
   }))
   app.post(`${prefix}/start`, guarded(async (request, reply, actor) => {
-    const { proofHash, replace } = request.body ?? {}
+    const { proofHash, replace, purpose } = request.body ?? {}
     if (typeof proofHash !== 'string' || !/^[a-f0-9]{64}$/.test(proofHash) || typeof replace !== 'boolean') return badInput(reply)
-    const launch = secret(), requestId = randomUUID()
-    const outcome = await db('start', { ...actor, request_id: requestId, launch_hash: hash(launch), proof_hash: proofHash, replace })
+    if (purpose !== undefined && (purpose !== 'message' || !messageConsent || replace)) return badInput(reply)
+    const message = purpose === 'message'
+    const launch = (message ? 'm.' : '') + secret(), requestId = randomUUID()
+    const args = { ...actor, request_id: requestId, launch_hash: hash(launch), proof_hash: proofHash, replace }
+    const outcome = await (message ? alertStore('consent_start', args) : db('start', args))
     if (outcome !== 'started') return { outcome }
     return { requestId, launchUrl: `${origin.api}${prefix}/authorize?t=${launch}` }
   }))
   app.get(`${prefix}/authorize`, async (request, reply) => {
     privateHeaders(reply)
     const t = request.query?.t
-    if (!enabled || !isSecret(t)) return callbackPage(reply, null, null, 400)
+    const message = typeof t === 'string' && t.startsWith('m.')
+    if (!enabled || (message && !messageConsent) || !isSecret(message ? t.slice(2) : t)) return callbackPage(reply, null, null, 400)
     try {
-      const state = secret(), browser = secret(), digest = hash(state)
+      const state = (message ? 'm.' : '') + secret(), browser = secret(), digest = hash(state)
       const started = await db('launch', { launch_hash: hash(t), state_hash: digest, browser_hash: hash(browser) })
       if (!started) return callbackPage(reply, null, null, 400)
       return reply.header('Set-Cookie', `${cookieName(digest)}=${browser}; Max-Age=300; ${cookieAttrs}`)
-        .redirect(provider.authorize(state, started.replace))
+        .redirect(provider.authorize(state, started.replace && !message, message))
     } catch {
       return callbackPage(reply, null, null, 503)
     }
@@ -207,7 +224,8 @@ export function registerKakaoConnectionRoutes(app, {
   app.get(callbackPath, async (request, reply) => {
     privateHeaders(reply)
     const { state, code, error } = request.query ?? {}
-    if (!enabled || !isSecret(state)) return callbackPage(reply, null, null, 400)
+    const message = typeof state === 'string' && state.startsWith('m.')
+    if (!enabled || (message && !messageConsent) || !isSecret(message ? state.slice(2) : state)) return callbackPage(reply, null, null, 400)
     const digest = hash(state)
     const name = cookieName(digest)
     const browser = request.headers.cookie?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1)
@@ -224,7 +242,15 @@ export function registerKakaoConnectionRoutes(app, {
           if (error || typeof code !== 'string' || !/^[\x21-\x7e]{1,2048}$/.test(code)) throw new Error('invalid_code')
           const tokens = await provider.exchange(code)
           const id = await provider.identity(tokens.access)
-          staged = { phase: 'ready', result: { kakao_id: id, ...sealed(started.user_id, tokens) } }
+          let outcome
+          if (message) {
+            const expected = await alertStore('consent_account', { ...ref, user_id: started.user_id })
+            if (id !== expected) outcome = 'identity_mismatch'
+            else if (!await provider.messageScope(tokens.access, id)) outcome = 'consent_required'
+            else tokens.scopes = [...new Set([...tokens.scopes, 'talk_message'])]
+          }
+          staged = outcome ? { phase: 'failed', result: { outcome } }
+            : { phase: 'ready', result: { kakao_id: id, ...sealed(started.user_id, tokens) } }
         }
       } catch {
         staged = { phase: 'failed', result: { outcome: 'oauth_failed' } }
@@ -243,15 +269,15 @@ export function registerKakaoConnectionRoutes(app, {
       if (outcome === 'pending') return { outcome }
       // Previous account cleanup is independent of the successfully committed new link.
       if (action === 'finish' && outcome === 'connected') await cleanLinks(actor, read, db, provider).catch(() => {})
-      return { outcome, ...display(await read()) }
+      return { outcome, ...display(await read(), messageConsent) }
     }))
   }
   app.post(`${prefix}/unlink`, guarded(async (request, _reply, actor, read) => {
     if (request.body?.pendingOnly !== true) {
       const outcome = await db('detach', actor)
-      if (outcome !== 'detached') return { outcome, ...display(await read()) }
+      if (outcome !== 'detached') return { outcome, ...display(await read(), messageConsent) }
     }
     await cleanLinks(actor, read, db, provider)
-    return display(await read())
+    return display(await read(), messageConsent)
   }))
 }

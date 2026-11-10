@@ -32,7 +32,8 @@ class Settings:
     @classmethod
     def from_env(cls):
         if os.getenv('NODE_ENV') == 'production' and any(
-            value and (key.startswith(('KIWOOM_', 'TOSS_', 'NH_', 'KB_', 'kiwoom_', 'toss_')) or key == 'ATLAS_CREDENTIAL_ENCRYPTION_KEY')
+            value and (key.startswith(('KIWOOM_', 'TOSS_', 'NH_', 'KB_', 'kiwoom_', 'toss_', 'ATLAS_ALERT_KIWOOM_'))
+                       or key == 'ATLAS_CREDENTIAL_ENCRYPTION_KEY')
             for key, value in os.environ.items()
         ):
             raise ValueError('Broker secrets must not be passed to the AI process')

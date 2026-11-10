@@ -51,6 +51,7 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
     async def health(x_atlas_internal: str = Header(default='')):
         await authorize(x_atlas_internal)
         return {'ok': True, 'provider': recent, 'model': s.model, 'key_configured': bool(s.api_key),
+                'alert_tools': True,
                 'lab_ready': bool(s.lab_path and __import__('pathlib').Path(s.lab_path).is_file()),
                 'news_configured': bool(s.naver_id and s.naver_secret)}
 
@@ -60,6 +61,15 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
         from .market import recent_order_days
         try:
             return recent_order_days(date, s.calendar_through)
+        except ValueError:
+            raise HTTPException(503, 'calendar_unverified') from None
+
+    @app.get('/calendar/alert-session')
+    async def current_alert_session(x_atlas_internal: str = Header(default='')):
+        await authorize(x_atlas_internal)
+        from .market import alert_session
+        try:
+            return alert_session(clock() if clock else datetime.now(KST), s.calendar_through)
         except ValueError:
             raise HTTPException(503, 'calendar_unverified') from None
 
@@ -139,7 +149,7 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
                     if not response.json().get('accepted'):
                         raise RuntimeError('Request no longer active')
         try:
-            tools = tools_factory() if tools_factory else ResearchTools(s, news=news, context=body.context)
+            tools = tools_factory() if tools_factory else ResearchTools(s, news=news, context=body.context, alert_context=body.alert_context)
             result = await Runner(s, model, tools, emit).run(body.question, body.context)
             if result['error_code'] in ('authentication_error', 'permission_error', 'billing_error', 'billing_or_rate_limit', 'connection_failed', 'provider_error'):
                 recent['state'] = result['error_code']

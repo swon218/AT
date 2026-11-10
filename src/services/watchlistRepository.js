@@ -10,6 +10,9 @@ function check(result, action) {
   const { data, error } = result
   if (!error && Array.isArray(data)) return data
   if (error?.code === 'P0001' && error.message === 'watchlist_limit') throw new Error(WATCHLIST_LIMIT_MESSAGE)
+  if (error?.code === 'P0001' && error.message === 'alert_dispatch_in_progress') {
+    throw new Error('알림 발송 요청을 마치는 중입니다. 잠시 후 다시 시도해 주세요.')
+  }
   if (['42P01', '42883', '42703', 'PGRST202', 'PGRST204', 'PGRST205'].includes(error?.code)) {
     throw new Error('관심종목 저장소가 준비되지 않았습니다. 관리자가 Supabase 관심종목 SQL을 적용해야 합니다.')
   }

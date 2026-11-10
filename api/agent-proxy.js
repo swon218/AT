@@ -1,7 +1,7 @@
 // A static Vercel Function plus vercel.json rewrite handles every allowed nesting depth.
 // This is a bounded same-origin proxy, never a user-selected upstream or arbitrary URL.
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-const ROUTE = new RegExp(`^(?:status|rooms(?:/${UUID}(?:/(?:messages|requests))?)?|requests/${UUID})$`)
+const ROUTE = new RegExp(`^(?:status|alerts|rooms(?:/${UUID}(?:/(?:messages|requests))?)?|requests/${UUID})$`)
 const RESERVED = '__atlas_route'
 
 export function proxyTarget(requestUrl, parsedQuery = {}) {
@@ -62,7 +62,8 @@ export default async function handler(req, res) {
     if (body !== undefined) headers['Content-Type'] = 'application/json'
     if (body && Buffer.byteLength(body) > 30000) return res.status(413).end()
     const target = new URL(path, origin)
-    const response = await fetch(target, { method: req.method, headers, body, redirect: 'error', signal: AbortSignal.timeout(10000) })
+    const timeout = path === '/api/agent/alerts' && req.method === 'POST' ? 40_000 : 10_000
+    const response = await fetch(target, { method: req.method, headers, body, redirect: 'error', signal: AbortSignal.timeout(timeout) })
     const cookie = response.headers.get('set-cookie')
     if (cookie) res.setHeader('Set-Cookie', cookie)
     const output = await response.text()

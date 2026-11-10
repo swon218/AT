@@ -33,6 +33,11 @@ Use concept for timeless educational explanations, clarification for a question 
 Historical room sources are dated; never describe them as current without a fresh lookup.
 Return JSON matching the response schema. Explain limitations in uncertainty.
 No hidden chain of thought: only final conclusions and public tool actions are exposed.
+For an alert request, use get_alert_editor to see the current draft in this room and watchlist.
+Use propose_alert for a new or modified draft; never claim it was saved or activated. A % fall/rise
+with no reference means previous close. Ask about ambiguous symbols or material ambiguities; for
+explicit purchase/current/peak-relative references request a supported basis. Use get_alert_status
+for actual saved or delivery state. These tools cannot register a stock, activate an alert or send.
 '''
 
 
@@ -172,6 +177,7 @@ class Runner:
 
     async def _run(self, question, context):
         settings = self.settings
+        self.tools.question = question
         instructions = SYSTEM + '\nSERVER NOW: ' + self.tools.now.isoformat() + '\nLIMITS: ' + json.dumps({k: getattr(settings, k) for k in ('rounds', 'tool_calls', 'external_requests', 'symbols', 'articles', 'tokens', 'seconds')})
         items = [{'role': 'user', 'content': 'DATED ROOM HISTORY (not fresh evidence): ' + json.dumps(context, ensure_ascii=False)[-16000:]},
                  {'role': 'user', 'content': question}]
@@ -249,8 +255,18 @@ class Runner:
                         errors += 1
                         if errors > settings.corrections:
                             return self.limited_result('tool_recovery_limit')
+                alert_action = getattr(self.tools, 'alert_action', None)
+                if alert_action and alert_action['kind'] not in ('ambiguous', 'invalid', 'unsupported', 'watchlist_required'):
+                    answer = {'content': '알림 정보를 확인했습니다.' if alert_action['kind'] != 'unavailable' else
+                              '로그인하고 관심종목을 등록하면 알림 초안을 만들 수 있습니다.',
+                              'as_of': self.tools.now.isoformat(), 'claims': [], 'sources': [], 'coverage': [], 'result_sets': []}
+                    return {'status': 'completed', 'answer': answer, 'alert_action': alert_action,
+                            'usage': self.usage, 'steps': self.steps, 'error_code': None}
                 continue
             try:
+                if getattr(self.tools, 'alert_action', None):
+                    return {'status': 'completed', 'answer': {'content': '알림 조건을 확인해 주세요.'},
+                            'alert_action': self.tools.alert_action, 'usage': self.usage, 'steps': self.steps, 'error_code': None}
                 final = Final.model_validate_json(turn.text)
                 validate_final(final, self.tools, question)
                 if final.kind == 'insufficient' and self.tool_failures:

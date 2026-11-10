@@ -33,6 +33,8 @@ import useIndicatorDraft from './hooks/useIndicatorDraft'
 import useStrategies from './hooks/useStrategies'
 import useAgentWorkspace from './hooks/useAgentWorkspace'
 import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
+import AlertAgentPanel, { AgentModeTabs, TradingAgentPanel } from './components/AlertAgentPanel'
+import useAgentAlertDrafts from './hooks/useAgentAlertDrafts'
 import SidebarFooter from './components/SidebarFooter'
 import ThemeSwitch from './components/ThemeSwitch'
 import WatchlistStar, { WatchlistFeedback } from './components/WatchlistStar'
@@ -103,7 +105,9 @@ function ChartWorkspace({ selected, period, onPeriodChange, currentUser, watchli
 }
 
 function App() {
-  const [activePage, setActivePage] = useState('dashboard')
+  const [activePage, setActivePage] = useState(() => new URLSearchParams(window.location.search).get('agent') === 'alerts' ? 'agent' : 'dashboard')
+  const [agentMode, setAgentMode] = useState(() => new URLSearchParams(window.location.search).get('agent') === 'alerts' ? 'alerts' : 'analysis')
+  const [alertNotice, setAlertNotice] = useState('')
   const [newsCategory, setNewsCategory] = useState('all')
   const brokerageDataEnabled = !['lab', 'screen', 'agent', 'news', 'company'].includes(activePage)
   const showStockSearch = brokerageDataEnabled || activePage === 'company'
@@ -131,7 +135,22 @@ function App() {
   const brokerConnections = useBrokerConnections(currentUser?.id)
   const [authReady, setAuthReady] = useState(!supabase)
   const watchlist = useWatchlist(currentUser?.id, { authReady, onLogin: () => setAuthModalOpen(true) })
-  const agent = useAgentWorkspace(currentUser?.id, authReady)
+  const alertDrafts = useAgentAlertDrafts(currentUser?.id)
+  const agent = useAgentWorkspace(currentUser?.id, authReady, undefined, {
+    editor: alertDrafts.editor,
+    onRoomCreated: alertDrafts.move,
+    onDraft(roomId, draft) {
+      if (!alertDrafts.apply(roomId, draft)) {
+        setAlertNotice('응답을 기다리는 동안 수정한 조건을 유지했습니다.')
+        return
+      }
+      setAlertNotice('대화의 조건을 미저장 초안으로 채웠습니다.')
+      openPage('agent')
+      setAgentMode('alerts')
+      agent.setUI({ robotVisible: true, miniOpen: true, position: { x: 1, y: 1 } })
+    },
+  })
+  useEffect(() => { setAlertNotice('') }, [currentUser?.id])
   const strategies = useStrategies(currentUser?.id)
   const orderDraft = useIndicatorDraft(currentUser?.id, strategies)
   const labDraft = useIndicatorDraft(currentUser?.id, strategies)
@@ -182,6 +201,7 @@ function App() {
     if (draft.length > 6000) return false
     agent.setDraft(draft)
     openPage('agent')
+    setAgentMode('analysis')
     return true
   }
 
@@ -384,7 +404,17 @@ function App() {
         </header>
 
         <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
-          {activePage === 'company' ? <CompanyAnalysisPage stock={analysisStock ?? (selectionRevision > 0 ? selected : null)}/> : activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }} onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('dashboard') }}/> : activePage === 'dashboard' ? <>
+          {activePage === 'company' ? <CompanyAnalysisPage stock={analysisStock ?? (selectionRevision > 0 ? selected : null)}/> : activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <>
+            <AgentModeTabs mode={agentMode} onChange={setAgentMode}/>
+            <div role="tabpanel" id="agent-mode-panel" aria-labelledby={`agent-tab-${agentMode}`}>
+              {agentMode === 'alerts' ? <AlertAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} watchlist={watchlist}
+                drafts={alertDrafts} roomId={agent.active.id} notice={alertNotice}
+                onLogin={() => setAuthModalOpen(true)} onKakao={() => setAccountSettingsOpen(true)} settingsOpen={accountSettingsOpen}/>
+                : agentMode === 'trading' ? <TradingAgentPanel/>
+                  : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }}
+                    onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); setAgentMode('alerts') }}/>}
+            </div>
+          </> : activePage === 'dashboard' ? <>
           <DashboardWelcome/>
 
           <MarketSummary credentialScope={searchCredentialScope}/>
@@ -403,7 +433,9 @@ function App() {
           </> : activePage === 'order' ? <ChartWorkspace key="order" integrationVersion={integrationVersion} onAccountChange={setOrderAccountId} accountId={orderAccountId} accountOptions={currentOrderAccountOptions} selected={selected} period={orderPeriod} onPeriodChange={setOrderPeriod} currentUser={currentUser} watchlist={watchlist} integrationStatus={integrationStatus} broker={orderBroker} onBrokerChange={setOrderBroker} accountSummary={currentOrderAccountSummary} accountLoading={orderAccountLoading} accountError={orderAccountError} onAccountRefresh={() => setOrderAccountRefreshVersion((value) => value + 1)} {...orderDraft}/> : activePage === 'lab' ? <ChartWorkspace key="lab" currentUser={currentUser} labWorkspace={labWorkspace} indicatorsOnly {...labDraft}/> : <AssetsPage key={currentUser?.id || 'guest'} currentUser={currentUser} integrationStatus={integrationStatus} integrationVersion={integrationVersion} orderHistoryTarget={orderHistoryTarget?.owner === currentUser?.id && orderHistoryTarget?.version === integrationVersion ? orderHistoryTarget : null}/>}
         </div>
       </main>
-      <FloatingAgent agent={{ ...agent, openScreen }} visible={activePage !== 'agent' && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen} onExpand={() => openPage('agent')} context={activePage === 'company' ? '기업 분석' : activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
+      <FloatingAgent agent={{ ...agent, openScreen }} visible={(activePage !== 'agent' || agentMode !== 'analysis') && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen}
+        onExpand={() => { openPage('agent'); setAgentMode('analysis') }}
+        context={activePage === 'agent' ? (agentMode === 'alerts' ? '알림 에이전트' : '매매 에이전트') : activePage === 'company' ? '기업 분석' : activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal} recovery={passwordRecovery} onRecoveryFinished={finishPasswordRecovery}/>
       <AccountSettingsModal key={currentUser?.id || 'guest'} open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange} onIntegrationMutation={brokerConnections.mutation}/>
