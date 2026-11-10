@@ -22,14 +22,14 @@ function updateConfirmation(message, confirmation, draft) {
 export default function useServerAgentWorkspace(userId, authReady, apiClient = agentApi, alertFlow = {}) {
   const owner = authReady ? userId || 'guest' : null
   const [state, setState] = useState(() => initial(owner, userId))
-  const sending = useRef(false), scope = useRef(owner), observed = useRef({})
+  const sending = useRef(false), scope = useRef(owner)
   const activeRoom = useRef('new'), alertRequests = useRef(new Map()), alertHandlers = useRef(alertFlow)
   const confirmationScope = useRef({ owner, running: new Set() })
   if (confirmationScope.current.owner !== owner) confirmationScope.current = { owner, running: new Set() }
   alertHandlers.current = alertFlow
   let current = state
   if (current.owner !== owner) {
-    scope.current = owner; sending.current = false; observed.current = {}; alertRequests.current.clear()
+    scope.current = owner; sending.current = false; alertRequests.current.clear()
     current = initial(owner, userId); setState(current)
   }
   const update = patch => setState(previous => previous.owner === owner && scope.current === owner ? { ...previous, ...(typeof patch === 'function' ? patch(previous) : patch) } : previous)
@@ -90,17 +90,18 @@ export default function useServerAgentWorkspace(userId, authReady, apiClient = a
   }, [owner, current.ui, current.drafts, current.activeId, current.pending])
   useEffect(() => {
     if (!owner || room.id === 'new') return
-    let disposed = false, timer
+    let disposed = false, timer, lastProgress
     const poll = async () => {
       try {
         const result = await refresh(room.id)
         const request = result?.requests.at(-1)
-        if (request && !disposed && (request.status === 'running' || observed.current[request.id] !== request.status)) {
+        const progressKey = request && `${request.id}:${request.status}`
+        if (request && !disposed && (request.status === 'running' || progressKey !== lastProgress)) {
           const progress = await api(`/requests/${request.id}`)
-          if (!disposed) update({ steps: progress.steps || [] })
+          if (!disposed && activeRoom.current === room.id) update({ steps: progress.steps || [] })
           if (request.status !== 'running' && !disposed) {
             const status = await api('/status')
-            if (!disposed) { observed.current[request.id] = request.status; update({ status }) }
+            if (!disposed) { lastProgress = progressKey; update({ status }) }
           }
         }
         if (!disposed && request?.status === 'failed') {
@@ -204,7 +205,11 @@ export default function useServerAgentWorkspace(userId, authReady, apiClient = a
     setDraft: value => update(previous => ({ drafts: { ...previous.drafts, [room.id]: value.slice(0, 6000) } })),
     submit, newConversation, respondToWatchlist, confirmations: current.confirmations,
     confirmationRevision: userId ? alertFlow.editor?.(room.id)?.revision ?? null : null,
-    select: id => { activeRoom.current = id; update({ activeId: id, steps: [], error: '', busy: false }) },
+    select: id => {
+      if (activeRoom.current === id) return
+      activeRoom.current = id
+      update({ activeId: id, steps: [], error: '', busy: false })
+    },
     loadMore: () => refresh(room.id, room.messages[0]?.id).catch(fail),
     rename: title => { void api(`/rooms/${room.id}`, { method: 'PUT', body: { title } }).then(result => update(previous => ({ rooms: previous.rooms.map(r => r.id === room.id ? { ...r, title: result.title } : r) }))).catch(fail) },
     remove: id => { if (id === 'new') { newConversation(); return } void api(`/rooms/${id}`, { method: 'DELETE' }).then(() => {

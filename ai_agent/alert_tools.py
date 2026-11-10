@@ -5,6 +5,11 @@ import re
 from .market import KST
 
 
+ALERT_NEXT_STEP = ('If the member asked to create or edit an alert and the symbol and condition are clear, call propose_alert. '
+                   'A unique symbol outside the watchlist is eligible. The tool result creates the confirmation card. '
+                   'Ask a clarification only for a missing or ambiguous detail. A stock lookup alone is not an alert request.')
+
+
 def normalize_stock_symbol(value):
     normalized = ''.join(value.upper().split())
     if re.fullmatch(r'A\d{6}', normalized):
@@ -29,7 +34,8 @@ class AlertTools:
         return {'status': 'success', 'items': self.watchlist,
                 'saved': [{k: v for k, v in rule.items() if k != 'version'} for rule in self.rules],
                 'draft': {k: v for k, v in self.draft.items() if k != 'id'} if self.draft else None,
-                'login_required': not self.available}
+                'login_required': not self.available,
+                **({'next_step': ALERT_NEXT_STEP} if self.available else {})}
 
     def status(self, args):
         if not self.available:

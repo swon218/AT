@@ -20,6 +20,33 @@ const alertToolResults = {
   symbol_not_found: '일치 종목 없음', symbol_catalog_unavailable: '종목 목록 조회 불가', watchlist_required: '관심종목 확인 필요',
   invalid: '알림 조건 확인 필요', ambiguous: '종목 확인 필요', unsupported: '지원 조건 확인 필요', unavailable: '로그인 필요',
 }
+const validationMessages = {
+  alert_proposal_required: '알림 확인 카드를 만들기 위해 조건을 다시 확인합니다.',
+  unsupported_claims: '확인 질문이나 자료 부족 답변에 사실 주장 또는 판단이 포함됐습니다.',
+  unsupported_current_facts: '답변에 근거가 없는 시세나 수치가 포함됐습니다.',
+  unsafe_investment_instruction: '답변에 직접적인 매매 지시나 수익 보장이 포함됐습니다.',
+  fresh_evidence_required: '최신 정보를 뒷받침할 새 조회 결과가 필요합니다.',
+  evidence_required: '사실 주장에 연결된 근거가 없습니다.',
+  invalid_evidence_id: '조회 결과에서 해당 근거를 찾지 못했습니다.',
+  excerpt_mismatch: '인용한 내용이 조회 결과와 일치하지 않습니다.',
+  rsi_value_mismatch: '지표 인용이 조회한 값과 일치하지 않습니다.',
+  unverified_company_relevance: '해당 종목과의 직접적인 관련성을 확인하지 못했습니다.',
+  unsupported_number: '인용한 근거에서 해당 수치를 확인하지 못했습니다.',
+  claim_content_mismatch: '답변의 설명이 인용한 자료와 일치하지 않습니다.',
+  uncited_summary_numbers: '답변 요약에 근거가 연결되지 않은 수치가 있습니다.',
+  invalid_final_schema: '답변 형식을 확인하지 못했습니다.',
+}
+
+function ExecutionStep({ step }) {
+  const code = step.result?.code
+  if (step.kind === 'validation' && step.name === 'final' && step.status === 'error') {
+    const known = Object.hasOwn(validationMessages, code)
+    return <p>{step.seq}. 답변 검증 실패 {known && <>· <code>{code}</code></>} · {known ? validationMessages[code] : '답변을 검증하지 못했습니다.'}</p>
+  }
+  const result = step.name === 'propose_alert' && alertToolResults[code]
+    ? alertToolResults[code] : step.result?.count !== undefined ? `${step.result.count}건` : ''
+  return <p>{step.seq}. {step.name} · {step.status} · {step.elapsed_ms}ms {result && `· ${result}`}</p>
+}
 
 function AgentStatus({ agent }) {
   const state = agent?.status?.provider?.state
@@ -107,7 +134,7 @@ function Conversation({ agent, compact = false, onExpand }) {
       {compact && <button type="button" className="agent-expand-result" onClick={onExpand}>이 대화를 넓게 보기<ArrowUpRight size={15}/></button>}
     </div>}
     {agent.busy && <div className="agent-connection-note" role="status"><Bot size={20}/><p>{agent.steps?.at(-1)?.kind === 'tool' ? ({ screen_stocks: '공통 일봉 조건검색 중', screen_rsi: 'RSI 조건 확인 중', get_stock_news: '뉴스 조회 중', resolve_symbol: '종목 확인 중', get_news_details: '확보 기사 확인 중', get_market_context: '거래일 기준 확인 중' }[agent.steps.at(-1).name] || '조회 결과 확인 중') : agent.steps?.length ? '모델 분석 중' : '요청 처리 대기 중'}</p></div>}
-    {!!agent.steps?.length && <details className="agent-execution"><summary>실행 기록 {agent.steps.length}개</summary>{agent.steps.map(step => <p key={step.seq}>{step.seq}. {step.name} · {step.status} · {step.elapsed_ms}ms {step.name === 'propose_alert' && alertToolResults[step.result?.code] ? `· ${alertToolResults[step.result.code]}` : step.result?.count !== undefined ? `· ${step.result.count}건` : ''}</p>)}</details>}
+    {!!agent.steps?.length && <details className="agent-execution"><summary>실행 기록 {agent.steps.length}개</summary>{agent.steps.map(step => <ExecutionStep key={step.seq} step={step}/>)}</details>}
     <div ref={bottom}/>
   </div>
 }
