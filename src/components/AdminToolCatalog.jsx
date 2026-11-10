@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import catalog from '../../shared/agentToolCatalog.json'
 import verification from '../../shared/agentToolVerification.json'
+import architecture from '../../shared/agentArchitecture.json'
 
 export default function AdminToolCatalog() {
   const [filter, setFilter] = useState('all')
@@ -9,6 +10,9 @@ export default function AdminToolCatalog() {
   return <section className="eval-tool-catalog" aria-label="분석 AI 사용가능 도구">
     <div className="eval-toolbar"><h3>분석 AI에 등록된 도구 {count}개</h3><span className="eval-badge">코드 등록 기준</span></div>
     <p className="eval-tool-note">모델이 질문에 따라 선택할 수 있는 도구와 데이터 출처입니다. 코드 등록 여부와 운영 API의 실제 수신 성공은 별개이며, 인증 설정·데이터 최신성·회원 로그인 상태에 따라 사용이 제한될 수 있습니다.</p>
+    <p className="eval-tool-note">{architecture.version} · 총괄이 필요한 전문 담당을 선택하고 결과를 검토합니다. 뉴스·일봉 조사는 최대 2개 담당이 병렬로 수행하며, 알림은 별도의 확인·미저장 초안 흐름을 사용합니다. 모든 담당은 같은 운영 모델을 사용합니다.</p>
+    <p className="eval-tool-note">총괄 조정 도구 <code>delegate_research</code> · 검증된 조사 목표·종목·기간·제약을 전문 담당에게 전달합니다.</p>
+    <p className="eval-tool-note">Market Data Agent · Fundamental Research Agent는 향후 도구 연결 후 추가 예정입니다.</p>
     <details className="eval-tool-verification">
       <summary>운영 확인 기록 · {verification.checkedAtLabel} · 실시간 상태 아님</summary>
       <p>{verification.source}. {verification.summary}</p>
@@ -26,7 +30,7 @@ export default function AdminToolCatalog() {
       <h3 id={`tool-group-${group.id}`}>{group.title} <span className="eval-badge">{group.tools.length}개</span></h3><p>{group.description}</p>
       <div className="eval-tool-grid">{group.tools.map(tool=><article className="eval-tool-card" key={tool.name}>
         <h4>{tool.title}</h4><code>{tool.name}</code><p>{tool.description}</p>
-        <dl><dt>API · DB / 데이터 출처</dt><dd>{tool.source}</dd><dt>사용 조건 · 범위</dt><dd>{tool.requirement}</dd><dt>질문 예시</dt><dd>{tool.example}</dd></dl>
+        <dl><dt>담당 에이전트</dt><dd>{architecture.agents.filter(agent=>agent.tools.includes(tool.name)).map(agent=>agent.name).join(' · ')}</dd><dt>API · DB / 데이터 출처</dt><dd>{tool.source}</dd><dt>사용 조건 · 범위</dt><dd>{tool.requirement}</dd><dt>질문 예시</dt><dd>{tool.example}</dd></dl>
       </article>)}</div>
     </section>)}
     {(filter==='all'||filter==='unavailable')&&<section className="eval-tool-group" aria-label="분석 AI에 연결되지 않은 데이터">

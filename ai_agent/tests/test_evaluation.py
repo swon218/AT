@@ -7,7 +7,7 @@ from ai_agent.evaluation.catalog import cases
 from ai_agent.tools import NewsSource
 from ai_agent.screen_engine import ScreenEngine
 from ai_agent.screener import RsiScreener
-from .fixtures import ScriptedProvider, call, answer, final
+from .fixtures import ScriptedProvider, call, answer, final, OrchestratedFixture
 
 
 @pytest.mark.asyncio
@@ -19,15 +19,15 @@ async def test_contract_is_labeled_not_real_model_quality():
 
 
 @pytest.mark.asyncio
-async def test_actual_runner_chooses_confirmation_with_fixture_provider_and_does_not_save():
+async def test_production_graph_chooses_confirmation_with_fixture_provider_and_does_not_save():
     args={'action':'create','symbol':'네이버','rule_id':None,'basis':'price','kind':'price_touch','threshold':200000,'expires_on':None,'frequency':None}
     p=ScriptedProvider([call('propose_alert',args)])
-    result=await evaluate({'mode':'live','specimen':cases()[17]},Settings(),provider=p)
+    result=await evaluate({'mode':'live','specimen':cases()[17]},Settings(),provider=OrchestratedFixture(p, 'alert'))
     assert result['alert_action']['kind']=='watchlist_confirmation'
     assert result['eval_state']['watchlist']==[]
     assert result['web_verification']=='not_run'
     assert len(p.inputs)==1
-    assert 'success' not in p.inputs[0][1]['content']
+    assert 'success' not in p.inputs[0][0]['content']
 
 
 @pytest.mark.asyncio

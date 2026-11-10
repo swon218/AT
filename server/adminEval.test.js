@@ -106,6 +106,19 @@ test('SQL detects conflicting pre-existing schema',async()=>{
   await assert.rejects(db.exec(migration),/Conflicting table/)
  }finally{await db.close()}
 })
+test('architecture comparisons require matching model, data, rubric revision and request budget',()=>{
+ const metadata={dataset:'fixed',data_hash:'same-data',model:'same-model',now:'fixed-date',settings:{rounds:8,max_usd:0.25}}
+ const item={case_id:'a',repetition:1,revision:2,state:'completed',grade:'review',fingerprint:'baseline',metadata}
+ const a={run:{mode:'live'},items:[item]}
+ const b={run:{mode:'live'},items:[{...item,fingerprint:'graph',metadata:{...metadata,architecture:'atlas-langgraph-v1'}}]}
+ assert.doesNotMatch(compareRuns(a,b)[0].change,/비교 불가/)
+ for(const change of [{model:'different'},{data_hash:'different'},{settings:{...metadata.settings,rounds:12}}]){
+  b.items[0].metadata={...metadata,...change}
+  assert.match(compareRuns(a,b)[0].change,/비교 불가/)
+ }
+ b.items[0].metadata=metadata;b.items[0].revision=3
+ assert.match(compareRuns(a,b)[0].change,/비교 불가/)
+})
 test('same alert presenter uses frozen expiry, blocks full watchlist and never writes',async()=>{
  const action={kind:'watchlist_confirmation',stock:{code:'035420',name:'NAVER'},rule:{code:'035420',kind:'price_touch',threshold:200000,frequency:'once',expires_on:'2026-11-04'}}
  const result={scenario:'approve',alert_action:action,eval_state:{watchlist:[],rules:[],draft:null},checks:[],grade:'review'}

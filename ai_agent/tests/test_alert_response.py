@@ -5,7 +5,8 @@ from dataclasses import replace
 import pytest
 
 from ai_agent.config import Settings
-from ai_agent.runner import Runner, validate_final
+from ai_agent.answers import validate_final
+from .fixtures import fixture_graph
 from ai_agent.schemas import Final
 from ai_agent.tools import ResearchTools
 from .fixtures import NOW, ScriptedProvider, answer, call, final, make_lab
@@ -59,17 +60,17 @@ class AlertProviderFixture:
 ])
 async def test_alert_proposal_follows_symbol_lookup_and_recovers_from_premature_final(tools, premature):
     provider = AlertProviderFixture(premature)
-    result = await Runner(tools.settings, provider, tools).run(QUESTION, [])
+    result = await fixture_graph(tools.settings, provider, tools).run(QUESTION, [])
     assert result['status'] == 'completed'
-    assert result['usage']['model_calls'] == (4 if premature else 3)
+    assert result['usage']['model_calls'] == (5 if premature else 4)
     assert result['alert_action']['kind'] == 'watchlist_confirmation'
     assert result['alert_action']['stock']['code'] == '009150'
     assert result['alert_action']['rule']['threshold'] == 1000000
     assert result['alert_action']['rule']['kind'] == 'price_touch'
-    assert [s['name'] for s in result['steps'] if s['kind'] == 'tool' and s['status'] == 'success'] == [
+    assert [s['name'] for s in result['steps'] if s['kind'] == 'tool' and s['status'] == 'success' and s['agent'] == 'alert'] == [
         'get_alert_editor', 'resolve_symbol', 'propose_alert',
     ]
-    assert [s['result'] for s in result['steps'] if s['kind'] == 'validation'] == (
+    assert [s['result'] for s in result['steps'] if s['kind'] == 'validation' and s['status'] == 'error' and s['name'] == 'final'] == (
         [{'code': premature[0]}] if premature else []
     )
     assert not tools.alerts.watchlist
@@ -127,11 +128,11 @@ async def test_missing_detail_or_plain_symbol_lookup_can_finish_without_a_card(t
         summary = '조회한 삼성전기(009150)가 찾으시는 종목인가요?'
     provider = ScriptedProvider([call('get_alert_editor', {}), call('resolve_symbol', {'query': '삼성전기'}),
                                  answer(final('clarification', summary))])
-    result = await Runner(tools.settings, provider, tools).run(question, [])
+    result = await fixture_graph(tools.settings, provider, tools).run(question, [])
     assert result['status'] == 'completed'
     assert result['answer']['kind'] == 'clarification'
     assert 'alert_action' not in result
-    assert not any(s['name'] == 'propose_alert' or s['kind'] == 'validation' for s in result['steps'])
+    assert not any(s['name'] == 'propose_alert' or (s['kind'] == 'validation' and s['status'] == 'error') for s in result['steps'])
 
 
 @pytest.mark.asyncio
@@ -142,10 +143,10 @@ async def test_repeated_bad_final_stops_at_repair_limit_and_persists_only_safe_c
     recorded = []
 
     async def on_step(step):
-        if step['kind'] == 'validation':
+        if step['kind'] == 'validation' and step['name'] == 'final' and step['status'] == 'error':
             recorded.append((step['arguments'], step['result']))
 
-    result = await Runner(settings, provider, tools, on_step=on_step).run(QUESTION, [])
+    result = await fixture_graph(settings, provider, tools, on_step=on_step).run(QUESTION, [])
     assert result['error_code'] == 'answer_validation_failed'
     assert len(provider.inputs) == 4
     assert recorded == [({}, {'code': 'alert_proposal_required'})] * 2

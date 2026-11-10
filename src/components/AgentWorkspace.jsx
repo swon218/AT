@@ -7,6 +7,7 @@ import { safeAgentLink } from '../services/agentApi'
 import { importQuery } from '../utils/screener'
 import { alertCondition, alertFrequencyLabel } from '../../shared/alertRules'
 import { WATCHLIST_LIMIT_MESSAGE } from '../../shared/watchlist'
+import architecture from '../../shared/agentArchitecture.json'
 
 const suggestions = [
   { label: '조건으로 종목 찾기', text: '일봉 RSI 30 이하인 종목을 찾아줘', icon: Search },
@@ -35,17 +36,24 @@ const validationMessages = {
   claim_content_mismatch: '답변의 설명이 인용한 자료와 일치하지 않습니다.',
   uncited_summary_numbers: '답변 요약에 근거가 연결되지 않은 수치가 있습니다.',
   invalid_final_schema: '답변 형식을 확인하지 못했습니다.',
+  forbidden_tool: '이 담당에게 허용되지 않은 도구 요청을 차단했습니다.',
+  invalid_delegation: '담당 배정 형식을 다시 확인합니다.',
+  repeated_delegation: '같은 작업의 중복 위임을 차단했습니다.',
+  invalid_call_id: '도구 요청의 식별 형식을 확인하지 못했습니다.',
+  unavailable_source_claim: '연결되지 않은 데이터의 조회 완료 주장을 차단했습니다.',
 }
 
 function ExecutionStep({ step }) {
   const code = step.result?.code
+  const role = architecture.agents.find(agent => agent.id === step.agent)?.name
   if (step.kind === 'validation' && step.name === 'final' && step.status === 'error') {
     const known = Object.hasOwn(validationMessages, code)
-    return <p>{step.seq}. 답변 검증 실패 {known && <>· <code>{code}</code></>} · {known ? validationMessages[code] : '답변을 검증하지 못했습니다.'}</p>
+    return <p>{step.seq}. {role && `${role} · `}답변 검증 실패 {known && <>· <code>{code}</code></>} · {known ? validationMessages[code] : '답변을 검증하지 못했습니다.'}</p>
   }
   const result = step.name === 'propose_alert' && alertToolResults[code]
     ? alertToolResults[code] : step.result?.count !== undefined ? `${step.result.count}건` : ''
-  return <p>{step.seq}. {step.name} · {step.status} · {step.elapsed_ms}ms {result && `· ${result}`}</p>
+  const action = step.name === 'delegate_research' ? '전문 담당 위임' : step.name === 'specialist_result' ? '담당 결과 검토' : step.name
+  return <p>{step.seq}. {role && `${role} · `}{action} · {step.status} · {step.elapsed_ms}ms {result && `· ${result}`}</p>
 }
 
 function AgentStatus({ agent }) {

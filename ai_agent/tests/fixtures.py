@@ -74,15 +74,31 @@ class AdaptiveProvider:
 
     async def respond(self, items, instructions, tools, output_limit):
         self.inputs.append(json.loads(json.dumps(items)))
+        if any(tool['name'] == 'delegate_research' for tool in tools):
+            if self.mode == 'concept':
+                return answer()
+            reports = [report for item in items if item.get('type') == 'function_call_output'
+                       for report in json.loads(item['output']).get('reports', [])]
+            if not reports or self.mode == 'composite' and not any(report['agent'] == 'news' for report in reports):
+                agent = 'news' if self.mode in ('news', 'ambiguous') or reports else 'technical'
+                return delegation(agent, symbols=[row['code'] for report in reports for row in report.get('matched_symbols', [])], goal='FIXTURE MODE ' + self.mode)
+            claims = [claim for report in reports for claim in (report.get('findings') or {}).get('claims', [])]
+            clarification = next((report['findings'] for report in reports if report['status'] == 'clarification'), None)
+            return answer(clarification or final('research' if claims else 'insufficient', '확보된 자료를 확인했습니다.' if claims else '자료를 확인하지 못했습니다.', claims))
         outputs = [json.loads(x['output']) for x in items if x.get('type') == 'function_call_output']
-        self.results = outputs
+        self.results.extend(output for output in outputs if output not in self.results)
+        is_technical = any(tool['name'] == 'screen_rsi' for tool in tools)
+        mode = 'rsi' if self.mode == 'composite' and is_technical else self.mode
+        assignment = json.loads(items[0]['content']) if items and items[0].get('content', '').startswith('{') else {}
         if self.mode == 'concept':
             return answer()
         if not outputs:
-            if self.mode == 'stock_screen':
+            if mode == 'composite':
+                return call('get_stock_news', {'code': assignment['assignment']['symbols'][0], 'period': 'overnight', 'page': 1, 'keyword': ''})
+            if mode == 'stock_screen':
                 from .test_stock_screen import query, cond
                 return call('screen_stocks', query(cond(), cond('close', 'lte', other='sma')).model_dump())
-            return call('resolve_symbol', {'query': '삼성' if self.mode == 'ambiguous' else '삼성전자'}) if self.mode in ('news', 'ambiguous') else call('screen_rsi', {'threshold': 30, 'market': 'ALL', 'page': 1, 'page_size': 20})
+            return call('resolve_symbol', {'query': '삼성' if mode == 'ambiguous' else '삼성전자'}) if mode in ('news', 'ambiguous') else call('screen_rsi', {'threshold': 30, 'market': 'ALL', 'page': 1, 'page_size': 20})
         last = outputs[-1]
         if last['status'] == 'error':
             return answer(final('insufficient', '조회 서비스 오류로 자료를 확인하지 못했습니다.'))
@@ -91,16 +107,16 @@ class AdaptiveProvider:
         if self.mode == 'news' and not last.get('coverage'):
             return call('get_stock_news', {'code': last['items'][0]['code'], 'period': 'overnight', 'page': 1, 'keyword': ''})
         screen = next((o for o in outputs if o.get('coverage', {}).get('kind') in ('rsi', 'screen')), None)
-        if self.mode in ('rsi', 'stock_screen') and screen:
+        if mode in ('rsi', 'stock_screen') and screen:
             claims = [{'text': row['excerpt'], 'evidence_id': row['id'], 'excerpt': row['excerpt'], 'stance': 'neutral', 'relation': 'direct'} for row in screen['items']]
             return answer(final('research', '확정 일봉에서 조건에 맞는 종목을 확인했습니다.', claims))
         news = [o for o in outputs if o.get('coverage', {}).get('kind') == 'news']
         if news and not news[-1]['items'] and news[-1]['coverage']['more_available']:
             c = news[-1]['coverage']
             return call('get_stock_news', {'code': c['code'], 'period': 'overnight', 'page': c['page'] + 1, 'keyword': ''})
-        if self.mode == 'composite' and screen:
+        if mode == 'composite':
             done = {o['coverage']['code'] for o in news}
-            remaining = [row for row in screen['items'] if row['code'] not in done]
+            remaining = [row for row in assignment.get('verified_symbols', []) if row['code'] in assignment['assignment']['symbols'] and row['code'] not in done]
             if remaining:
                 # The code is ONLY obtained from the preceding real RSI result, not a preset script.
                 return call('get_stock_news', {'code': remaining[0]['code'], 'period': 'overnight', 'page': 1, 'keyword': ''})
@@ -110,3 +126,39 @@ class AdaptiveProvider:
         claims = [{'text': i['title'], 'evidence_id': i['id'], 'excerpt': i['title'],
                    'stance': 'negative' if '감소' in i['title'] else 'positive', 'relation': 'direct'} for i in sources]
         return answer(final('research', '확보된 기사에서 관련 요인을 확인했습니다.', claims))
+
+
+def delegation(agent, symbols=None, goal='격리된 회귀 시나리오 확인'):
+    return call('delegate_research', {'tasks': [{'agent': agent, 'goal': goal,
+                 'symbols': symbols or [], 'period': None, 'constraints': '고정 데이터만 사용', 'deliverable': '근거와 한계'}]})
+
+
+class OrchestratedFixture:
+    """Supply fixed orchestration turns around legacy tool scenarios, using the production graph."""
+    def __init__(self, provider, agent='news'):
+        self.provider, self.agent = provider, agent
+
+    async def respond(self, items, instructions, tools, output_limit):
+        if not any(tool['name'] == 'delegate_research' for tool in tools):
+            return await self.provider.respond(items, instructions, tools, output_limit)
+        reports = [report for item in items if item.get('type') == 'function_call_output'
+                   for report in json.loads(item['output']).get('reports', [])]
+        if reports:
+            findings = reports[-1]['findings'] or final('insufficient', '자료를 확인하지 못했습니다.')
+            turn = answer(findings)
+        else:
+            first = self.provider.turns[0] if getattr(self.provider, 'turns', None) else None
+            if first is not None and (isinstance(first, Exception) or not first.output or not any(item.get('type') == 'function_call' for item in first.output)):
+                return await self.provider.respond(items, instructions, tools, output_limit)
+            turn = delegation(self.agent)
+        turn.usage = dict.fromkeys(USAGE, 0)
+        return turn
+
+
+def fixture_graph(settings, provider, tools, on_step=None):
+    from ai_agent.graph import ResearchGraph
+    if not isinstance(provider, AdaptiveProvider):
+        names = [item.get('name', '') for turn in getattr(provider, 'turns', []) if isinstance(turn, Turn) for item in turn.output]
+        agent = 'alert' if tools.alerts.available or any('alert' in name for name in names) else 'technical' if any(name in ('screen_rsi', 'screen_stocks', 'get_stock_indicators') for name in names) or provider.__class__.__name__ == 'Model' else 'news'
+        provider = OrchestratedFixture(provider, agent)
+    return ResearchGraph(settings, provider, tools, on_step)

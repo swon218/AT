@@ -109,9 +109,10 @@ export function registerAgentRoutes(app, {
             ({ rule_id, version, code, kind, threshold, expires_on, status, frequency })) } } : {}) })
       if (!['completed', 'partial', 'failed'].includes(result.status) || !result.usage || Buffer.byteLength(JSON.stringify(result.answer)) > 100000) throw error('invalid_internal_result')
       if (alerts && result.status === 'completed' && result.alert_action) {
-        result.answer = await alertAnswer(result.alert_action, {
+        const presentation = await alertAnswer(result.alert_action, {
           store: alertStore, userId, roomId: reservation.room_id, requestId: reservation.id, editor,
-        }) || result.answer
+        })
+        if (presentation) result.answer = { ...presentation, ...(result.answer.execution ? { execution: result.answer.execution } : {}) }
       }
       await store.call('finish', owner, { request_id: reservation.id, status: result.status,
         answer: result.answer, usage: result.usage, error_code: result.error_code || null })

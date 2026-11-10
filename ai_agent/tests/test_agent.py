@@ -11,7 +11,8 @@ from ai_agent.app import create_app
 from ai_agent.config import Settings
 from ai_agent.market import market_context, wilder_rsi
 from ai_agent.provider import OpenAIProvider, ProviderError, Turn
-from ai_agent.runner import Runner, validate_final
+from ai_agent.answers import validate_final
+from .fixtures import fixture_graph
 from ai_agent.schemas import Final
 from ai_agent.tools import NewsSource, ResearchTools
 from .fixtures import NOW, USAGE, make_lab, news_transport, AdaptiveProvider, ScriptedProvider, call, answer, final
@@ -24,15 +25,15 @@ def toolkit(s, transport=None):
     return ResearchTools(s, news=NewsSource(replace(s, naver_id='fixture', naver_secret='fixture'), transport or news_transport()), now=NOW)
 
 @pytest.mark.asyncio
-async def test_unlisted_stock_is_verified_by_catalog_and_confirmation_finishes_in_one_model_round(settings):
-    limited = replace(settings, rounds=1)
+async def test_unlisted_stock_is_verified_by_catalog_and_confirmation_after_delegation(settings):
+    limited = replace(settings, rounds=2)
     tools = ResearchTools(limited, now=NOW, alert_context={'watchlist': []})
     args = {'action': 'create', 'symbol': '네이버', 'rule_id': None, 'basis': 'price', 'kind': 'price_touch',
             'threshold': 200000, 'frequency': None, 'expires_on': None}
     provider = ScriptedProvider([call('propose_alert', args)])
-    result = await Runner(limited, provider, tools).run('네이버 20만원일 때 알림 받고 싶어', [])
+    result = await fixture_graph(limited, provider, tools).run('네이버 20만원일 때 알림 받고 싶어', [])
     assert result['status'] == 'completed' and result['error_code'] is None
-    assert result['usage']['model_calls'] == 1
+    assert result['usage']['model_calls'] == 2
     assert result['alert_action']['kind'] == 'watchlist_confirmation'
     assert result['alert_action']['stock'] == {'name': 'NAVER', 'code': '035420', 'market': 'KOSPI'}
     assert result['alert_action']['rule']['threshold'] == 200000
@@ -54,7 +55,7 @@ async def test_unlisted_stock_is_verified_by_catalog_and_confirmation_finishes_i
 async def test_real_loop_and_real_readonly_tools(settings, mode, question, minimum):
     provider = AdaptiveProvider(mode)
     tools = toolkit(settings)
-    result = await Runner(settings, provider, tools).run(question, [])
+    result = await fixture_graph(settings, provider, tools).run(question, [])
     assert result['status'] == 'completed', result
     assert len(provider.inputs) >= minimum
     assert result['usage']['input_tokens'] == len(provider.inputs) * 25
@@ -70,17 +71,17 @@ async def test_real_loop_and_real_readonly_tools(settings, mode, question, minim
 @pytest.mark.asyncio
 async def test_result_changes_next_path_page_and_final_content(settings):
     first, second = AdaptiveProvider('news'), AdaptiveProvider('news')
-    a = await Runner(settings, first, toolkit(settings)).run('삼성전자 뉴스', [])
-    b = await Runner(settings, second, toolkit(settings, news_transport(empty_first=True, positive=True))).run('삼성전자 뉴스', [])
+    a = await fixture_graph(settings, first, toolkit(settings)).run('삼성전자 뉴스', [])
+    b = await fixture_graph(settings, second, toolkit(settings, news_transport(empty_first=True, positive=True))).run('삼성전자 뉴스', [])
     assert len(second.inputs) == len(first.inputs) + 1
     assert '감소' in a['answer']['content'] and '증가' in b['answer']['content']
-    calls = [c for c in second.inputs[-1] if c.get('name') == 'get_stock_news']
+    calls = [c for items in second.inputs for c in items if c.get('name') == 'get_stock_news']
     assert json.loads(calls[-1]['arguments'])['page'] == 2
 
 @pytest.mark.asyncio
 async def test_errors_are_sent_back_before_model_terminates(settings):
     p = AdaptiveProvider('news')
-    result = await Runner(settings, p, toolkit(settings, news_transport(error=True))).run('삼성전자 뉴스', [])
+    result = await fixture_graph(settings, p, toolkit(settings, news_transport(error=True))).run('삼성전자 뉴스', [])
     assert result['status'] == 'failed'
     assert result['error_code'] == 'news_provider_error'
     assert any(r.get('code') == 'news_provider_error' for r in p.results)
@@ -92,9 +93,9 @@ async def test_ambiguous_symbol_asks_without_news(settings):
     with sqlite3.connect(settings.lab_path) as db:
         db.execute("INSERT INTO symbols(code,name,market,source) VALUES('000001','삼성물산','KOSPI','fixture')")
     p = AdaptiveProvider('ambiguous')
-    result = await Runner(settings, p, toolkit(settings)).run('삼성 뉴스', [])
+    result = await fixture_graph(settings, p, toolkit(settings)).run('삼성 뉴스', [])
     assert result['answer']['kind'] == 'clarification'
-    assert len(p.inputs) == 2
+    assert len(p.inputs) == 4
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('name,args,code', [('place_order', {}, 'forbidden_tool'),
@@ -109,7 +110,7 @@ async def test_untrusted_tools_and_arguments(settings, name, args, code):
 async def test_repeat_and_recovery_limits(settings):
     turn = call('resolve_symbol', {'query': '삼성전자'})
     provider = ScriptedProvider([turn] * 6)
-    result = await Runner(settings, provider, toolkit(settings)).run('뉴스', [])
+    result = await fixture_graph(settings, provider, toolkit(settings)).run('뉴스', [])
     assert result['error_code'] == 'tool_recovery_limit'
     assert any(json.loads(x['output']).get('code') == 'repeated_tool_call' for x in provider.inputs[-1] if x.get('type') == 'function_call_output')
 
@@ -117,29 +118,29 @@ async def test_repeat_and_recovery_limits(settings):
 async def test_budget_timeout_unknown_and_provider_errors(settings):
     s = replace(settings, tokens=50)
     p = ScriptedProvider([])
-    assert (await Runner(s, p, toolkit(s)).run('오늘 뉴스', []))['error_code'] == 'token_or_cost_limit'
+    assert (await fixture_graph(s, p, toolkit(s)).run('오늘 뉴스', []))['error_code'] == 'token_or_cost_limit'
     assert not p.inputs
     s = replace(settings, max_usd=0.000001)
-    assert (await Runner(s, ScriptedProvider([]), toolkit(s)).run('뉴스', []))['error_code'] == 'token_or_cost_limit'
+    assert (await fixture_graph(s, ScriptedProvider([]), toolkit(s)).run('뉴스', []))['error_code'] == 'token_or_cost_limit'
     for code in ('connection_failed', 'billing_error', 'permission_error'):
         p = ScriptedProvider([ProviderError(code)])
-        result = await Runner(settings, p, toolkit(settings)).run('RSI란?', [])
+        result = await fixture_graph(settings, p, toolkit(settings)).run('RSI란?', [])
         assert result['usage']['status'] == 'unknown' and len(p.inputs) == 1
     p = ScriptedProvider([Turn([], '', None)])
-    assert (await Runner(settings, p, toolkit(settings)).run('RSI란?', []))['usage']['status'] == 'unknown'
+    assert (await fixture_graph(settings, p, toolkit(settings)).run('RSI란?', []))['usage']['status'] == 'unknown'
     class Slow:
         async def respond(self, *args): await asyncio.sleep(1)
-    result = await Runner(replace(settings, seconds=0.01), Slow(), toolkit(settings)).run('RSI란?', [])
-    assert result['error_code'] == 'execution_timeout' and result['usage']['status'] == 'unknown'
+    result = await fixture_graph(replace(settings, seconds=0.2), Slow(), toolkit(settings)).run('RSI란?', [])
+    assert result['error_code'] in ('execution_timeout', 'specialist_timeout') and result['usage']['status'] == 'unknown'
 
 @pytest.mark.asyncio
 async def test_final_validation_repairs_and_invalid_sources(settings):
     bad = final('research', '최신 자료입니다.', [{'text': '없는 자료', 'evidence_id': 'n_forged', 'excerpt': '없는 자료', 'stance': 'negative', 'relation': 'direct'}])
     p = ScriptedProvider([answer(bad)] * 3)
-    result = await Runner(settings, p, toolkit(settings)).run('뉴스', [])
+    result = await fixture_graph(settings, p, toolkit(settings)).run('뉴스', [])
     assert result['error_code'] == 'answer_validation_failed'
     p = ScriptedProvider([answer(final())] * 3)
-    result = await Runner(settings, p, toolkit(settings)).run('오늘 뉴스', [])
+    result = await fixture_graph(settings, p, toolkit(settings)).run('오늘 뉴스', [])
     assert result['error_code'] == 'answer_validation_failed'
     t = toolkit(settings)
     t.evidence['n_test'] = {'title': '삼성전자 이익 감소', 'snippet': '수익성 악화', 'relevance': 'direct_candidate'}
@@ -208,13 +209,13 @@ async def test_no_key_boot_auth_and_production_fixture_block(settings, monkeypat
 
 @pytest.mark.asyncio
 async def test_followup_keeps_exact_prior_sources_but_not_fresh(settings):
-    first = await Runner(settings, AdaptiveProvider('news'), toolkit(settings)).run('삼성전자 뉴스', [])
+    first = await fixture_graph(settings, AdaptiveProvider('news'), toolkit(settings)).run('삼성전자 뉴스', [])
     old = first['answer']['sources'][0]
     context = [{'role': 'assistant', 'answer': first['answer']}]
     tools = ResearchTools(settings, now=NOW, context=context)
     p = ScriptedProvider([call('get_news_details', {'article_ids': [old['id']]}), answer(final('research', '앞서 확보한 부정 요인을 설명합니다.', [
         {'text': old['title'], 'evidence_id': old['id'], 'excerpt': old['title'], 'stance': 'negative', 'relation': 'direct'}]))])
-    result = await Runner(settings, p, tools).run('그중 부정적인 뉴스만 자세히 설명해줘', context)
+    result = await fixture_graph(settings, p, tools).run('그중 부정적인 뉴스만 자세히 설명해줘', context)
     assert result['status'] == 'completed'
     assert result['answer']['sources'][0]['historical'] is True
     assert not tools.fresh_ids
@@ -222,13 +223,13 @@ async def test_followup_keeps_exact_prior_sources_but_not_fresh(settings):
 @pytest.mark.asyncio
 async def test_partial_coverage_cannot_disappear_and_hard_call_limits(settings):
     s = replace(settings, symbols=1)
-    result = await Runner(s, AdaptiveProvider('composite'), toolkit(s)).run('RSI 30 이하 종목 뉴스', [])
+    result = await fixture_graph(s, AdaptiveProvider('composite'), toolkit(s)).run('RSI 30 이하 종목 뉴스', [])
     assert '미조사' in result['answer']['content']
     s = replace(settings, rounds=1)
-    result = await Runner(s, AdaptiveProvider('news'), toolkit(s)).run('삼성전자 뉴스', [])
+    result = await fixture_graph(s, AdaptiveProvider('news'), toolkit(s)).run('삼성전자 뉴스', [])
     assert result['error_code'] == 'model_round_limit'
     s = replace(settings, tool_calls=1)
-    result = await Runner(s, AdaptiveProvider('news'), toolkit(s)).run('삼성전자 뉴스', [])
+    result = await fixture_graph(s, AdaptiveProvider('news'), toolkit(s)).run('삼성전자 뉴스', [])
     assert result['error_code'] == 'tool_call_limit'
     t = toolkit(settings)
     t.budget.external = settings.external_requests
@@ -264,7 +265,7 @@ async def test_sdk_parameters_real_official_sdk_and_reasoning_call_continuity(se
         return httpx.Response(200, json={'id': 'resp_' + str(len(requests)), 'object': 'response', 'created_at': 1, 'status': 'completed', 'model': 'gpt-6-luna', 'output': output,
               'usage': {'input_tokens': 20, 'output_tokens': 10, 'total_tokens': 30, 'output_tokens_details': {'reasoning_tokens': 3}, 'input_tokens_details': {'cached_tokens': 0}}})
     client = AsyncOpenAI(api_key='fixture-never-network', http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), max_retries=0)
-    result = await Runner(settings, OpenAIProvider(settings, client), toolkit(settings)).run('삼성전자 뉴스', [])
+    result = await fixture_graph(settings, OpenAIProvider(settings, client), toolkit(settings)).run('삼성전자 뉴스', [])
     assert result['status'] == 'completed'
     assert requests[0]['model'] == 'gpt-6-luna' and requests[0]['store'] is False
     assert requests[0]['text']['format']['type'] == 'json_schema'

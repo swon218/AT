@@ -71,9 +71,11 @@ DESCRIPTIONS = {
 }
 
 
-def tools_schema():
+def tools_schema(allowed=None):
     tools = []
     for name, model in TOOL_MODELS.items():
+        if allowed is not None and name not in allowed:
+            continue
         parameters = model.model_json_schema()
         # Include an explicit empty required list for the zero-argument context tool too.
         parameters.setdefault('required', list(parameters.get('properties', {})))
@@ -108,6 +110,8 @@ class Step(Strict):
     seq: int = Field(ge=1, le=100)
     kind: Literal['model', 'tool', 'validation']
     name: str = Field(max_length=60)
+    agent: str = Field(max_length=20)
+    architecture: str = Field(max_length=40)
     status: Literal['started', 'success', 'empty', 'partial', 'error']
     arguments: dict
     result: dict

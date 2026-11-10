@@ -7,7 +7,7 @@ import pytest
 
 from ai_agent.config import Settings
 from ai_agent.indicators import key, series
-from ai_agent.runner import Runner
+from .fixtures import fixture_graph
 from ai_agent.screen_models import AdvancedMetric, IndicatorLookup, StockScreen
 from ai_agent.screen_engine import ScreenEngine
 from ai_agent.tools import ResearchTools
@@ -127,13 +127,13 @@ async def test_agent_cites_real_calculation_and_explanation_without_tools(data):
     tools = ResearchTools(settings, now=NOW, screen_engine=engine)
     value = (await tools.execute('get_stock_indicators', json.dumps(query)))['items'][0]
     claim = {'text': value['excerpt'], 'evidence_id': value['id'], 'excerpt': value['excerpt'], 'stance': 'neutral', 'relation': 'direct'}
-    result = await Runner(settings, ScriptedProvider([call('resolve_symbol', {'query': '삼성전자'}),
+    result = await fixture_graph(settings, ScriptedProvider([call('resolve_symbol', {'query': '삼성전자'}),
         call('get_stock_indicators', query), answer(final('research', '확정 일봉 지표를 확인했습니다.', [claim]))]),
         ResearchTools(settings, now=NOW, screen_engine=engine)).run('삼성전자 ATR 알려줘', [])
     assert result['status'] == 'completed'
     assert value['excerpt'] in result['answer']['content']
     assert result['answer']['result_sets'][0]['items'][0]['value'] == value['value']
-    concept = await Runner(settings, ScriptedProvider([answer(final('concept', 'ADX는 추세 강도를 측정합니다.'))]),
+    concept = await fixture_graph(settings, ScriptedProvider([answer(final('concept', 'ADX는 추세 강도를 측정합니다.'))]),
         ResearchTools(settings, now=NOW, screen_engine=engine)).run('ADX가 뭐야?', [])
     assert concept['status'] == 'completed' and not any(s['kind'] == 'tool' for s in concept['steps'])
     rejected = await tools.execute('get_stock_indicators', json.dumps({'code': '005930', 'metrics': [metric('vwap')]}))

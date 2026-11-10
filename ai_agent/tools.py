@@ -107,10 +107,14 @@ class NewsSource:
                 raise ToolError('news_connection_failed', True) from None
         task = asyncio.create_task(fetch())
         self.pending[key] = task
-        try:
-            return await task
-        finally:
-            self.pending.pop(key, None)
+        def finished(completed):
+            if self.pending.get(key) is completed:
+                self.pending.pop(key, None)
+            # The bounded public lookup may finish after every consumer has left.
+            if not completed.cancelled():
+                completed.exception()
+        task.add_done_callback(finished)
+        return await asyncio.shield(task)
 
 
 class ResearchTools:

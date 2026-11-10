@@ -25,12 +25,19 @@ export function compareRuns(a,b) {
   const left=new Map(a.items.map(i=>[key(i),i])); const right=new Map(b.items.map(i=>[key(i),i]))
   return [...new Set([...left.keys(),...right.keys()])].map(k=>{
     const x=left.get(k),y=right.get(k)
-    const comparable=x&&y&&x.revision===y.revision&&a.run.mode===b.run.mode&&x.fingerprint&&x.fingerprint===y.fingerprint
+    const firstMetadata=x?.metadata,lastMetadata=y?.metadata
+    const stableSettings=value=>JSON.stringify(Object.entries(value||{}).sort(([a],[b])=>a.localeCompare(b)))
+    const sameInputs=firstMetadata?.data_hash&&firstMetadata.data_hash===lastMetadata?.data_hash
+      &&['dataset','model','now'].every(field=>firstMetadata[field]&&firstMetadata[field]===lastMetadata[field])
+      &&firstMetadata.settings&&lastMetadata.settings&&stableSettings(firstMetadata.settings)===stableSettings(lastMetadata.settings)
+    const comparable=x&&y&&x.revision===y.revision&&a.run.mode===b.run.mode
+      &&((x.fingerprint&&x.fingerprint===y.fingerprint)||sameInputs)
     const first=x&&verdict(x),last=y&&verdict(y)
     let change='조건이 달라 직접 비교 불가'
     if(comparable){
       change=first==='pass'&&last==='pass'?'계속 통과':first==='fail'&&last==='pass'?'실패 → 통과':first==='pass'&&last==='fail'?'통과 → 실패':first==='fail'&&last==='fail'?'계속 실패':'검토·미실행 항목 포함'
     }
-    return {key:k,title:y?.title||x?.title,first,last,change}
+    return {key:k,title:y?.title||x?.title,first,last,change,
+      firstArchitecture:firstMetadata?.architecture||'구조 미기록',lastArchitecture:lastMetadata?.architecture||'구조 미기록'}
   })
 }

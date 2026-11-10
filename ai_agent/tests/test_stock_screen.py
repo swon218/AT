@@ -13,7 +13,8 @@ from ai_agent.screen_models import StockScreen, Metric
 from ai_agent.screen_engine import ScreenEngine, ScreenSnapshotChanged
 from ai_agent.schemas import tools_schema
 from ai_agent.tools import ResearchTools
-from ai_agent.runner import Runner, materialize
+from ai_agent.answers import materialize
+from .fixtures import fixture_graph
 from ai_agent.schemas import Final
 from .fixtures import NOW, make_lab, call, answer, final
 
@@ -210,7 +211,7 @@ async def test_adaptive_model_uses_actual_shared_engine_evidence(settings, engin
             assert result['coverage']['matches'] == 2
             return answer(final('research', '공통 일봉에서 조건을 충족하는 종목을 확인했습니다.',
                 [{'text': r['excerpt'], 'excerpt': r['excerpt'], 'evidence_id': r['id'], 'stance': 'neutral', 'relation': 'direct'} for r in result['items']]))
-    result = await Runner(settings, Model(), ResearchTools(settings, now=NOW, screen_engine=engine)).run('20일선 아래 종목 찾아줘', [])
+    result = await fixture_graph(settings, Model(), ResearchTools(settings, now=NOW, screen_engine=engine)).run('20일선 아래 종목 찾아줘', [])
     assert result['status'] == 'completed', result
     assert result['answer']['result_sets'][0]['query']['conditions'][0]['right']['metric']['name'] == 'sma'
     assert len(result['answer']['sources']) == 2

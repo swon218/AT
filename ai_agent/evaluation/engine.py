@@ -1,4 +1,4 @@
-"""Real Runner with isolated data; no account, alert worker, or broker writes."""
+"""Production graph with isolated data; no account, alert worker, or broker writes."""
 import asyncio
 from dataclasses import replace
 from datetime import datetime
@@ -15,7 +15,8 @@ from lab.store import connect, save_rows
 from ai_agent.config import Settings
 from ai_agent.market import expected_sessions
 from ai_agent.provider import OpenAIProvider, Turn
-from ai_agent.runner import Runner, SYSTEM
+from ai_agent.graph import ResearchGraph
+from ai_agent.roles import ARCHITECTURE, DELEGATE, ORCHESTRATOR, SPECIALISTS, MAX_PARALLEL, MAX_WAVES
 from ai_agent.schemas import tools_schema
 from ai_agent.screen_engine import ScreenEngine
 from ai_agent.screener import RsiScreener
@@ -40,7 +41,13 @@ def metadata(settings):
         sha=subprocess.run(['git','rev-parse','HEAD'],cwd=root,capture_output=True,text=True,timeout=3,check=True).stdout.strip()
         dirty=bool(subprocess.run(['git','status','--porcelain','--untracked-files=no'],cwd=root,capture_output=True,text=True,timeout=3,check=True).stdout)
     except (OSError,subprocess.SubprocessError): sha,dirty=None,None
-    return {'code_sha':sha,'dirty':dirty,'code_hash':code,'prompt_hash':digest(SYSTEM),'schema_hash':digest(tools_schema()),
+    from importlib.metadata import version
+    return {'code_sha':sha,'dirty':dirty,'code_hash':code,
+            'architecture':ARCHITECTURE,'framework_version':version('langgraph'),
+            'prompt_hash':digest({'orchestrator':ORCHESTRATOR,**{name:role.instructions for name,role in SPECIALISTS.items()}}),
+            'schema_hash':digest([DELEGATE,tools_schema()]),
+            'role_manifest':{name:list(role.tools) for name,role in SPECIALISTS.items()},
+            'graph_limits':{'parallel':MAX_PARALLEL,'batches':MAX_WAVES},
             'dataset':DATASET,'data_hash':digest({'stocks':STOCKS,'now':NOW,'generator':inspect.getsource(make_data),'news':inspect.getsource(transport_for),'state':inspect.getsource(state_for)}),
             'now':NOW.isoformat(),'model':settings.model,'settings':{k:getattr(settings,k) for k in ('rounds','tool_calls','tokens','seconds','max_usd','output_tokens','input_usd_per_million','output_usd_per_million')}}
 
@@ -78,17 +85,18 @@ def transport_for(scenario):
 class RecordedTools(ResearchTools):
     async def execute(self,name,args):
         result=await super().execute(name,args)
-        self.outputs.append({'name':name,'arguments':json.loads(args),'result':result})
+        self.outputs.append({'agent':getattr(self,'agent','unassigned'),'name':name,'arguments':json.loads(args),'result':result})
         return result
 
 
 class ContractProvider:
     """Deterministic plumbing probe. Explicitly NOT a model-quality evaluation."""
-    def __init__(self): self.called=False
     async def respond(self,items,instructions,tools,output_limit):
         usage={'input_tokens':0,'output_tokens':0,'reasoning_tokens':0,'cached_tokens':0}
-        if not self.called:
-            self.called=True
+        if any(tool['name']=='delegate_research' for tool in tools) and not any(item.get('type')=='function_call_output' for item in items):
+            task={'agent':'technical','goal':'고정된 평가 시각과 달력 확인','symbols':[], 'period':None,'constraints':'공개 달력만 확인','deliverable':'시각과 조회 범위'}
+            return Turn([{'type':'function_call','call_id':str(uuid4()),'name':'delegate_research','arguments':json.dumps({'tasks':[task]})}],'',usage)
+        if not any(item.get('type')=='function_call_output' for item in items):
             return Turn([{'type':'function_call','call_id':str(uuid4()),'name':'get_market_context','arguments':'{}'}],'',usage)
         text=json.dumps({'kind':'concept','summary':'평가 실행 경로를 확인했습니다. 질문 이해 품질 검증은 실제 모델 평가가 필요합니다.','sentiment':'자료 부족','claims':[],'uncertainty':['코드 검증용 모의 응답입니다.']},ensure_ascii=False)
         return Turn([],text,usage)
@@ -98,7 +106,7 @@ def grade(spec,result,outputs,mode):
     checks=[]
     def add(name,ok,critical=False): checks.append({'name':name,'status':'pass' if ok else 'fail','critical':critical})
     if mode=='code':
-        add('공통 Runner·고정 시각 도구 실행',result['status']=='completed' and any(o['name']=='get_market_context' for o in outputs))
+        add('운영 LangGraph·전문 담당·고정 시각 도구 실행',result['status']=='completed' and any(o['name']=='get_market_context' for o in outputs) and result.get('architecture')==ARCHITECTURE)
         checks.append({'name':'질문 이해·도구 선택·답변 품질','status':'na','critical':False})
         return checks,'review'
     action=result.get('alert_action') or {}
@@ -135,16 +143,17 @@ async def evaluate(job,settings,provider=None):
                             screener=RsiScreener(),screen_engine=ScreenEngine())
         tools.outputs=[]
         p=provider or (ContractProvider() if mode=='code' else OpenAIProvider(s))
-        try: result=await Runner(s,p,tools).run(spec['question'],spec['context'])
+        try: result=await ResearchGraph(s,p,tools).run(spec['question'],spec['context'])
         finally:
             if isinstance(p,OpenAIProvider) and p.client: await p.client.close()
             tools.screener.close()
             tools.screen_engine.close()
         checks,grade_value=grade(spec,result,tools.outputs,mode)
-        fingerprint=digest({'spec':spec,'metadata':{k:v for k,v in job.get('metadata',{}).items() if k not in ('code_sha','code_hash','dirty','prompt_hash','schema_hash')},'mode':mode})
+        fingerprint=digest({'spec':spec,'metadata':{k:v for k,v in job.get('metadata',{}).items() if k not in ('code_sha','code_hash','dirty','prompt_hash','schema_hash','architecture','framework_version','role_manifest','graph_limits')},'mode':mode})
         result.update(checks=checks,grade=grade_value,fingerprint=fingerprint,elapsed_ms=round((time.monotonic()-started)*1000),tool_outputs=tools.outputs,
                       web_verification='not_run',scenario=spec['scenario'])
-        if mode=='code': result['usage']={'status':'known','budget_usd':0,'input_tokens':0,'output_tokens':0,'model_calls':0}
+        if mode=='code':
+            result['usage'].update(provider='fixture',paid_model_calls=0)
         # Node builds the same server-authored alert card using an in-memory store.
         result['eval_state']=context
         if len(json.dumps(result,ensure_ascii=False).encode())>185000:

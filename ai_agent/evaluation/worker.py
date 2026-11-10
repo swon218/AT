@@ -25,7 +25,7 @@ async def main():
         while not stopped.is_set():
             try:
                 info=metadata(settings)
-                info.update(key_configured=bool(settings.api_key),worker_version='eval-v1')
+                info.update(key_configured=bool(settings.api_key),worker_version='eval-langgraph-v1')
                 job=await call('claim',info)
                 if job:
                     async def heartbeat():

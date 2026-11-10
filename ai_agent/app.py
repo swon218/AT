@@ -10,7 +10,8 @@ import httpx
 from .config import Settings
 from .market import KST, calendar
 from .provider import OpenAIProvider
-from .runner import Runner
+from .graph import ResearchGraph
+from .roles import ARCHITECTURE
 from .schemas import RunInput
 from .tools import NewsSource, ResearchTools
 from .screen_models import StockScreen
@@ -51,7 +52,7 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
     async def health(x_atlas_internal: str = Header(default='')):
         await authorize(x_atlas_internal)
         return {'ok': True, 'provider': recent, 'model': s.model, 'key_configured': bool(s.api_key),
-                'alert_tools': True,
+                'alert_tools': True, 'architecture': ARCHITECTURE,
                 'lab_ready': bool(s.lab_path and __import__('pathlib').Path(s.lab_path).is_file()),
                 'news_configured': bool(s.naver_id and s.naver_secret)}
 
@@ -150,7 +151,7 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
                         raise RuntimeError('Request no longer active')
         try:
             tools = tools_factory() if tools_factory else ResearchTools(s, news=news, context=body.context, alert_context=body.alert_context)
-            result = await Runner(s, model, tools, emit).run(body.question, body.context)
+            result = await ResearchGraph(s, model, tools, emit).run(body.question, body.context)
             if result['error_code'] in ('authentication_error', 'permission_error', 'billing_error', 'billing_or_rate_limit', 'connection_failed', 'provider_error'):
                 recent['state'] = result['error_code']
             recent['error_code'] = result['error_code']
