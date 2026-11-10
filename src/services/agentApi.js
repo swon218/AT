@@ -24,6 +24,11 @@ export const agentErrors = {
   alert_expired: '만료일을 확인해 주세요. 오늘부터 30일 이내로 지정할 수 있습니다.',
   alert_invalid: '알림 조건과 선택한 종목을 확인해 주세요.',
   alert_dispatch_in_progress: '발송 요청을 마치는 중입니다. 잠시 후 다시 시도해 주세요.',
+  alert_version_conflict: '다른 곳에서 조건이 변경되었습니다. 최신 상태를 확인해 주세요.',
+  alert_request_conflict: '이전에 처리한 요청과 내용이 다릅니다. 최신 상태를 확인해 주세요.',
+  alert_invalid_state: '조건의 상태가 바뀌었습니다. 최신 상태를 확인해 주세요.',
+  alert_duplicate_condition: '같은 종목에 동일한 감시 조건이 이미 있습니다.',
+  alert_rule_limit: '종목마다 저장된 조건을 최대 10개까지 보관할 수 있습니다.',
   billing_error: 'OpenAI 결제 오류입니다.', billing_or_rate_limit: 'OpenAI 결제 한도 또는 요청 제한 오류입니다.',
 }
 export async function agentApi(path, { method = 'GET', body, userId, signal } = {}) {
@@ -37,7 +42,7 @@ export async function agentApi(path, { method = 'GET', body, userId, signal } = 
   try { response = await fetch(`/api/agent${path}`, { method, headers, credentials: 'same-origin', ...(body ? { body: JSON.stringify(body) } : {}), signal }) }
   catch (exc) { if (exc.name === 'AbortError') throw exc; throw new Error('AI 서버에 연결하지 못했습니다. 같은 질문을 재전송하면 요청 ID로 중복 실행을 방지합니다.') }
   const result = await response.json().catch(() => ({ error: 'agent_unavailable' }))
-  if (!response.ok) throw new Error(agentErrors[result.error] || `AI 요청 실패: ${result.error || response.status}`)
+  if (!response.ok) throw Object.assign(new Error(agentErrors[result.error] || `AI 요청 실패: ${result.error || response.status}`), { code: result.error })
   return result
 }
 export function safeAgentLink(value) {

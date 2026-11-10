@@ -9,6 +9,7 @@ class AlertTools:
     def __init__(self, context, now):
         self.available = context is not None
         self.watchlist = (context or {}).get('watchlist', [])[:20]
+        self.rules = [rule for rule in (context or {}).get('rules', []) if rule.get('rule_id')]
         self.draft = (context or {}).get('draft')
         self.today = now.astimezone(KST).date()
 
@@ -19,6 +20,7 @@ class AlertTools:
 
     def editor(self):
         return {'status': 'success', 'items': self.watchlist,
+                'saved': [{k: v for k, v in rule.items() if k != 'version'} for rule in self.rules],
                 'draft': {k: v for k, v in self.draft.items() if k != 'id'} if self.draft else None,
                 'login_required': not self.available}
 
@@ -39,29 +41,35 @@ class AlertTools:
         explicit = re.search(r'(?:매입가|매수가|평균단가|고점|저점|현재\s*시점|시가)\s*(?:대비|기준)(?!\s*(?:말고|아니))', question)
         if args.basis == 'unsupported' or explicit:
             return {'kind': 'unsupported'}
-        edit = args.action == 'edit'
-        if edit and not self.draft:
+        edit_draft = args.action == 'edit'
+        edit_saved = args.action == 'edit_saved'
+        if edit_draft and not self.draft:
             return {'kind': 'ambiguous'}
         if args.symbol:
             matches = self.resolve(args.symbol)
             if len(matches) != 1:
                 return {'kind': 'ambiguous' if matches else 'watchlist_required'}
             code = matches[0]['code']
-        elif edit:
+        elif edit_draft:
             code = self.draft['code']
         else:
             return {'kind': 'ambiguous'}
-        if edit and code != self.draft['code']:
+        if edit_draft and code != self.draft['code']:
             return {'kind': 'ambiguous'}
-        old = self.draft if edit else {}
+        target = None
+        if edit_saved:
+            target = next((rule for rule in self.rules if rule['code'] == code and rule['rule_id'] == args.rule_id), None)
+            if target is None:
+                return {'kind': 'ambiguous_rule', 'code': code}
+        old = target or (self.draft if edit_draft else {})
         kind = args.kind or old.get('kind')
         threshold = args.threshold if args.threshold is not None else old.get('threshold')
-        expires_on = args.expires_on or (old.get('expires_on') if edit else (self.today + timedelta(days=7)).isoformat())
+        expires_on = args.expires_on or (old.get('expires_on') if old else (self.today + timedelta(days=7)).isoformat())
         if kind not in ('price_gte', 'price_lte', 'rise_gte', 'fall_lte') or threshold is None or expires_on is None:
             return {'kind': 'invalid'}
         price = kind.startswith('price')
         basis = 'price' if price else 'previous_close'
-        if args.basis != basis and not (edit and args.basis == 'same' and kind == old.get('kind')):
+        if args.basis != basis and not (old and args.basis == 'same' and kind == old.get('kind')):
             return {'kind': 'invalid'}
         magnitude = Decimal(str(threshold))
         if price and (magnitude < 1 or magnitude != int(magnitude)) or not price and (
@@ -70,5 +78,6 @@ class AlertTools:
             return {'kind': 'invalid'}
         if not self.today.isoformat() <= expires_on <= (self.today + timedelta(days=30)).isoformat():
             return {'kind': 'invalid'}
-        return {'kind': 'draft', 'edit': edit,
+        return {'kind': 'draft', 'edit': edit_draft,
+                **({'rule_id': target['rule_id'], 'version': target['version']} if target else {}),
                 'rule': {'code': code, 'kind': kind, 'threshold': threshold, 'expires_on': expires_on}}

@@ -34,7 +34,8 @@ class Details(Strict):
 
 
 class AlertProposal(Strict):
-    action: Literal['create', 'edit']
+    action: Literal['create', 'edit', 'edit_saved']
+    rule_id: str | None = Field(pattern=r'^[0-9a-fA-F-]{36}$')
     symbol: str | None = Field(max_length=60)
     basis: Literal['price', 'previous_close', 'same', 'unsupported']
     kind: Literal['price_gte', 'price_lte', 'rise_gte', 'fall_lte'] | None
@@ -56,8 +57,8 @@ DESCRIPTIONS = {
     'screen_rsi': 'Read-only local daily SQLite; calculate Wilder RSI(14) on completed bars. Sorted RSI ascending, code ascending. Limited collected universe, quality exclusions and pagination. Never realtime.',
     'get_stock_news': 'Search Naver for a previously resolved/screened code, bounded time period and page. Title/snippet only; optional short event keyword, no URL access. Read actual previous results before choosing codes or another page.',
     'get_news_details': 'Read only already acquired article IDs from this room/run. Returns the acquired title/snippet, never fabricated full text or arbitrary URL contents.',
-    'get_alert_editor': 'Read the current unsaved alert draft for THIS room and the authenticated member watchlist. Use before editing or resolving ambiguity.',
-    'propose_alert': 'Propose an unsaved alert draft only. For new alerts use exact stock name/code. For a follow-up edit only use this room draft, symbol=null or the same stock, and null for unchanged fields. Basis price means specified KRW price, previous_close means previous session closing price. A bare % fall/rise defaults to previous_close; never map explicit unsupported bases to it. Positive magnitude for both rise/fall. Null expiration on a new draft proposes 7 calendar days. Never save/start/send.',
+    'get_alert_editor': 'Read the current unsaved draft for this room, the member watchlist and saved conditions with their rule IDs. Use before editing or resolving ambiguity.',
+    'propose_alert': 'Propose an unsaved draft. Create adds a separate condition (exact symbol, rule_id=null). Edit amends this room draft (symbol=null or same symbol, rule_id=null). Edit_saved proposes changes to one saved condition. Supply its exact symbol and rule_id from get_alert_editor only if the user uniquely identified it; otherwise pass rule_id=null to ask the user to choose. Pass null for unchanged fields. Basis price is a KRW price; previous_close is previous session close, the default for bare % fall/rise. Use positive magnitude and do not map unsupported bases. Null expiration for a new draft proposes 7 days. Never save, start, cancel or send.',
     'get_alert_status': 'Request a server-authored view of persisted alert rules and recent delivery history for the authenticated member. Use exact symbol or null for all.',
 }
 

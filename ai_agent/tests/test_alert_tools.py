@@ -8,7 +8,7 @@ from ai_agent.schemas import AlertProposal
 def proposal(**patch):
     return AlertProposal.model_validate({
         'action': 'create', 'symbol': '브이엠', 'basis': 'previous_close',
-        'kind': 'fall_lte', 'threshold': 5, 'expires_on': None, **patch,
+        'kind': 'fall_lte', 'threshold': 5, 'expires_on': None, 'rule_id': None, **patch,
     })
 
 
@@ -26,6 +26,24 @@ def test_draft_only_exact_watchlist_and_explicit_basis():
     assert tools.editor()['draft']['threshold'] == 6
     edit = proposal(action='edit', basis='same', symbol=None, threshold=7, kind=None)
     assert tools.propose(edit, '7%로 바꿔줘')['rule']['threshold'] == 7
+
+
+def test_saved_edit_requires_exact_rule_and_new_draft_stays_independent():
+    now = datetime(2026, 11, 10, 10, tzinfo=KST)
+    first = '11111111-1111-4111-8111-111111111111'
+    second = '22222222-2222-4222-8222-222222222222'
+    common = {'code': '089970', 'version': second, 'expires_on': '2026-11-17', 'status': 'active'}
+    tools = AlertTools({'watchlist': [{'name': '브이엠', 'code': '089970'}], 'rules': [
+        {**common, 'rule_id': first, 'kind': 'price_gte', 'threshold': 197500},
+        {**common, 'rule_id': second, 'kind': 'fall_lte', 'threshold': 5},
+    ]}, now)
+    edit = dict(action='edit_saved', basis='same', threshold=197600, kind=None)
+    assert len(tools.editor()['saved']) == 2
+    assert tools.propose(proposal(**edit), '브이엠 조건 수정')['kind'] == 'ambiguous_rule'
+    drafted = tools.propose(proposal(rule_id=first, **edit), '브이엠 197500원 이상을 197600원 이상으로 변경')
+    assert drafted['rule_id'] == first and drafted['version'] == second
+    assert drafted['rule']['threshold'] == 197600 and drafted['rule']['kind'] == 'price_gte'
+    assert 'rule_id' not in tools.propose(proposal(), '브이엠 5% 하락 조건 추가')
 
 
 def test_monitoring_calendar_uses_reviewed_sessions_and_previous_day():

@@ -35,7 +35,7 @@ async function watchlistResponse(user, body) {
   if (!watchlists.has(user)) watchlists.set(user, user === 'qa-full'
     ? Array.from({ length: 20 }, (_, index) => ({
       code: String(index + 1).padStart(6, '0'), name: `검증 종목 ${index + 1}`,
-    })) : [])
+    })) : user === 'qa-alerts' ? ranked.map(({ code, name }) => ({ code, name })) : [])
   const rows = watchlists.get(user)
   if (body?.fault) { faults.set(user, body.fault); return { data: [] } }
   if (!body) {
@@ -134,20 +134,26 @@ async function response(path, params, method, authorization, body) {
     const user = authorization?.slice('Bearer fixture-'.length)
     if (!user) return { error: 'invalid_authentication' }
     const { data: watchlist } = await watchlistResponse(user)
-    const rules = alertRules.get(user) || []
+    if (!alertRules.has(user)) alertRules.set(user, user === 'qa-alerts' ? [{
+      code: stock.code, kind: 'price_gte', threshold: 197500, expires_on: addAlertDays(koreanAlertDay(), 7),
+      rule_id: randomUUID(), version: randomUUID(), status: 'sent',
+    }] : [])
+    const rules = alertRules.get(user)
+    const history = user === 'qa-alerts' ? [{ ...stock, id: 'fixture-legacy', kind: 'price_gte', threshold: 197500,
+      observed_at: new Date().toISOString(), price: 197500, change_rate: 1, status: 'sent' }] : []
     if (method === 'POST') {
-      if (body.action === 'save') for (const rule of body.rules) {
+      if (body.action === 'create') for (const rule of body.rules) {
         if (!watchlist.some(row => row.code === rule.code)) return { error: 'alert_watchlist_required' }
-        const index = rules.findIndex(row => row.code === rule.code)
-        rules.splice(index === -1 ? rules.length : index, index === -1 ? 0 : 1, { ...rule, status: 'active' })
+        if (rules.some(row => row.status === 'active' && row.code === rule.code && row.kind === rule.kind && row.threshold === rule.threshold)) return { error: 'alert_duplicate_condition' }
+        rules.push({ ...rule, status: 'active', rule_id: randomUUID(), version: randomUUID() })
       }
-      if (body.action !== 'save') {
-        const rule = rules.find(row => row.code === body.code)
-        if (rule) rule.status = body.action === 'stop' ? 'stopped' : 'active'
+      if (body.action !== 'create') {
+        const rule = rules.find(row => row.rule_id === body.rule_id && row.version === body.version)
+        if (!rule) return { error: 'alert_version_conflict' }
+        Object.assign(rule, body.rule, { version: randomUUID(), status: body.action === 'cancel' ? 'canceled' : 'active' })
       }
-      alertRules.set(user, rules)
     }
-    return { watchlist, rules, history: [], kakao: 'ready', enabled: true, consentAvailable: true }
+    return { watchlist, rules, history, kakao: 'ready', enabled: true, consentAvailable: true, ruleManagement: true }
   }
   if (path === '/api/agent/rooms/1/requests' && method === 'POST') {
     const user = authorization?.slice('Bearer fixture-'.length)
@@ -157,12 +163,17 @@ async function response(path, params, method, authorization, body) {
     const edit = alert_editor?.draft
     const stock = watchlist?.find(row => edit ? row.code === edit.code : question.includes(row.name))
     const percent = /([0-9]+)%/.exec(question)
+    const saved = question.includes('저장 조건') && alertRules.get(user)?.find(row => row.code === stock?.code && row.status === 'active')
+    const price = saved && /([0-9]+)원/.exec(question)
     if (question.includes('늦은')) await delay(2500)
     const answer = { kind: 'concept', claims: [], sources: [], coverage: [], result_sets: [] }
-    const content = stock && percent ? `${stock.name} · 전일 종가 대비 ${percent[1]}% 하락 알림 초안` : '관심종목을 확인해 주세요.'
+    const content = price ? `${stock.name} · 저장 조건 변경 초안` : stock && percent ? `${stock.name} · 전일 종가 대비 ${percent[1]}% 하락 알림 초안` : '관심종목을 확인해 주세요.'
     if (stock && percent) answer.alertDraft = { code: stock.code, kind: edit?.kind || 'fall_lte', threshold: Number(percent[1]),
       expires_on: edit?.expires_on || addAlertDays(koreanAlertDay(), 7), id: edit?.id || randomUUID(),
       revision: randomUUID(), baseRevision: alert_editor?.revision ?? null, roomId: room.id, requestId: request_id }
+    if (price) answer.alertDraft = { code: saved.code, kind: saved.kind, threshold: Number(price[1]), expires_on: saved.expires_on,
+      rule_id: saved.rule_id, version: saved.version, id: randomUUID(), revision: randomUUID(),
+      baseRevision: alert_editor?.revision ?? null, roomId: room.id, requestId: request_id }
     messages.push({ id: String(messages.length + 3), role: 'user', content: question, request_id, created_at: room.updated_at },
       { id: String(messages.length + 4), role: 'assistant', content, request_id, answer, created_at: room.updated_at })
     alertMessages.set(user, messages)

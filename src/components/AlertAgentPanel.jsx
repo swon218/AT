@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, Bot, ChartNoAxesCombined, CircleAlert, CircleCheck, Info, LockKeyhole } from 'lucide-react'
-import { ALERT_KINDS, addAlertDays, alertCondition, alertExpiry, alertThreshold, koreanAlertDay, priceRule } from '../../shared/alertRules'
+import { ALERT_KINDS, ALERT_RULES_PER_SYMBOL, addAlertDays, alertCondition, alertExpiry, alertThreshold, koreanAlertDay, priceRule } from '../../shared/alertRules'
 import { agentApi } from '../services/agentApi'
+import { displayAlertStatus, reasons, stateLabels } from '../utils/alertPresentation'
 import AlertHelp from './AlertHelp'
+import AlertManageDialog from './AlertManageDialog'
 import './AlertAgentPanel.css'
 
 export const agentModes = [
@@ -35,16 +37,6 @@ export function TradingAgentPanel() {
   </section>
 }
 
-const stateLabels = {
-  active: '감시 중', stopped: '중지', expired: '만료', queued: '조건 충족 · 발송 대기',
-  sending: '카카오 발송 요청 중', sent: '카카오 전송 성공', failed: '발송 실패',
-  unknown: '발송 결과 확인 불가', canceled: '발송 취소',
-}
-const reasons = {
-  quote_unavailable: '시세 확인 불가', kakao_required: '카카오 재연결 또는 메시지 동의 필요',
-  watchlist_removed: '관심종목 삭제', event_stale: '관측 시각 만료', expired: '만료일 경과',
-  quota: '카카오 발송 한도', market_closed: '정규장 종료',
-}
 const kakaoStates = {
   ready: ['카카오 메시지 전송 동의 완료', CircleCheck, 'success'],
   consent_required: ['카카오 연결됨 · 메시지 전송 동의 필요', Info, 'warning'],
@@ -53,8 +45,7 @@ const kakaoStates = {
   disconnected: ['카카오 연결 필요', Info, 'neutral'],
 }
 const toTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'medium' })
-const editable = (row, rule) => ({ kind: rule?.kind || '', threshold: rule?.threshold ?? '',
-  expires_on: rule?.expires_on || '', ...row })
+const editable = row => ({ kind: '', threshold: '', expires_on: '', ...row })
 
 export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, notice, onLogin, onKakao, settingsOpen }) {
   const [data, setData] = useState(null)
@@ -62,9 +53,14 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(Boolean(userId))
   const [activeHelp, setActiveHelp] = useState(null)
+  const [manager, setManager] = useState(null)
+  const [mutationMessage, setMutationMessage] = useState(null)
   const updateRef = useRef(0)
   const mounted = useRef(false)
   const history = useRef(null)
+  const manageButton = useRef(null)
+  const busyRef = useRef(false)
+  const intents = useRef(new Map())
   const draft = drafts.room(roomId)
   const today = koreanAlertDay()
 
@@ -95,53 +91,82 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
   }, [userId, settingsOpen, watchlist.rows])
 
   const rows = watchlist.ready ? watchlist.rows : data?.watchlist || []
-  const byCode = new Map((data?.rules || []).map(rule => [rule.code, rule]))
+  const byCode = new Map()
+  for (const rule of data?.rules || []) {
+    if (!byCode.has(rule.code)) byCode.set(rule.code, [])
+    byCode.get(rule.code).push(rule)
+  }
   const chatDrafts = rows.filter(({ code }) => draft.rows[code]?.roomId === roomId && draft.rows[code]?.dirty)
-  const changesExistingAlert = chatDrafts.some(({ code }) => {
-    const saved = byCode.get(code)
-    return saved?.expires_on >= today && ['active', 'queued'].includes(saved.status)
-  })
+  const savedDrafts = Object.values(draft.saved)
   const [kakaoLabel, KakaoStatusIcon, kakaoTone] = kakaoStates[data?.kakao] ?? kakaoStates.disconnected
   const help = { active: activeHelp, setActive: setActiveHelp }
   const selected = rows.filter(({ code }) => draft.rows[code]?.selected)
   const rules = selected.map(({ code }) => {
-    const row = editable(draft.rows[code], byCode.get(code))
+    const row = editable(draft.rows[code])
     return { code, kind: row.kind, threshold: alertThreshold(row.kind, row.threshold), expires_on: row.expires_on }
   })
   const valid = rules.length > 0 && rules.every(rule => rule.threshold !== null && alertExpiry(rule.expires_on, today))
-  const canActivate = !busy && data?.enabled && data.kakao === 'ready'
+  const available = data?.ruleManagement === true
+  const canActivate = available && data.enabled && data.kakao === 'ready'
+  const atLimit = selected.some(({ code }) => (byCode.get(code)?.length || 0) >= ALERT_RULES_PER_SYMBOL)
   const edit = (code, patch) => {
-    const row = editable(draft.rows[code], byCode.get(code))
+    const row = editable(draft.rows[code])
     drafts.edit(roomId, code, { ...row, ...patch })
+    setMutationMessage(null)
+  }
+  function openManager(event, code, savedDraft) {
+    setActiveHelp(null)
+    setManager({ trigger: event.currentTarget, code, draft: savedDraft })
+  }
+  function closeManager() {
+    const trigger = manager.trigger
+    setManager(null)
+    requestAnimationFrame(() => (trigger.isConnected ? trigger : manageButton.current)?.focus())
   }
   async function change(body) {
+    if (busyRef.current) return { ok: false, message: '앞선 변경을 처리하고 있습니다.' }
+    busyRef.current = true
     setBusy(true)
-    setError('')
     ++updateRef.current
+    const key = JSON.stringify(body)
+    const operation = intents.current.get(key) || crypto.randomUUID()
+    intents.current.set(key, operation)
     try {
-      const result = await agentApi('/alerts', { method: 'POST', body, userId })
-      if (!mounted.current) return
-      ++updateRef.current
-      setData(result)
-      if (body.action === 'save') drafts.clear(roomId, body.rules.map(rule => rule.code), draft.revision)
+      const result = await agentApi('/alerts', { method: 'POST', body: { ...body, operation }, userId, signal: AbortSignal.timeout(45_000) })
+      intents.current.delete(key)
+      if (mounted.current) { ++updateRef.current; setData(result); setError('') }
+      return { ok: true }
     } catch (cause) {
-      if (mounted.current) setError(cause.message)
+      if (cause.code && cause.code !== 'alert_unavailable' && cause.code !== 'agent_proxy_unavailable') intents.current.delete(key)
+      if (mounted.current) {
+        const run = ++updateRef.current
+        const latest = await agentApi('/alerts', { userId, signal: AbortSignal.timeout(8000) }).catch(() => null)
+        if (latest && mounted.current && run === updateRef.current) setData(latest)
+      }
+      return { ok: false, message: cause.message }
     } finally {
+      busyRef.current = false
       if (mounted.current) { setBusy(false); setLoading(false) }
     }
+  }
+  async function createSelected() {
+    setMutationMessage(null)
+    const result = await change({ action: 'create', rules })
+    if (!mounted.current) return
+    if (result.ok) drafts.clear(roomId, rules.map(rule => rule.code), draft.revision)
+    setMutationMessage({ ...result, message: result.ok ? '새 알림 조건을 저장했습니다.' : result.message })
   }
 
   return <section className="agent-mode-card alert-agent" aria-label="관심종목 알림 설정">
     <div className="alert-heading">
       <div className="alert-title"><h2>관심종목 알림</h2>
-        <AlertHelp {...help} label="관심종목 알림 안내">KRX 정규장에 등록한 조건이 충족되면 종목별로 한 번 발송합니다.</AlertHelp>
+        <AlertHelp {...help} label="관심종목 알림 안내">KRX 정규장에 저장한 조건이 충족되면 조건별로 한 번 발송합니다. 같은 종목에 여러 조건을 설정할 수 있습니다. 발송 완료된 조건은 다시 시작하기 전까지 재발송하지 않습니다.</AlertHelp>
       </div>
       <div className="alert-channel">
         <div className="alert-channel-actions">
           {userId ? <button type="button" className="alert-kakao-settings" onClick={onKakao}>카카오 연결 설정</button> : <button type="button" onClick={onLogin}>로그인</button>}
           <AlertHelp {...help} label="카카오 전송 방식 안내">카카오톡 나와의 채팅에 메시지를 남깁니다. 푸시 알림이나 알림음은 발생하지 않습니다.</AlertHelp>
         </div>
-        <p className="alert-caption">나와의 채팅으로 전송 · 푸시/알림음 없음</p>
       </div>
     </div>
     {!userId ? <p role="status">로그인하면 관심종목의 알림 조건을 설정할 수 있습니다.</p> : <>
@@ -149,23 +174,30 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
       {data && <p role="status" className="alert-message alert-kakao-status" data-tone={kakaoTone}>
         <KakaoStatusIcon size={14} aria-hidden="true"/><span>{kakaoLabel}{!data.enabled && ' · 알림 감시 준비 중'}</span>
       </p>}
+      {data && !available && <p role="status" className="alert-message">알림 관리 업데이트 적용을 기다리는 중입니다.</p>}
       {chatDrafts.length > 0 && <div className="alert-draft-notice">
-        <p role="status" className="alert-message">{!data || changesExistingAlert
-          ? '미저장 초안 · 변경 사항은 저장 후 적용됩니다.' : '미저장 초안 · 저장 후 알림이 시작됩니다.'}</p>
-        <AlertHelp {...help} label="미저장 초안 안내">{changesExistingAlert
-          ? '대화에서 요청한 조건을 입력했습니다. 저장할 때까지 기존 알림 조건이 유지됩니다.'
-          : '대화에서 요청한 조건을 입력했습니다. 내용을 확인한 뒤 저장해야 알림이 활성화됩니다.'}</AlertHelp>
+        <p role="status" className="alert-message">미저장 초안 · 저장 후 알림이 시작됩니다.</p>
+        <AlertHelp {...help} label="미저장 초안 안내">대화에서 요청한 조건을 입력했습니다. 내용을 확인한 뒤 저장해야 알림이 활성화됩니다.</AlertHelp>
       </div>}
+      {savedDrafts.map(saved => <div key={saved.rule_id} className="alert-draft-notice alert-saved-draft">
+        <p role="status" className="alert-message">미저장 변경 · {rows.find(row => row.code === saved.code)?.name || saved.code} · {alertCondition(saved.kind, saved.threshold)} · 저장 후 적용</p>
+        <button type="button" onClick={event => openManager(event, saved.code, saved)}>초안 확인</button>
+        <button type="button" onClick={() => drafts.clearSaved(roomId, saved)}>초안 버리기</button>
+      </div>)}
       {notice && <p role="status" className="alert-message">{notice}</p>}
       {error && <p className="alert-error" role="alert">{error}</p>}
       {!loading && rows.length === 0 && <p>관심종목을 등록하면 이 표에서 조건을 선택할 수 있습니다.</p>}
       {rows.length > 0 && <div className="alert-table-scroll" tabIndex={0} role="region" aria-label="종목별 알림 조건 표">
         <table><thead><tr><th scope="col">대상</th><th scope="col">종목</th><th scope="col">조건 종류</th><th scope="col">조건값 · 기준</th>
-          <th scope="col">만료일</th><th scope="col">저장된 상태</th><th scope="col">관리</th></tr></thead>
+          <th scope="col">만료일</th><th scope="col">저장된 조건</th><th scope="col">관리</th></tr></thead>
           <tbody>{rows.map(({ code, name }) => {
-            const rule = byCode.get(code)
-            const row = editable(draft.rows[code], rule)
-            const status = rule && (rule.expires_on < today && ['active', 'stopped', 'queued'].includes(rule.status) ? 'expired' : rule.status)
+            const saved = byCode.get(code) || []
+            const row = editable(draft.rows[code])
+            const counts = new Map()
+            for (const rule of saved) {
+              const status = displayAlertStatus(rule, today)
+              counts.set(status, (counts.get(status) || 0) + 1)
+            }
             return <tr key={code}>
               <td><input type="checkbox" aria-label={`${name} 알림 대상`} disabled={busy} checked={Boolean(row.selected)}
                 onChange={event => edit(code, { selected: event.target.checked })}/></td>
@@ -179,13 +211,10 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
                 {row.kind && <small>{priceRule(row.kind) ? '원 · 현재가' : row.kind === 'fall_lte' ? '% 하락 · 전일 종가 대비' : '% 상승 · 전일 종가 대비'}</small>}</td>
               <td><input type="date" min={today} max={addAlertDays(today, 30)} aria-label={`${name} 만료일`} disabled={busy}
                 value={row.expires_on} onChange={event => edit(code, { expires_on: event.target.value, dirty: true })}/></td>
-              <td><span className="alert-status" data-status={status}>{stateLabels[status] || '미설정'}</span>
-                {reasons[rule?.reason] && <small>{reasons[rule.reason]}</small>}
+              <td><span className="alert-status">{data ? `${saved.length}개` : '—'}</span>
+                {[...counts].map(([status, count]) => <small key={status}>{stateLabels[status]} {count}개</small>)}
                 {row.dirty && <small className="alert-unsaved">저장되지 않은 변경</small>}</td>
-              <td>{['active', 'queued'].includes(status) && <button type="button" disabled={busy}
-                onClick={() => change({ action: 'stop', code })}>중지</button>}
-                {status === 'stopped' && <button type="button" disabled={!canActivate}
-                  onClick={() => change({ action: 'resume', code })}>재개</button>}</td>
+              <td><button type="button" aria-label={`${name} 알림 관리`} onClick={event => openManager(event, code)}>관리</button></td>
             </tr>
           })}</tbody>
         </table>
@@ -196,9 +225,12 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
         </div>
         <p className="alert-caption">이미 충족된 조건은 저장 후 바로 발송될 수 있습니다.</p>
       </div>
-      <div className="alert-actions"><button type="button" disabled={!valid || !canActivate} onClick={() => change({ action: 'save', rules })}>저장하고 시작</button>
-        <span>선택한 {selected.length}개 · 만료일 한국 시간 기준</span></div>
+      <div className="alert-actions"><button type="button" disabled={!valid || !canActivate || busy || atLimit} onClick={createSelected}>저장하고 시작</button>
+        <span>새 조건 {selected.length}개 · 관심종목 {rows.length} / 20개 · 만료일 한국 시간 기준</span></div>
+      {atLimit && <p className="alert-message">종목당 저장된 조건은 최대 {ALERT_RULES_PER_SYMBOL}개까지 보관할 수 있습니다.</p>}
+      {mutationMessage && <p className={mutationMessage.ok ? 'alert-message' : 'alert-error'} role={mutationMessage.ok ? 'status' : 'alert'}>{mutationMessage.message}</p>}
       <section ref={history} id="alert-history" aria-label="발송 이력" className="alert-history">
+        <div className="alert-history-actions"><button ref={manageButton} type="button" onClick={event => openManager(event)}>알림 관리</button></div>
         <h3>발송 이력</h3>
         {data?.history?.length ? <div className="alert-table-scroll" tabIndex={0} role="region" aria-label="발송 이력 표">
           <table><thead><tr><th scope="col">종목</th><th scope="col">충족 조건</th><th scope="col">관측 시세</th><th scope="col">발송 상태</th></tr></thead>
@@ -210,6 +242,9 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
           </table>
         </div> : data && !loading && <p>조건 충족 또는 발송 이력이 없습니다.</p>}
       </section>
+      {manager && <AlertManageDialog rows={rows} byCode={byCode} initialCode={manager.code} initialDraft={manager.draft}
+        today={today} busy={busy} canActivate={canActivate} available={available} change={change} onClose={closeManager}
+        onDraftDone={saved => drafts.clearSaved(saved.roomId, saved)}/>}
     </>}
   </section>
 }

@@ -68,10 +68,37 @@
 .alert-agent .alert-unsaved { color: var(--tone-info, #91b7ff); }
 .alert-agent .alert-error { color: var(--red); }
 .alert-history { margin-top: 24px; scroll-margin-top: 85px; }
+.alert-history-actions { display: flex; justify-content: end; margin-bottom: 8px; }
+.alert-history-actions button, .alert-saved-draft button { font-size: 12px; }
+.alert-saved-draft { flex-wrap: wrap; margin-block: 8px; }
+.account-modal.alert-manage {
+  position: fixed; inset: 0; margin: auto; width: min(600px, calc(100% - 24px)); max-height: calc(100dvh - 24px);
+  color: var(--text-primary); overscroll-behavior: contain; font-size: 13px;
+}
+.alert-manage::backdrop { background: var(--overlay-bg, #020611aa); }
+.alert-manage .account-heading { margin: 0 30px 14px 0; }
+.alert-manage .account-heading h2 { font-size: 18px; }
+.alert-manage .account-heading p { margin-top: 5px; font-size: 12px; }
+.alert-manage h3 { font-size: 14px; }
+.alert-manage p { margin-block: 7px; line-height: 1.5; }
+.alert-manage .alert-manage-close { display: grid; place-items: center; width: 36px; padding: 0; }
+.alert-manage-tools { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.alert-manage-tools label { flex: 1 1 148px; }
+.alert-manage :is(select, input:not([type="checkbox"])) { width: 100%; min-width: 0; min-height: 36px; }
+.alert-manage-list { display: grid; gap: 8px; }
+.alert-manage-list ul { list-style: none; padding: 0; margin: 0; }
+.alert-manage-list li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-block: 8px; }
+.alert-manage-list li + li { border-top: 1px solid var(--line); }
+.alert-manage-list h3 small { display: inline; font-weight: 400; }
+.alert-manage .alert-actions { gap: 6px; }
+.alert-manage button { font-size: 12px; }
+.alert-manage-editor, .alert-manage-confirm { margin-bottom: 12px; }
+.alert-manage-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; border: 0; padding: 0; margin: 12px 0; }
 .agent-trading-placeholder { display: grid; justify-items: start; gap: 8px; }
 .agent-trading-placeholder :is(h2, p) { margin: 0; }
 @media (max-width: 640px) {
   .agent-mode-card { padding: 12px; }
   .agent-mode-tabs { gap: 5px; }
   .agent-mode-tabs button { padding-inline: 7px; }
+  .alert-manage-fields { grid-template-columns: minmax(0,1fr); }
 }

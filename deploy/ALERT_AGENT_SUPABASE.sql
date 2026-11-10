@@ -1,6 +1,12 @@
 -- Apply after WATCHLIST_SUPABASE.sql and KAKAO_CONNECTION_SUPABASE.sql.
 begin;
 
+do $$ begin
+  if to_regprocedure('public.atlas_alert_rpc_v2(text,jsonb)') is not null then
+    raise exception 'Alert v2 is already installed; do not reapply the v1 baseline';
+  end if;
+end $$;
+
 create table if not exists public.atlas_alert_rules (
   user_id uuid not null references auth.users(id) on delete cascade,
   code text not null check (code ~ '^[0-9][0-9A-Z]{5}$'),

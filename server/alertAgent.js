@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { ALERT_KINDS, alertCode, alertCondition, alertExpiry, alertThreshold, alertUuid } from '../shared/alertRules.js'
+import { ALERT_KINDS, ALERT_RULES_PER_SYMBOL, alertCode, alertCondition, alertExpiry, alertThreshold, alertUuid } from '../shared/alertRules.js'
 import { alertError, alertSettings, createAlertStore } from './alertStore.js'
 import { createAlertAccess } from './alertAccess.js'
+
+const validId = value => typeof value === 'string' && alertUuid.test(value)
 
 export function normalizeAlertRule(value) {
   if (!value || typeof value.code !== 'string' || !alertCode.test(value.code) || !alertExpiry(value.expires_on)) return null
@@ -9,18 +11,21 @@ export function normalizeAlertRule(value) {
   return threshold === null ? null : { code: value.code, kind: value.kind, threshold, expires_on: value.expires_on }
 }
 
-export function alertEditor(value, watchlist) {
+export function alertEditor(value, watchlist, rules = []) {
   const revision = alertUuid.test(value?.revision) ? value.revision : null
   const draft = value?.draft
   if (!alertUuid.test(draft?.id) || !watchlist.some(row => row.code === draft.code)) return { revision, draft: null }
+  const saved = draft.rule_id && rules.find(rule => rule.rule_id === draft.rule_id && rule.version === draft.version && rule.code === draft.code)
+  if (draft.rule_id && !saved) return { revision, draft: null }
   return { revision, draft: { id: draft.id, code: draft.code, kind: Object.hasOwn(ALERT_KINDS, draft.kind) ? draft.kind : null,
+    ...(saved ? { rule_id: saved.rule_id, version: saved.version } : {}),
     threshold: alertThreshold(draft.kind, draft.threshold), expires_on: alertExpiry(draft.expires_on) ? draft.expires_on : null } }
 }
 
 const states = {
   active: '감시 중', stopped: '중지', expired: '만료', queued: '조건 충족 · 발송 대기',
   sending: '발송 요청 중', sent: '카카오 전송 성공', failed: '발송 실패',
-  unknown: '발송 결과 확인 불가', canceled: '발송 취소',
+  unknown: '발송 결과 확인 불가', canceled: '취소',
 }
 
 export async function alertAnswer(action, { store, userId, roomId, requestId, editor }) {
@@ -42,6 +47,11 @@ export async function alertAnswer(action, { store, userId, roomId, requestId, ed
     const history = relevant(data.history).slice(0, 5).map(e => `• ${e.name} · ${states[e.status]}`)
     return say(['서버에 저장된 알림 상태입니다.', rules.join('\n') || '저장된 규칙 없음', '최근 이력', history.join('\n') || '이력 없음'].join('\n\n'))
   }
+  if (action.kind === 'ambiguous_rule') {
+    const matching = data.rules.filter(rule => rule.code === action.code).map(rule =>
+      `• ${alertCondition(rule.kind, rule.threshold)} · ${rule.expires_on}까지 · ${states[rule.status]}`)
+    return say(['어느 저장 조건을 바꿀지 조건과 만료일을 알려 주세요. 알림 관리에서도 직접 선택할 수 있습니다.', ...matching].join('\n'))
+  }
   if (action.kind !== 'draft') return null
   const rule = normalizeAlertRule(action.rule)
   const stock = rule && data.watchlist.find(row => row.code === rule.code)
@@ -49,9 +59,16 @@ export async function alertAnswer(action, { store, userId, roomId, requestId, ed
   if (action.edit && (!editor.draft || rule.code !== editor.draft.code)) {
     return say('현재 대화의 알림 초안을 찾지 못했습니다. 바꿀 종목과 조건을 다시 알려 주세요.')
   }
+  const target = action.edit ? editor.draft : action
+  const saved = target.rule_id && data.rules.find(row => row.rule_id === target.rule_id
+    && row.version === target.version && row.code === rule.code && row.status !== 'sending')
+  if (target.rule_id && !saved) return say('저장된 조건의 상태가 바뀌었습니다. 알림 관리에서 최신 조건을 확인해 주세요.')
+  const instruction = saved ? '알림 관리에서 대상 조건과 미저장 변경을 확인한 뒤 직접 저장해 주세요.'
+    : '알림 화면에서 초안을 확인하고 ‘저장하고 시작’을 누르면 감시를 시작합니다.'
   return {
-    ...say(`${stock.name}(${stock.code}) · ${alertCondition(rule.kind, rule.threshold)} · ${rule.expires_on}까지. 알림 화면에서 초안을 확인하고 ‘저장하고 시작’을 누르면 감시를 시작합니다.`),
-    alertDraft: { ...rule, id: action.edit ? editor.draft.id : randomUUID(), revision: randomUUID(),
+    ...say(`${stock.name}(${stock.code}) · ${alertCondition(rule.kind, rule.threshold)} · ${rule.expires_on}까지. ${instruction}`),
+    alertDraft: { ...rule, ...(saved ? { rule_id: saved.rule_id, version: saved.version } : {}),
+      id: action.edit ? editor.draft.id : randomUUID(), revision: randomUUID(),
       baseRevision: editor.revision, roomId, requestId },
   }
 }
@@ -73,24 +90,39 @@ export function registerAlertRoutes(app, {
   }))
   app.post('/api/agent/alerts', { bodyLimit: 8000 }, wrap(async (request, reply) => {
     const user_id = await owner(request, reply)
-    const { action, code, rules } = request.body ?? {}
-    if (!['save', 'resume', 'stop'].includes(action) || Object.keys(request.body ?? {}).some(k => !['action', 'code', 'rules'].includes(k))) {
+    const { action, operation, rule_id, version, rule, rules } = request.body ?? {}
+    const fields = { create: ['rules'], update: ['rule_id', 'version', 'rule'], cancel: ['rule_id', 'version'], restart: ['rule_id', 'version', 'rule'] }
+    if (!Object.hasOwn(fields, action) || !validId(operation)
+      || Object.keys(request.body).some(key => !['action', 'operation', ...fields[action]].includes(key))) {
       throw alertError('alert_invalid', 400)
     }
-    if (action !== 'save' && (typeof code !== 'string' || !alertCode.test(code))) throw alertError('alert_invalid', 400)
-    let values
-    if (action === 'save') {
+    const input = { user_id, operation, mutation: action }
+    if (action === 'create') {
       if (!Array.isArray(rules) || rules.length < 1 || rules.length > 20) throw alertError('alert_invalid', 400)
-      values = rules.map(normalizeAlertRule)
-      if (values.some(rule => !rule) || new Set(values.map(rule => rule.code)).size !== values.length) throw alertError('alert_invalid', 400)
+      input.rules = rules.map(normalizeAlertRule)
+      if (input.rules.some(row => !row)) throw alertError('alert_invalid', 400)
+      const count = new Map()
+      for (const row of input.rules) {
+        count.set(row.code, (count.get(row.code) || 0) + 1)
+        if (count.get(row.code) > ALERT_RULES_PER_SYMBOL) throw alertError('alert_rule_limit', 409)
+      }
+    } else {
+      if (!validId(rule_id) || !validId(version)) throw alertError('alert_invalid', 400)
+      Object.assign(input, { rule_id, version })
+      if (action !== 'cancel') {
+        input.rule = normalizeAlertRule(rule)
+        if (!input.rule) throw alertError('alert_invalid', 400)
+      }
     }
-    if (action !== 'stop') {
-      if (!settings.enabled) throw alertError('alert_disabled', 503)
-      const check = await access(user_id, true)
-      if (check.status === 'unavailable') throw alertError('alert_kakao_unavailable', 503)
-      if (check.status !== 'ready') throw alertError('alert_kakao_required', 409)
+    if (!await store('mutation_replay', input)) {
+      if (action !== 'cancel') {
+        if (!settings.enabled) throw alertError('alert_disabled', 503)
+        const check = await access(user_id, true)
+        if (check.status === 'unavailable') throw alertError('alert_kakao_unavailable', 503)
+        if (check.status !== 'ready') throw alertError('alert_kakao_required', 409)
+      }
+      await store('mutate', input)
     }
-    await store(action, { user_id, code, rules: values })
     return { ...await store('read', { user_id }), enabled: settings.enabled, consentAvailable: settings.consent }
   }))
 }

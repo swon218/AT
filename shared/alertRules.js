@@ -5,6 +5,8 @@ export const ALERT_KINDS = {
   fall_lte: '전일 대비 하락률 이하',
 }
 
+export const ALERT_RULES_PER_SYMBOL = 10
+
 export const alertCode = /^[0-9][0-9A-Z]{5}$/
 export const alertUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const koreanAlertDay = (now = Date.now()) =>
