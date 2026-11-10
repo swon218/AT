@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { randomUUID } from 'node:crypto'
 import { orderPeriodWindow } from '../src/utils/orderPeriod.js'
 import { addAlertDays, koreanAlertDay } from '../shared/alertRules.js'
+import { WATCHLIST_LIMIT_MESSAGE } from '../shared/watchlist.js'
 if (process.env.NODE_ENV === 'production') throw new Error('Fixture is forbidden in production')
 const requests = {}, stock = { code: '005930', name: '검증 삼성전자', market: 'KOSPI', price: 71000, change: 1.2, volume: 500000 }
 const candles = Array.from({ length: 180 }, (_, i) => ({ time: new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10), open: 65000 + i * 30, high: 65800 + i * 30, low: 64400 + i * 30, close: 65200 + i * 30 + Math.sin(i / 5) * 300, volume: 10000 + i * 50 }))
@@ -167,7 +168,18 @@ async function response(path, params, method, authorization, body) {
     const price = saved && /([0-9]+)원/.exec(question)
     if (question.includes('늦은')) await delay(2500)
     const answer = { kind: 'concept', claims: [], sources: [], coverage: [], result_sets: [] }
-    const content = price ? `${stock.name} · 저장 조건 변경 초안` : stock && percent ? `${stock.name} · 전일 종가 대비 ${percent[1]}% 하락 알림 초안` : '관심종목을 확인해 주세요.'
+    const proposed = question.includes('20만원') ? ranked.find(row => question.includes(row.name) || (row.code === '035420' && question.includes('네이버'))) : null
+    let content = price ? `${stock.name} · 저장 조건 변경 초안` : stock && percent ? `${stock.name} · 전일 종가 대비 ${percent[1]}% 하락 알림 초안` : '관심종목을 확인해 주세요.'
+    if (proposed) {
+      const condition = { code: proposed.code, kind: 'price_touch', threshold: 200000, frequency: 'once', expires_on: addAlertDays(koreanAlertDay(), 7) }
+      const baseRevision = alert_editor?.revision ?? null
+      content = `${proposed.name} 알림 조건을 확인했습니다.`
+      if (watchlist.some(row => row.code === proposed.code)) {
+        answer.alertDraft = { ...condition, id: randomUUID(), revision: randomUUID(), baseRevision, roomId: room.id, requestId: request_id }
+      } else if (watchlist.length < 20) {
+        answer.watchlistConfirmation = { status: 'pending', name: proposed.name, condition, baseRevision, expiresAt: new Date(Date.now() + 900_000).toISOString() }
+      } else content = WATCHLIST_LIMIT_MESSAGE
+    }
     if (stock && percent) answer.alertDraft = { code: stock.code, kind: edit?.kind || 'fall_lte', threshold: Number(percent[1]),
       frequency: question.includes('반복') ? 'repeat' : edit?.frequency || 'once',
       expires_on: edit?.expires_on || addAlertDays(koreanAlertDay(), 7), id: edit?.id || randomUUID(),
@@ -179,6 +191,30 @@ async function response(path, params, method, authorization, body) {
       { id: String(messages.length + 4), role: 'assistant', content, request_id, answer, created_at: room.updated_at })
     alertMessages.set(user, messages)
     return { id: request_id }
+  }
+  const confirmPath = /^\/api\/agent\/rooms\/1\/requests\/([^/]+)\/watchlist-confirmation$/.exec(path)
+  if (confirmPath && method === 'POST') {
+    const user = authorization?.slice('Bearer fixture-'.length)
+    const message = (alertMessages.get(user) || []).find(row => row.request_id === confirmPath[1] && row.role === 'assistant')
+    const card = message?.answer?.watchlistConfirmation
+    if (!card) return { error: 'confirmation_not_found' }
+    if (card.status === 'pending' && body.decision === 'no') card.status = 'declined'
+    if (card.status === 'pending' && body.decision === 'yes') {
+      if (card.baseRevision !== body.revision) return { error: 'confirmation_outdated' }
+      const { data: before } = await watchlistResponse(user)
+      const saved = await watchlistResponse(user, { p_expected_user: user, p_code: card.condition.code, p_name: card.name, p_saved: true })
+      if (saved.error && saved.error.message !== 'watchlist_limit') return { error: 'confirmation_unavailable' }
+      card.status = saved.error ? 'limit' : 'added'
+      if (!saved.error) card.addition = before.some(row => row.code === card.condition.code) ? 'already_saved' : 'added'
+    }
+    if (body.decision === 'draft' && ['added', 'ready'].includes(card.status)) {
+      if (faults.get(user) === 'draft') { faults.delete(user); return { error: 'confirmation_unavailable' } }
+      card.status = 'ready'
+      message.answer.alertDraft ??= { ...card.condition, id: randomUUID(), revision: randomUUID(), baseRevision: card.baseRevision,
+        roomId: room.id, requestId: message.request_id }
+      return { confirmation: card, draft: message.answer.alertDraft }
+    }
+    return { confirmation: card, draft: null }
   }
   if (path === '/api/agent/rooms') return method === 'POST' ? room : { rooms: [room] }
   if (path === '/api/agent/rooms/1/messages') return { room, question_count: 1, requests: [], messages: [

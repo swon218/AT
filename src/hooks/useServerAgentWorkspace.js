@@ -9,13 +9,23 @@ function initial(owner, userId) {
   try { legacy = readAgentWorkspace(localStorage, userId).conversations.filter(c => c.messages.length) } catch { /* Old records remain untouched. */ }
   return { owner, rooms: [freshRoom()], activeId: 'new', drafts: settings.drafts || {}, pending: settings.pending || null,
     preferredId: settings.activeId, ui: { ...emptyAgentWorkspace().ui, ...settings.ui }, legacy,
-    status: null, error: '', steps: [], busy: false, hasMore: false }
+    status: null, error: '', steps: [], busy: false, hasMore: false, confirmations: {} }
 }
+
+function updateConfirmation(message, confirmation, draft) {
+  const old = message.answer?.watchlistConfirmation?.status
+  if (!confirmation || (old !== 'pending' && confirmation.status === 'pending')
+    || (old === 'ready' && confirmation.status === 'added')) return message
+  return { ...message, answer: { ...message.answer, watchlistConfirmation: confirmation, ...(draft ? { alertDraft: draft } : {}) } }
+}
+
 export default function useServerAgentWorkspace(userId, authReady, apiClient = agentApi, alertFlow = {}) {
   const owner = authReady ? userId || 'guest' : null
   const [state, setState] = useState(() => initial(owner, userId))
   const sending = useRef(false), scope = useRef(owner), observed = useRef({})
   const activeRoom = useRef('new'), alertRequests = useRef(new Map()), alertHandlers = useRef(alertFlow)
+  const confirmationScope = useRef({ owner, running: new Set() })
+  if (confirmationScope.current.owner !== owner) confirmationScope.current = { owner, running: new Set() }
   alertHandlers.current = alertFlow
   let current = state
   if (current.owner !== owner) {
@@ -41,9 +51,18 @@ export default function useServerAgentWorkspace(userId, authReady, apiClient = a
       }
       for (const request of result.requests) if (request.status === 'failed') alertRequests.current.delete(request.id)
     }
-    update(previous => ({ error: previous.error.startsWith('AI 서버에 연결하지 못했습니다.') ? '' : previous.error, rooms: previous.rooms.map(r => r.id === id ? { ...r, question_count: result.question_count, title: result.room?.title || r.title, updatedAt: result.room?.updated_at || r.updatedAt,
-      messages: before ? [...messages, ...r.messages.filter(m => !messages.some(n => n.id === m.id))] : [...r.messages.filter(m => messages.length && BigInt(m.id) < BigInt(messages[0].id)), ...messages],
-      requests: result.requests } : r), ...(previous.activeId === id ? { hasMore: before ? messages.length === 50 : previous.hasMore || messages.length === 50,
+    update(previous => ({ error: previous.error.startsWith('AI 서버에 연결하지 못했습니다.') ? '' : previous.error, rooms: previous.rooms.map(r => {
+      if (r.id !== id) return r
+      const oldMessages = new Map(r.messages.map(message => [message.id, message]))
+      const incoming = messages.map(message => {
+        const old = oldMessages.get(message.id)
+        if (!old?.answer?.watchlistConfirmation || !message.answer?.watchlistConfirmation) return message
+        return updateConfirmation(old, message.answer.watchlistConfirmation, message.answer.alertDraft)
+      })
+      return { ...r, question_count: result.question_count, title: result.room?.title || r.title, updatedAt: result.room?.updated_at || r.updatedAt,
+        messages: before ? [...incoming, ...r.messages.filter(m => !messages.some(n => n.id === m.id))]
+          : [...r.messages.filter(m => messages.length && BigInt(m.id) < BigInt(messages[0].id)), ...incoming], requests: result.requests }
+    }), ...(previous.activeId === id ? { hasMore: before ? messages.length === 50 : previous.hasMore || messages.length === 50,
       busy: sending.current || result.requests.some(r => r.status === 'running') } : {}) }))
     return result
   }
@@ -137,13 +156,54 @@ export default function useServerAgentWorkspace(userId, authReady, apiClient = a
     })()
     return true
   }
+
+  async function respondToWatchlist(message, decision) {
+    const id = room.id, requestId = message.request_id
+    const job = confirmationScope.current
+    if (!userId || id === 'new' || job.running.has(requestId)) return
+    const feedback = changes => update(previous => ({ confirmations: { ...previous.confirmations, [requestId]: changes } }))
+    const accept = ({ confirmation, draft }) => update(previous => ({ rooms: previous.rooms.map(r => r.id !== id ? r : {
+      ...r, messages: r.messages.map(item => item.request_id === requestId && item.role === 'assistant'
+        ? updateConfirmation(item, confirmation, draft) : item),
+    }) }))
+    const call = choice => api(`/rooms/${id}/requests/${requestId}/watchlist-confirmation`, { method: 'POST', body: {
+      decision: choice, revision: alertHandlers.current.editor?.(id)?.revision ?? null,
+    } })
+    job.running.add(requestId)
+    feedback({ busy: true })
+    let phase = decision
+    try {
+      let result = await call(decision)
+      if (confirmationScope.current !== job) return
+      accept(result)
+      if (result.confirmation.addition) await alertHandlers.current.onWatchlistAdded?.()
+      if (confirmationScope.current !== job) return
+      if (decision === 'yes' && ['added', 'ready'].includes(result.confirmation.status)) {
+        phase = 'draft'
+        result = await call('draft')
+        if (confirmationScope.current !== job) return
+        accept(result)
+      }
+      if (decision !== 'no' && result.draft && activeRoom.current === id
+        && alertHandlers.current.onDraft?.(id, result.draft) === false) {
+        feedback({ error: agentErrors.confirmation_outdated })
+      } else feedback({})
+    } catch (exc) {
+      if (confirmationScope.current !== job) return
+      const error = exc.code ? exc.message : phase === 'draft' ? '알림 초안을 불러오지 못했습니다. 다시 시도해 주세요.'
+        : '선택 결과를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+      feedback({ error })
+    } finally { job.running.delete(requestId) }
+  }
+
   return {
     ready: Boolean(owner), error: current.error, busy: current.busy, status: current.status,
     legacy: current.legacy, steps: current.steps, hasMore: current.hasMore,
     data: { ui: current.ui, activeId: room.id, conversations: current.rooms },
     active: { ...room, draft: String(current.drafts[room.id] || '') },
     setDraft: value => update(previous => ({ drafts: { ...previous.drafts, [room.id]: value.slice(0, 6000) } })),
-    submit, newConversation,
+    submit, newConversation, respondToWatchlist, confirmations: current.confirmations,
+    confirmationRevision: userId ? alertFlow.editor?.(room.id)?.revision ?? null : null,
     select: id => { activeRoom.current = id; update({ activeId: id, steps: [], error: '', busy: false }) },
     loadMore: () => refresh(room.id, room.messages[0]?.id).catch(fail),
     rename: title => { void api(`/rooms/${room.id}`, { method: 'PUT', body: { title } }).then(result => update(previous => ({ rooms: previous.rooms.map(r => r.id === room.id ? { ...r, title: result.title } : r) }))).catch(fail) },

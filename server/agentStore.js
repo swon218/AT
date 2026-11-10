@@ -1,6 +1,21 @@
 import { createClient } from '@supabase/supabase-js'
 
 const options = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+
+export function createAgentWatchlistConfirmer({ url = process.env.SUPABASE_URL, key = process.env.SUPABASE_PUBLISHABLE_KEY,
+  clientFactory = createClient } = {}) {
+  return async (authorization, payload) => {
+    if (!url || !key) throw Object.assign(new Error('database_not_configured'), { statusCode: 503 })
+    // Use the member's JWT so the existing write RPC still derives its owner from auth.uid().
+    const client = clientFactory(url, key, { ...options, global: { headers: { Authorization: authorization } } })
+    const { data, error } = await client.rpc('atlas_ai_confirm_watchlist', payload).abortSignal(AbortSignal.timeout(7000))
+    const failure = error ? (['42501', 'PGRST301', 'PGRST303'].includes(error.code) ? 'invalid_authentication' : 'confirmation_unavailable') : data?.error
+    if (!failure && data?.confirmation) return data
+    const statuses = { invalid_authentication: 401, confirmation_not_found: 404, confirmation_outdated: 409,
+      confirmation_not_approved: 409, alert_expired: 409, alert_watchlist_required: 409 }
+    throw Object.assign(new Error(failure || 'confirmation_unavailable'), { statusCode: statuses[failure] || 503 })
+  }
+}
 export function createAgentStore({ url = process.env.SUPABASE_URL, secret = process.env.SUPABASE_SECRET_KEY, client } = {}) {
   const db = client || (url && secret ? createClient(url, secret, options) : null)
   return {

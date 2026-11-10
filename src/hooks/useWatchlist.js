@@ -28,8 +28,14 @@ export default function useWatchlist(owner, { authReady, onLogin, repository = d
     }
   }, [scope])
 
-  const refresh = useCallback(async () => {
-    if (!owner || mounted.current !== scope || scope.read || scope.writing) return
+  const refresh = useCallback(async ({ afterWrite = false } = {}) => {
+    if (!owner || mounted.current !== scope) return
+    if (scope.writing) {
+      if (afterWrite) scope.refreshAfterWrite = true
+      return
+    }
+    if (scope.read && !afterWrite) return
+    scope.read?.abort()
     const controller = new AbortController()
     scope.read = controller
     publish({ loading: true, readError: '' })
@@ -89,6 +95,10 @@ export default function useWatchlist(owner, { authReady, onLogin, repository = d
     } finally {
       scope.writing = false
       publish({ pendingCode: '' })
+      if (scope.refreshAfterWrite) {
+        scope.refreshAfterWrite = false
+        void refresh({ afterWrite: true })
+      }
     }
   }
 

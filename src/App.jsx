@@ -139,15 +139,17 @@ function App() {
   const agent = useAgentWorkspace(currentUser?.id, authReady, undefined, {
     editor: alertDrafts.editor,
     onRoomCreated: alertDrafts.move,
+    onWatchlistAdded: () => watchlist.refresh({ afterWrite: true }),
     onDraft(roomId, draft) {
       if (!alertDrafts.apply(roomId, draft)) {
         setAlertNotice('응답을 기다리는 동안 수정한 조건을 유지했습니다.')
-        return
+        return false
       }
       setAlertNotice('')
       openPage('agent')
       setAgentMode('alerts')
       agent.setUI({ robotVisible: true, miniOpen: true, position: { x: 1, y: 1 } })
+      return true
     },
   })
   useEffect(() => { setAlertNotice('') }, [currentUser?.id])

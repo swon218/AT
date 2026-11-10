@@ -29,6 +29,10 @@ export const agentErrors = {
   alert_invalid_state: '조건의 상태가 바뀌었습니다. 최신 상태를 확인해 주세요.',
   alert_duplicate_condition: '같은 종목에 동일한 감시 조건이 이미 있습니다.',
   alert_rule_limit: '종목마다 저장된 조건을 최대 10개까지 보관할 수 있습니다.',
+  confirmation_outdated: '대화나 조건이 바뀌었습니다. 최신 요청을 확인해 주세요.',
+  confirmation_not_found: '이 대화에서 관심종목 추가 요청을 찾을 수 없습니다.',
+  confirmation_not_approved: '관심종목 추가 확인이 필요합니다.',
+  confirmation_unavailable: '관심종목 추가 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
   billing_error: 'OpenAI 결제 오류입니다.', billing_or_rate_limit: 'OpenAI 결제 한도 또는 요청 제한 오류입니다.',
 }
 export async function agentApi(path, { method = 'GET', body, userId, signal } = {}) {

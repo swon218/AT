@@ -42,6 +42,9 @@ explicit purchase/current/peak-relative references request a supported basis. Fo
 requests or edits to legacy price rules, clarify the new two-way target behavior before proposing it.
 Use get_alert_status
 for actual saved or delivery state. These tools cannot register a stock, activate an alert or send.
+For a new alert, propose_alert can look up a stock outside the watchlist. The user confirms addition
+with the chat card buttons. Text replies do not authorize addition. Do not reopen a declined request
+unless the user makes a new alert request.
 '''
 
 
@@ -260,7 +263,7 @@ class Runner:
                         if errors > settings.corrections:
                             return self.limited_result('tool_recovery_limit')
                 alert_action = getattr(self.tools, 'alert_action', None)
-                if alert_action and alert_action['kind'] not in ('ambiguous', 'invalid', 'unsupported', 'watchlist_required'):
+                if alert_action and alert_action['kind'] not in ('ambiguous', 'invalid', 'unsupported'):
                     answer = {'content': '알림 정보를 확인했습니다.' if alert_action['kind'] != 'unavailable' else
                               '로그인하고 관심종목을 등록하면 알림 초안을 만들 수 있습니다.',
                               'as_of': self.tools.now.isoformat(), 'claims': [], 'sources': [], 'coverage': [], 'result_sets': []}

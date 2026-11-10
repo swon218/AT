@@ -3,8 +3,11 @@ import { ALERT_FREQUENCIES, ALERT_KINDS, ALERT_RULES_PER_SYMBOL, alertCode, aler
 import { alertError, alertSettings, createAlertStore } from './alertStore.js'
 import { createAlertAccess } from './alertAccess.js'
 import { readAlertAfterMarket } from './alertSessions.js'
+import { WATCHLIST_LIMIT, WATCHLIST_LIMIT_MESSAGE } from '../shared/watchlist.js'
 
 const validId = value => typeof value === 'string' && alertUuid.test(value)
+const validStock = row => typeof row?.code === 'string' && alertCode.test(row.code)
+  && typeof row.name === 'string' && row.name === row.name.trim() && row.name.length > 0 && Array.from(row.name).length <= 100
 
 export function normalizeAlertRule(value) {
   if (!value || typeof value.code !== 'string' || !alertCode.test(value.code) || !alertExpiry(value.expires_on)
@@ -40,6 +43,12 @@ export async function alertAnswer(action, { store, userId, roomId, requestId, ed
   if (action.kind === 'unsupported') return say('목표가 도달과 전일 기준가 대비 상승률·하락률을 지원합니다. 어떤 조건을 사용할까요?')
   if (action.kind === 'legacy_conversion_required') return say('기존 이상·이하 규칙은 현재 방식으로 계속 감시됩니다. 수정하려면 양방향 목표가 도달로 전환할지 알려 주세요. 종목 옆 관리 버튼에서 직접 변경할 수도 있습니다.')
   if (action.kind === 'watchlist_required') return say('이 종목은 관심종목에 등록한 뒤 알림 초안을 만들 수 있습니다.')
+  if (action.kind === 'symbol_not_found') return say('종목 목록에서 일치하는 종목을 찾지 못했습니다. 정확한 종목명이나 종목코드를 알려 주세요.')
+  if (action.kind === 'symbol_catalog_unavailable') return say('종목 목록을 지금 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.')
+  if (action.kind === 'symbol_candidates') {
+    const choices = (action.candidates || []).filter(validStock).slice(0, 6).map(row => `• ${row.name} (${row.code})`)
+    return say(['일치하는 종목이 여러 개입니다. 알림을 설정할 종목의 코드나 정확한 이름을 알려 주세요.', ...choices].join('\n'))
+  }
   if (action.kind === 'invalid') return say('조건값이나 기준을 확인해 주세요. 만료일은 오늘부터 30일 이내로 지정할 수 있습니다.')
   const data = await store('read', { user_id: userId })
   if (action.kind === 'status') {
@@ -56,9 +65,16 @@ export async function alertAnswer(action, { store, userId, roomId, requestId, ed
       `• ${alertCondition(rule.kind, rule.threshold)} · ${alertFrequencyLabel(rule.frequency)} · ${rule.expires_on}까지 · ${states[rule.status]}`)
     return say(['어느 저장 조건을 바꿀지 조건과 만료일을 알려 주세요. 종목 옆 관리 버튼에서도 직접 선택할 수 있습니다.', ...matching].join('\n'))
   }
-  if (action.kind !== 'draft') return null
+  if (action.kind !== 'draft' && action.kind !== 'watchlist_confirmation') return null
   const rule = normalizeAlertRule({ frequency: 'once', ...action.rule })
   const stock = rule && data.watchlist.find(row => row.code === rule.code)
+  if (rule && !stock && action.kind === 'watchlist_confirmation' && validStock(action.stock) && action.stock.code === rule.code) {
+    if (data.watchlist.length >= WATCHLIST_LIMIT) return say(WATCHLIST_LIMIT_MESSAGE)
+    return { ...say(`${action.stock.name} 알림 조건을 확인했습니다.`), watchlistConfirmation: {
+      status: 'pending', name: action.stock.name, condition: rule, baseRevision: editor.revision,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+    } }
+  }
   if (!stock) return say('조건이 유효하고 관심종목에 있는 종목만 초안으로 만들 수 있습니다.')
   if (action.edit && (!editor.draft || rule.code !== editor.draft.code)) {
     return say('현재 대화의 알림 초안을 찾지 못했습니다. 바꿀 종목과 조건을 다시 알려 주세요.')

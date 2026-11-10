@@ -17,7 +17,8 @@ function responseCollector() {
 test('Vercel wildcard rewrite and static function preserve all supported nesting levels and queries', async () => {
   const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8'))
   assert.deepEqual(config.rewrites, [{ source: '/api/agent/:atlas_route*', destination: '/api/agent-proxy?__atlas_route=:atlas_route*' }])
-  for (const route of ['status', 'rooms', `rooms/${ID}`, `rooms/${ID}/messages`, `rooms/${ID}/requests`, `requests/${ID}`]) {
+  for (const route of ['status', 'rooms', `rooms/${ID}`, `rooms/${ID}/messages`, `rooms/${ID}/requests`,
+    `rooms/${ID}/requests/${ID}/watchlist-confirmation`, `requests/${ID}`]) {
     assert.equal(proxyTarget(`/api/agent/${route}`), `/api/agent/${route}`)
     assert.equal(proxyTarget(rewritten(route)), `/api/agent/${route}`)
     assert.equal(proxyTarget(rewritten(encodeURIComponent(route))), `/api/agent/${route}`)

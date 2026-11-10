@@ -15,7 +15,7 @@ from .market import KST, market_context
 from .schemas import TOOL_MODELS
 from .screener import SCREENER, ScanBusy, ScanChanged, FingerprintUnavailable
 from .screen_engine import SCREEN_ENGINE, ScreenSnapshotChanged
-from .alert_tools import AlertTools
+from .alert_tools import AlertTools, normalize_stock_symbol
 
 PROMPT_VERSION = 'atlas-research-v1'
 
@@ -183,8 +183,12 @@ class ResearchTools:
         return self.alerts.editor()
 
     async def propose_alert(self, args):
-        self.alert_action = self.alerts.propose(args, self.question)
-        return {'status': 'success', 'items': [], 'alert': self.alert_action}
+        try:
+            self.alert_action = self.alerts.propose(args, self.question, self.lookup_symbol)
+        except (ToolError, sqlite3.Error, OSError):
+            self.alert_action = {'kind': 'symbol_catalog_unavailable'}
+        return {'status': 'success', 'code': self.alert_action['kind'],
+                'items': self.alert_action.get('candidates', []), 'alert': self.alert_action}
 
     async def get_alert_status(self, args):
         self.alert_action = self.alerts.status(args)
@@ -194,13 +198,18 @@ class ResearchTools:
         self.evidence[value['id']] = value
         self.fresh_ids.add(value['id'])
 
-    async def resolve_symbol(self, args):
+    def lookup_symbol(self, query):
+        q = normalize_stock_symbol(query)
+        if not q:
+            return []
         with closing(self.connect()) as db:
-            q = args.query.strip()
-            rows = db.execute('SELECT code,name,market FROM symbols WHERE active=1 AND (code=? OR name=?) LIMIT 6', (q, q)).fetchall()
+            rows = db.execute("SELECT code,name,market FROM symbols WHERE active=1 AND (code=? OR upper(replace(name,' ',''))=?) ORDER BY code LIMIT 6", (q, q)).fetchall()
             if not rows:
-                rows = db.execute('SELECT code,name,market FROM symbols WHERE active=1 AND instr(name,?)>0 ORDER BY code LIMIT 6', (q,)).fetchall()
-            items = [dict(row) for row in rows]
+                rows = db.execute("SELECT code,name,market FROM symbols WHERE active=1 AND instr(upper(replace(name,' ','')),?)>0 ORDER BY code LIMIT 6", (q,)).fetchall()
+            return [dict(row) for row in rows]
+
+    async def resolve_symbol(self, args):
+        items = self.lookup_symbol(args.query)
         if len(items) == 1:
             self.resolved[items[0]['code']] = items[0]
         return {'status': 'success' if len(items) == 1 else 'partial' if items else 'empty',

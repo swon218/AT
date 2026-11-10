@@ -16,6 +16,7 @@ function Controls(){const[report,setReport]=useState(''),[open,setOpen]=useState
  React.createElement('button',{onClick:()=>setQaWatchlistFault('write')},'다음 관심종목 저장 실패'),
  React.createElement('button',{onClick:()=>setQaWatchlistFault('delay')},'다음 관심종목 조회 지연'),
  React.createElement('button',{onClick:()=>setQaWatchlistFault('missing')},'다음 관심종목 SQL 미적용'),
+ React.createElement('button',{onClick:()=>setQaWatchlistFault('draft')},'다음 알림 초안 실패'),
  React.createElement('button',{onClick:zoomFixtureCharts},'차트 범위 변경'),React.createElement('button',{onClick:async()=>setReport(JSON.stringify({charts:chartReport(),requests:await(await fetch('/__qa/metrics')).json()}))},'테마 검증 상태'),
  React.createElement('pre',{'aria-label':'테마 검증 결과',style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}},report)))}
 createRoot(document.getElementById('root')).render(React.createElement(App))

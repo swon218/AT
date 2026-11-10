@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
-import { createAgentAuthenticator, createAgentStore } from './agentStore.js'
+import { createAgentAuthenticator, createAgentStore, createAgentWatchlistConfirmer } from './agentStore.js'
 import { alertAnswer, alertEditor, registerAlertRoutes } from './alertAgent.js'
 import { createAlertStore } from './alertStore.js'
 
@@ -41,7 +41,7 @@ export function registerAgentRoutes(app, {
   cookieSecret = process.env.AI_GUEST_COOKIE_SECRET || '', internalSecret = process.env.AI_INTERNAL_SECRET || '',
   publicOrigin = process.env.AI_PUBLIC_ORIGIN || 'http://127.0.0.1:5173',
   secureCookie = process.env.NODE_ENV === 'production', enabled = process.env.AI_ENABLED !== 'false',
-  alertStore = createAlertStore(), alertOptions,
+  alertStore = createAlertStore(), alertOptions, confirmWatchlist = createAgentWatchlistConfirmer(),
 } = {}) {
   const cookieName = secureCookie ? '__Host-atlas_ai_guest' : 'atlas_ai_guest'
   const guestDays = Math.max(1, Math.min(30, Number(process.env.AI_GUEST_DAYS || 7)))
@@ -91,7 +91,9 @@ export function registerAgentRoutes(app, {
   async function getContext(owner, roomId, requestId) {
     const data = await store.call('messages', owner, { room_id: roomId })
     const messages = data.messages.filter(m => m.request_id !== requestId).slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 2000),
-      ...(m.answer ? { answer: { as_of: m.answer.as_of, sources: (m.answer.sources || []).slice(0, 12), coverage: m.answer.coverage || [], result_sets: (m.answer.result_sets || []).slice(-3) } } : {}) }))
+      ...(m.answer ? { answer: { as_of: m.answer.as_of, sources: (m.answer.sources || []).slice(0, 12), coverage: m.answer.coverage || [], result_sets: (m.answer.result_sets || []).slice(-3),
+        ...(m.answer.watchlistConfirmation ? { watchlist_confirmation: { status: m.answer.watchlistConfirmation.status,
+          name: m.answer.watchlistConfirmation.name, condition: m.answer.watchlistConfirmation.condition } } : {}) } } : {}) }))
     while (Buffer.byteLength(JSON.stringify(messages)) > 24000 && messages.length > 1) messages.shift()
     return messages
   }
@@ -144,6 +146,14 @@ export function registerAgentRoutes(app, {
     const owner = await actor(request, reply)
     await maintenance()
     return store.call('request', owner, { request_id: request.params.id })
+  }))
+  app.post('/api/agent/rooms/:id/requests/:requestId/watchlist-confirmation', { schema: {
+    params: payload({ id: uuid, requestId: uuid }),
+    body: payload({ decision: { type: 'string', enum: ['yes', 'no', 'draft'] }, revision: { anyOf: [uuid, { type: 'null' }] } }),
+  } }, wrap(async (request, reply) => {
+    if (!request.headers.authorization || !(await actor(request, reply)).startsWith('u:')) throw error('invalid_authentication', 401)
+    return confirmWatchlist(request.headers.authorization, { p_room_id: request.params.id, p_request_id: request.params.requestId,
+      p_decision: request.body.decision, p_revision: request.body.revision })
   }))
   const editorSchema = {
     type: 'object', additionalProperties: false, properties: {

@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime
 import json
+import sqlite3
 from types import SimpleNamespace
 from uuid import uuid4
 import httpx
@@ -21,6 +22,31 @@ def settings(tmp_path):
 
 def toolkit(s, transport=None):
     return ResearchTools(s, news=NewsSource(replace(s, naver_id='fixture', naver_secret='fixture'), transport or news_transport()), now=NOW)
+
+@pytest.mark.asyncio
+async def test_unlisted_stock_is_verified_by_catalog_and_confirmation_finishes_in_one_model_round(settings):
+    limited = replace(settings, rounds=1)
+    tools = ResearchTools(limited, now=NOW, alert_context={'watchlist': []})
+    args = {'action': 'create', 'symbol': '네이버', 'rule_id': None, 'basis': 'price', 'kind': 'price_touch',
+            'threshold': 200000, 'frequency': None, 'expires_on': None}
+    provider = ScriptedProvider([call('propose_alert', args)])
+    result = await Runner(limited, provider, tools).run('네이버 20만원일 때 알림 받고 싶어', [])
+    assert result['status'] == 'completed' and result['error_code'] is None
+    assert result['usage']['model_calls'] == 1
+    assert result['alert_action']['kind'] == 'watchlist_confirmation'
+    assert result['alert_action']['stock'] == {'name': 'NAVER', 'code': '035420', 'market': 'KOSPI'}
+    assert result['alert_action']['rule']['threshold'] == 200000
+    assert result['alert_action']['rule']['frequency'] == 'once'
+    step = next(step for step in result['steps'] if step['name'] == 'propose_alert' and step['status'] == 'success')
+    assert step['result']['code'] == 'watchlist_confirmation'
+    with sqlite3.connect(limited.lab_path) as db:
+        db.execute("INSERT INTO symbols(code,name,market,source) VALUES('000001','삼성물산','KOSPI','fixture')")
+    choices = await tools.execute('propose_alert', json.dumps({**args, 'symbol': '삼성'}))
+    assert choices['code'] == 'symbol_candidates'
+    assert {row['code'] for row in choices['items']} == {'000001', '005930'}
+    unknown = await tools.execute('propose_alert', json.dumps({**args, 'symbol': '000777'}))
+    assert unknown['code'] == 'symbol_not_found'
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('mode,question,minimum', [('concept', 'RSI란?', 1), ('news', '삼성전자 밤사이 뉴스', 3),

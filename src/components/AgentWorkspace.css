@@ -177,3 +177,20 @@
 .agent-execution, .agent-legacy { margin: 12px; font-size: 12px; color: var(--text-secondary, #9daec2); overflow-wrap: anywhere; }
 .agent-legacy { max-height: 240px; overflow: auto; }
 .agent-title-edit { font-size: 11px; background: transparent; color: var(--text-secondary, #9daec2); border: 1px solid var(--border-default, #364456); border-radius: 5px; padding: 2px 6px; cursor: pointer; }
+.agent-watchlist-confirmation {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  color: var(--text, inherit);
+  overflow-wrap: anywhere;
+}
+.agent-watchlist-confirmation p { margin: 0; }
+.agent-watchlist-confirmation small { color: var(--text-secondary, inherit); }
+.agent-watchlist-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.agent-watchlist-confirmation .agent-expand-result { min-height: 34px; }
+.agent-watchlist-confirmation button:disabled { opacity: .55; cursor: not-allowed; }

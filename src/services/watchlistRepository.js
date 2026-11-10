@@ -1,5 +1,6 @@
-export const WATCHLIST_LIMIT = 20
-export const WATCHLIST_LIMIT_MESSAGE = '관심종목은 최대 20개까지 등록할 수 있습니다.'
+import { WATCHLIST_LIMIT_MESSAGE } from '../../shared/watchlist.js'
+
+export { WATCHLIST_LIMIT, WATCHLIST_LIMIT_MESSAGE } from '../../shared/watchlist.js'
 
 export function watchlistCode(value) {
   const code = typeof value === 'string' ? value.trim().toUpperCase().replace(/^A(?=\d{6}$)/, '') : ''

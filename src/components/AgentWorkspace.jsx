@@ -5,6 +5,8 @@ import { MAX_QUESTION_LENGTH, ROBOT_SIZE, robotCoordinates, robotPosition } from
 import './AgentWorkspace.css'
 import { safeAgentLink } from '../services/agentApi'
 import { importQuery } from '../utils/screener'
+import { alertCondition, alertFrequencyLabel } from '../../shared/alertRules'
+import { WATCHLIST_LIMIT_MESSAGE } from '../../shared/watchlist'
 
 const suggestions = [
   { label: '조건으로 종목 찾기', text: '일봉 RSI 30 이하인 종목을 찾아줘', icon: Search },
@@ -13,6 +15,11 @@ const suggestions = [
 ]
 const dateLabel = value => new Intl.DateTimeFormat('ko-KR', { month: 'short', day: 'numeric' }).format(new Date(value))
 const timeLabel = value => new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+const alertToolResults = {
+  watchlist_confirmation: '미등록 종목과 요청 조건 확인', draft: '알림 초안 생성 가능', symbol_candidates: '종목 선택 필요',
+  symbol_not_found: '일치 종목 없음', symbol_catalog_unavailable: '종목 목록 조회 불가', watchlist_required: '관심종목 확인 필요',
+  invalid: '알림 조건 확인 필요', ambiguous: '종목 확인 필요', unsupported: '지원 조건 확인 필요', unavailable: '로그인 필요',
+}
 
 function AgentStatus({ agent }) {
   const state = agent?.status?.provider?.state
@@ -42,10 +49,42 @@ function Composer({ agent, compact = false }) {
   </div>
 }
 
+function WatchlistConfirmation({ agent, message, latest }) {
+  const { watchlistConfirmation: card, alertDraft } = message.answer
+  const feedback = agent.confirmations?.[message.request_id]
+  const expired = card.status === 'pending' && Date.parse(card.expiresAt) <= Date.now()
+  const outdated = latest !== message.request_id || (agent.confirmationRevision !== card.baseRevision
+    && agent.confirmationRevision !== alertDraft?.revision)
+  const status = expired ? 'expired' : card.status
+  const added = card.addition === 'already_saved' ? `${card.name}는 이미 관심종목에 등록되어 있습니다.` : `${card.name}를 관심종목에 추가했습니다.`
+  const labels = {
+    pending: `${card.name}를 관심종목에 추가할까요?`,
+    declined: `${card.name}를 관심종목에 추가하지 않았습니다. 이번 알림 설정 요청을 종료합니다.`,
+    expired: '관심종목 추가 요청이 만료되었습니다.', superseded: '새 질문이 등록되어 이 알림 요청은 종료되었습니다.',
+    limit: WATCHLIST_LIMIT_MESSAGE, added, ready: `${added} 알림 조건을 확인한 뒤 저장해 주세요.`,
+  }
+  const choice = decision => agent.respondToWatchlist(message, decision)
+  return <section className="agent-watchlist-confirmation" aria-label={`${card.name} 관심종목 추가 확인`}>
+    <p role="status">{labels[status]}</p>
+    <small>{card.name} ({card.condition.code}) · {alertCondition(card.condition.kind, card.condition.threshold)} · {alertFrequencyLabel(card.condition.frequency)} · {card.condition.expires_on}까지</small>
+    {status === 'pending' && <p>관심종목에 추가한 뒤 미저장 알림 초안을 열 수 있습니다.</p>}
+    {outdated && ['pending', 'added'].includes(status) && <p>대화나 조건이 바뀌었습니다. 최신 요청을 확인해 주세요.</p>}
+    {status === 'added' && <p>{feedback?.error ? '알림 초안 생성에 실패했습니다.' : '알림 초안 생성이 남아 있습니다.'}</p>}
+    {feedback?.error && ['pending', 'added', 'ready'].includes(status) && <p role="alert">{feedback.error}</p>}
+    {status === 'pending' && <div className="agent-watchlist-actions">
+      <button type="button" className="agent-expand-result" disabled={feedback?.busy || outdated} onClick={() => choice('yes')}>1번 예</button>
+      <button type="button" className="agent-expand-result" disabled={feedback?.busy} onClick={() => choice('no')}>2번 아니요</button>
+    </div>}
+    {['added', 'ready'].includes(status) && !outdated && <button type="button" className="agent-expand-result" disabled={feedback?.busy}
+      onClick={() => choice('draft')}>{status === 'ready' ? '알림 초안 열기' : '알림 초안 다시 시도'}</button>}
+  </section>
+}
+
 function Conversation({ agent, compact = false, onExpand }) {
   const bottom = useRef(null)
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }) }, [agent.active.id, agent.active.messages.length])
   const messages = agent.active.messages
+  const latest = messages.findLast(message => message.role === 'user')?.request_id
   return <div className={`agent-conversation${compact ? ' compact' : ''}`}>
     {!messages.length ? <div className="agent-empty">
       <img className="agent-hero-robot" src={robotImage} alt="작은 지구를 든 ATLAS 로봇"/>
@@ -60,6 +99,7 @@ function Conversation({ agent, compact = false, onExpand }) {
       {messages.map(message => <div className="agent-message" key={message.id} id={`agent-message-${compact ? 'mini' : 'main'}-${message.id}`}>
         <div className="agent-message-meta"><span>{message.role === 'assistant' ? 'ATLAS AI' : '나'}</span><time dateTime={message.createdAt}>{timeLabel(message.createdAt)}</time></div>
         <div className={message.role === 'assistant' ? 'agent-assistant-message' : 'agent-user-message'}>{message.content.split('\n').map((line, i) => <p key={i}>{line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => part.startsWith('**') ? <strong key={j}>{part.slice(2, -2)}</strong> : part.startsWith('`') ? <code key={j}>{part.slice(1, -1)}</code> : part)}</p>)}</div>
+        {message.answer?.watchlistConfirmation && <WatchlistConfirmation agent={agent} message={message} latest={latest}/>}
         {!!message.answer?.sources?.length && <ul className="agent-sources">{message.answer.sources.map(source => <li key={source.id}>{safeAgentLink(source.url) ? <a href={safeAgentLink(source.url)} target="_blank" rel="noopener noreferrer">{source.title || source.id}</a> : <span>{source.excerpt || source.id}</span>}<small>{source.source} · {source.published_at || source.as_of} · {source.scope === 'title_and_snippet' ? '제목·요약' : '확정 일봉'}</small></li>)}</ul>}
         {agent.openScreen && message.answer?.result_sets?.filter(set => set.coverage?.kind === 'screen' && importQuery(set.query)).map(set => <button type="button" className="agent-expand-result" key={set.id} onClick={() => agent.openScreen(set.query)}>조건검색에서 조건 열기 · 최신 데이터로 다시 조회<ArrowUpRight size={14}/></button>)}
         <div className="agent-message-state"><Check size={12}/><span>{message.role === 'assistant' ? `${agent.active.requests?.find(r => r.id === message.request_id)?.status === 'partial' ? '부분 완료' : '완료'} · ${message.answer?.as_of || ''}` : '질문 저장됨'}</span></div>
@@ -67,7 +107,7 @@ function Conversation({ agent, compact = false, onExpand }) {
       {compact && <button type="button" className="agent-expand-result" onClick={onExpand}>이 대화를 넓게 보기<ArrowUpRight size={15}/></button>}
     </div>}
     {agent.busy && <div className="agent-connection-note" role="status"><Bot size={20}/><p>{agent.steps?.at(-1)?.kind === 'tool' ? ({ screen_stocks: '공통 일봉 조건검색 중', screen_rsi: 'RSI 조건 확인 중', get_stock_news: '뉴스 조회 중', resolve_symbol: '종목 확인 중', get_news_details: '확보 기사 확인 중', get_market_context: '거래일 기준 확인 중' }[agent.steps.at(-1).name] || '조회 결과 확인 중') : agent.steps?.length ? '모델 분석 중' : '요청 처리 대기 중'}</p></div>}
-    {!!agent.steps?.length && <details className="agent-execution"><summary>실행 기록 {agent.steps.length}개</summary>{agent.steps.map(step => <p key={step.seq}>{step.seq}. {step.name} · {step.status} · {step.elapsed_ms}ms {step.result?.count !== undefined ? `· ${step.result.count}건` : ''}</p>)}</details>}
+    {!!agent.steps?.length && <details className="agent-execution"><summary>실행 기록 {agent.steps.length}개</summary>{agent.steps.map(step => <p key={step.seq}>{step.seq}. {step.name} · {step.status} · {step.elapsed_ms}ms {step.name === 'propose_alert' && alertToolResults[step.result?.code] ? `· ${alertToolResults[step.result.code]}` : step.result?.count !== undefined ? `· ${step.result.count}건` : ''}</p>)}</details>}
     <div ref={bottom}/>
   </div>
 }

@@ -5,6 +5,13 @@ import re
 from .market import KST
 
 
+def normalize_stock_symbol(value):
+    normalized = ''.join(value.upper().split())
+    if re.fullmatch(r'A\d{6}', normalized):
+        return normalized[1:]
+    return {'네이버': 'NAVER'}.get(normalized, normalized)
+
+
 class AlertTools:
     def __init__(self, context, now):
         self.available = context is not None
@@ -14,9 +21,9 @@ class AlertTools:
         self.today = now.astimezone(KST).date()
 
     def resolve(self, symbol):
-        normalized = ''.join(symbol.upper().split())
+        normalized = normalize_stock_symbol(symbol)
         return [row for row in self.watchlist
-                if normalized in (row['code'], ''.join(row['name'].upper().split()))]
+                if normalized in (row['code'], normalize_stock_symbol(row['name']))]
 
     def editor(self):
         return {'status': 'success', 'items': self.watchlist,
@@ -34,7 +41,7 @@ class AlertTools:
             return {'kind': 'ambiguous' if matches else 'watchlist_required'}
         return {'kind': 'status', 'code': matches[0]['code']}
 
-    def propose(self, args, question):
+    def propose(self, args, question, lookup=None):
         if not self.available:
             return {'kind': 'unavailable'}
         # Defence in depth for explicitly named unsupported reference prices.
@@ -45,11 +52,17 @@ class AlertTools:
         edit_saved = args.action == 'edit_saved'
         if edit_draft and not self.draft:
             return {'kind': 'ambiguous'}
+        stock = None
         if args.symbol:
             matches = self.resolve(args.symbol)
+            if not matches and args.action == 'create' and lookup is not None:
+                matches = lookup(args.symbol)
+                if not matches:
+                    return {'kind': 'symbol_not_found'}
             if len(matches) != 1:
-                return {'kind': 'ambiguous' if matches else 'watchlist_required'}
-            code = matches[0]['code']
+                return {'kind': 'symbol_candidates', 'candidates': matches} if matches else {'kind': 'watchlist_required'}
+            stock = matches[0]
+            code = stock['code']
         elif edit_draft:
             code = self.draft['code']
         else:
@@ -81,6 +94,9 @@ class AlertTools:
             return {'kind': 'invalid'}
         if not self.today.isoformat() <= expires_on <= (self.today + timedelta(days=30)).isoformat():
             return {'kind': 'invalid'}
+        rule = {'code': code, 'kind': kind, 'threshold': threshold, 'expires_on': expires_on, 'frequency': frequency}
+        if args.action == 'create' and not any(row['code'] == code for row in self.watchlist):
+            return {'kind': 'watchlist_confirmation', 'stock': stock, 'rule': rule}
         return {'kind': 'draft', 'edit': edit_draft,
                 **({'rule_id': target['rule_id'], 'version': target['version']} if target else {}),
-                'rule': {'code': code, 'kind': kind, 'threshold': threshold, 'expires_on': expires_on, 'frequency': frequency}}
+                'rule': rule}
