@@ -256,3 +256,9 @@ nav .nav-link{width:100%;height:42px;border:0;border-radius:9px;display:flex;ali
 .indicator-config-title strong{overflow-wrap:anywhere}
 .indicator-config-title button{flex-shrink:0}
 .tv-chart-canvas .tv-volume-legend{max-width:calc(100% - 16px);flex-wrap:wrap;overflow-wrap:anywhere}
+
+.holding-stock-control { display: inline-grid; min-width: 0; max-width: 100%; text-align: left; }
+.holding-stock-control strong { overflow: hidden; text-overflow: ellipsis; }
+button.holding-stock-control { padding: 2px 0; border: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+button.holding-stock-control:hover strong { text-decoration: underline; text-underline-offset: 2px; }
+button.holding-stock-control:focus-visible { outline: 2px solid var(--focus-ring, #6fc8ff); outline-offset: 2px; }

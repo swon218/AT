@@ -2,11 +2,12 @@ import { useState } from 'react'
 import useAssetAccounts from '../hooks/useAssetAccounts'
 import { BROKERS, getBroker } from '../utils/brokers'
 import { hasAmount, summarizeAssets, toggleAssetBroker } from '../utils/assetSummary'
+import HoldingStockButton from './HoldingStockButton'
 
 const number = value => new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(value)
 const signedAmount = value => hasAmount(value) ? `${value > 0 ? '+' : ''}${number(value)}원` : '—'
 
-export default function DashboardHoldings({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange, onOpenAssets }) {
+export default function DashboardHoldings({ currentUser, integrationStatus, integrationVersion, selected, onSelectedChange, onOpenAssets, onOpenStock }) {
   const [accountSelection, setAccountSelection] = useState(null)
   const accountIds = accountSelection?.version === integrationVersion ? accountSelection.ids : {}
   const accounts = useAssetAccounts({ userId: currentUser?.id, selected, integrationStatus, integrationVersion, accountIds })
@@ -39,7 +40,7 @@ export default function DashboardHoldings({ currentUser, integrationStatus, inte
         <div className="dashboard-holdings-viewport"><table className="dashboard-holdings-table" aria-label="보유종목 미리보기">
           <thead><tr><th scope="col">증권사 · 종목</th><th scope="col">보유수량</th><th scope="col">수익률</th><th scope="col">평가손익</th></tr></thead>
           <tbody>{holdings.map((item, index) => <tr key={`${item.broker}:${item.code}:${index}`}>
-            <td><span className="dashboard-holding-stock"><span className={`broker-holding-badge ${item.broker}`}>{getBroker(item.broker).shortName}</span><strong>{item.name}</strong><small>{item.code}</small></span></td>
+            <td><span className="dashboard-holding-stock"><span className={`broker-holding-badge ${item.broker}`}>{getBroker(item.broker).shortName}</span><HoldingStockButton holding={item} onOpenStock={onOpenStock}/></span></td>
             <td>{hasAmount(item.quantity) ? `${number(item.quantity)}주` : '—'}</td>
             <td className={hasAmount(item.profitRate) ? item.profitRate >= 0 ? 'up' : 'down' : ''}>{hasAmount(item.profitRate) ? `${item.profitRate > 0 ? '+' : ''}${item.profitRate.toFixed(2)}%` : '—'}</td>
             <td className={hasAmount(item.evaluationProfit) ? item.evaluationProfit >= 0 ? 'up' : 'down' : ''}>{signedAmount(item.evaluationProfit)}</td>
