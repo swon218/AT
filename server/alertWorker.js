@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { alertCode, alertCondition, koreanAlertDay } from '../shared/alertRules.js'
+import { alertCode, alertCondition, alertFrequencyLabel, alertSessionLabel } from '../shared/alertRules.js'
 import { createAgentBridge } from './agent.js'
 import { createAlertAccess } from './alertAccess.js'
 import { alertSettings, createAlertStore } from './alertStore.js'
@@ -10,21 +10,40 @@ import { config } from './config.js'
 import { decryptCredentials } from './credentialCrypto.js'
 import { createKakaoProvider } from './kakaoProvider.js'
 import { requestKiwoomWithCredentials } from './kiwoomClient.js'
+import { activeAlertSession, readAlertAfterMarket, selectAlertSession } from './alertSessions.js'
 
 const ageLimit = 90_000
 const dateTime = new Intl.DateTimeFormat('ko-KR', {
   timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'medium',
 })
-const activeSession = (session, at) => session?.date === koreanAlertDay(at)
-  && session.previous < session.date && Date.parse(session.open) <= at && at < Date.parse(session.close)
+const brokerSymbol = (code, session) => session.market === 'NXT' ? `${code}_NX` : code
 
 function integral(value) {
   const text = typeof value === 'string' || typeof value === 'number' ? String(value).trim() : ''
   return /^[+-]?\d{1,10}$/.test(text) ? Number(text) : null
 }
 
-export function parseAlertQuote(payload, code, session, now) {
-  if (!activeSession(session, now) || !alertCode.test(code) || payload?.stk_cd !== code
+export function parseAlertReference(daily, info, symbol, previousDay) {
+  if (String(daily?.return_code) !== '0' || String(info?.return_code) !== '0'
+    || daily.stk_cd !== symbol || info.stk_cd !== symbol || !Array.isArray(daily.stk_dt_pole_chart_qry)) return null
+  const basePrice = integral(info.base_pric)
+  if (!basePrice || basePrice < 0) return null
+  let last = null
+  for (const row of daily.stk_dt_pole_chart_qry) {
+    const fields = /^(\d{4})(\d{2})(\d{2})$/.exec(row.dt)
+    if (!fields) continue
+    const date = `${fields[1]}-${fields[2]}-${fields[3]}`
+    const timestamp = Date.parse(date)
+    const close = integral(row.cur_prc)
+    if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== date || date > previousDay
+      || !close || !/^\+?\d{1,15}$/.test(String(row.trde_qty)) || Number(row.trde_qty) <= 0) continue
+    if (!last || date > last.date) last = { date, close: Math.abs(close) }
+  }
+  return last && { base_day: last.date, base_price: basePrice, prior_close: last.close }
+}
+
+export function parseAlertQuote(payload, code, session, now, reference) {
+  if (!activeAlertSession(session, now) || !alertCode.test(code) || payload?.stk_cd !== brokerSymbol(code, session)
     || String(payload.return_code) !== '0' || !Array.isArray(payload.stk_tic_chart_qry)) return null
   // The one-tick TR supplies date, time, current price and prior-close delta in one record.
   const row = payload.stk_tic_chart_qry[0]
@@ -38,11 +57,10 @@ export function parseAlertQuote(payload, code, session, now) {
   const direction = { 1: 1, 2: 1, 3: 0, 4: -1, 5: -1 }[row.pred_pre_sig]
   if (direction === undefined || (rawDelta === 0) !== (direction === 0)) return null
   const price = Math.abs(rawPrice), delta = direction * Math.abs(rawDelta), previous = price - delta
-  if (previous <= 0) return null
+  if (previous <= 0 || reference?.base_price !== previous || reference.base_day > session.previous) return null
   const change_rate = (100 * delta) / previous
   if (change_rate < -100 || change_rate > 1000) return null
-  return { market: 'KRX', trade_day: session.date, base_day: session.previous,
-    observed_at: new Date(observed).toISOString(), price, change_rate }
+  return { ...reference, trade_day: session.date, observed_at: new Date(observed).toISOString(), price, change_rate }
 }
 
 export function alertMessage(event, historyUrl) {
@@ -52,7 +70,7 @@ export function alertMessage(event, historyUrl) {
   const link = { web_url: historyUrl, mobile_web_url: historyUrl }
   return {
     object_type: 'text',
-    text: `${name} (${event.code})\n조건: ${alertCondition(event.kind, event.threshold)}\n관측: ${price}원 · 전일 대비 ${rate}%\n${dateTime.format(new Date(event.observed_at))} · KRX`,
+    text: `${name} (${event.code})\n조건: ${alertCondition(event.kind, event.threshold)} · ${alertFrequencyLabel(event.frequency)}\n관측: ${price}원 · 전일 대비 ${rate}%\n${dateTime.format(new Date(event.observed_at))} · ${alertSessionLabel(event.market)}`,
     link, buttons: [{ title: '알림 내역', link }],
   }
 }
@@ -60,8 +78,10 @@ export function alertMessage(event, historyUrl) {
 export function createAlertWorker({
   settings = alertSettings(), store = createAlertStore(), access = createAlertAccess(), provider = createKakaoProvider(config),
   calendar = () => createAgentBridge().call('/calendar/alert-session'), request = requestKiwoomWithCredentials,
-  decrypt = decryptCredentials, now = Date.now, pause = sleep,
+  afterMarket = readAlertAfterMarket, decrypt = decryptCredentials, now = Date.now, pause = sleep,
 } = {}) {
+  const references = new Map()
+  let referenceDay
   return async function tick() {
     if (!settings.enabled) return { status: 'disabled' }
     const operation = randomUUID()
@@ -78,24 +98,43 @@ export function createAlertWorker({
         } catch { /* Other accounts still get checked. */ }
         await call('scope_checked', { user_id })
       }
-      const session = await calendar().catch(() => null)
-      if (!activeSession(session, now())) return { ...report, status: session ? 'closed' : 'calendar_unavailable' }
-      const codes = await call('symbols')
-      for (const code of codes) {
-        if (now() >= deadline || !activeSession(session, now())) break
-        let quote = null
-        try {
-          const data = await request({ ...settings.credentials, apiId: 'ka10079', endpoint: '/api/dostk/chart',
-            body: { stk_cd: code, tic_scope: '1', upd_stkpc_tp: '0' }, timeoutMs: 3000 })
-          quote = parseAlertQuote(data, code, session, now())
-        } catch { /* An unavailable observation never fires a rule. */ }
-        if (quote && now() - Date.parse(quote.observed_at) > ageLimit - 2_000) quote = null
-        await call('observe', { code, quote })
-        report.quotes += Number(Boolean(quote))
-        await pause(1000)
+      const regular = await calendar().catch(() => null)
+      const after = regular && !regular.closed && !activeAlertSession(regular, now()) ? await afterMarket(regular.date) : null
+      const session = selectAlertSession(regular, after, now())
+      if (!session) return { ...report, status: regular ? 'closed' : 'calendar_unavailable' }
+      const window = { market: session.market, phase: session.phase, trade_day: session.date, previous_day: session.previous,
+        session_open: session.open, session_close: session.close, ...(session.symbols ? { symbols: session.symbols } : {}) }
+      if (referenceDay !== session.date) { references.clear(); referenceDay = session.date }
+      const codes = await call('symbols', window)
+      let callsLeft = 10
+      async function quoteRequest(apiId, endpoint, body) {
+        if (!callsLeft || now() >= deadline || !activeAlertSession(session, now())) return null
+        callsLeft--
+        try { return await request({ ...settings.credentials, apiId, endpoint, body, timeoutMs: 3000 }) }
+        catch { return null }
+        finally { await pause(1000) }
       }
-      for (const entry of await call('queue')) {
-        if (now() >= deadline || !activeSession(session, now())) break
+      for (const code of codes) {
+        if (!callsLeft || now() >= deadline || !activeAlertSession(session, now())) break
+        const symbol = brokerSymbol(code, session)
+        let reference = references.get(symbol)
+        if (!reference) {
+          if (callsLeft < 3) break
+          const daily = await quoteRequest('ka10081', '/api/dostk/chart', { stk_cd: symbol,
+            base_dt: session.previous.replaceAll('-', ''), upd_stkpc_tp: '0' })
+          const info = daily && await quoteRequest('ka10001', '/api/dostk/stkinfo', { stk_cd: symbol })
+          reference = parseAlertReference(daily, info, symbol, session.previous)
+          if (reference) references.set(symbol, reference)
+        }
+        const data = reference && await quoteRequest('ka10079', '/api/dostk/chart',
+          { stk_cd: symbol, tic_scope: '1', upd_stkpc_tp: '0' })
+        let quote = parseAlertQuote(data, code, session, now(), reference)
+        if (quote && now() - Date.parse(quote.observed_at) > ageLimit - 2_000) quote = null
+        await call('observe', { ...window, code, quote, reason: reference && !data ? 'quote_unavailable' : 'reference_or_quote_unavailable' })
+        report.quotes += Number(Boolean(quote))
+      }
+      for (const entry of await call('queue', window)) {
+        if (now() >= deadline || !activeAlertSession(session, now())) break
         const user_id = entry.user_id
         const available = await access(user_id).catch(() => ({ status: 'unavailable' }))
         if (available.status === 'kakao_required') await call('kakao_block', { user_id })
@@ -112,12 +151,12 @@ export function createAlertWorker({
           if (['consent_required', 'revoked'].includes(error.kind)) await call('kakao_block', { user_id })
           continue
         }
-        if (now() >= deadline || !activeSession(session, now())) break
-        const args = { event_id: entry.id, kakao_id: link.kakao_id, tokens: link.tokens, day_limit: settings.dailyLimit }
+        if (now() >= deadline || !activeAlertSession(session, now())) break
+        const args = { ...window, event_id: entry.id, kakao_id: link.kakao_id, tokens: link.tokens, day_limit: settings.dailyLimit }
         const event = await call('dispatch', args)
         if (!event) continue
         let result = 'failed', reason = 'market_closed'
-        if (activeSession(session, now()) && Date.parse(event.lease_until) > now() + 10_000) {
+        if (activeAlertSession(session, now()) && Date.parse(event.lease_until) > now() + 10_000) {
           try {
             await provider.sendMemo(token, alertMessage(event, settings.historyUrl))
             result = 'sent'

@@ -4,6 +4,9 @@ begin;
 
 do $$
 begin
+  if to_regprocedure('public.atlas_alert_rpc_v3(text,jsonb)') is not null then
+    raise exception 'Alert v3 is already installed; do not reapply the v2 baseline';
+  end if;
   if exists (select 1 from public.atlas_alert_events where status='sending' and lease_until>clock_timestamp())
     or exists (select 1 from public.atlas_alert_worker where operation is not null and lease_until>clock_timestamp()) then
     raise exception 'alert_dispatch_in_progress';

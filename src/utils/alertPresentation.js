@@ -5,6 +5,7 @@ export const stateLabels = {
 }
 
 export const reasons = {
+  reference_or_quote_unavailable: '검증된 시세 또는 비교 기준가 확인 불가',
   quote_unavailable: '시세 확인 불가', kakao_required: '카카오 재연결 또는 메시지 동의 필요',
   watchlist_removed: '관심종목 삭제', event_stale: '관측 시각 만료', expired: '만료일 경과',
   quota: '카카오 발송 한도', market_closed: '정규장 종료', rule_replaced: '조건 변경 전 발송 대기 취소',

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, Bot, ChartNoAxesCombined, CircleAlert, CircleCheck, Info, LockKeyhole } from 'lucide-react'
-import { ALERT_KINDS, ALERT_RULES_PER_SYMBOL, addAlertDays, alertCondition, alertExpiry, alertThreshold, koreanAlertDay, priceRule } from '../../shared/alertRules'
+import { ALERT_KINDS, ALERT_RULES_PER_SYMBOL, addAlertDays, alertCondition, alertExpiry, alertFrequencyLabel, alertSessionLabel, alertThreshold, koreanAlertDay, legacyAlertKind } from '../../shared/alertRules'
 import { agentApi } from '../services/agentApi'
 import { displayAlertStatus, reasons, stateLabels } from '../utils/alertPresentation'
 import AlertHelp from './AlertHelp'
 import AlertManageDialog from './AlertManageDialog'
+import { AlertFrequencySelect, AlertValueInput } from './AlertConditionInputs'
 import './AlertAgentPanel.css'
 
 export const agentModes = [
@@ -45,7 +46,8 @@ const kakaoStates = {
   disconnected: ['카카오 연결 필요', Info, 'neutral'],
 }
 const toTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'medium' })
-const editable = row => ({ kind: '', threshold: '', expires_on: '', ...row })
+const editable = row => ({ kind: '', threshold: '', expires_on: '', frequency: 'once', ...row,
+  ...(legacyAlertKind(row?.kind) ? { kind: 'price_touch' } : {}) })
 
 export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, notice, onLogin, onKakao, settingsOpen }) {
   const [data, setData] = useState(null)
@@ -58,11 +60,12 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
   const updateRef = useRef(0)
   const mounted = useRef(false)
   const history = useRef(null)
-  const manageButton = useRef(null)
+  const title = useRef(null)
   const busyRef = useRef(false)
   const intents = useRef(new Map())
   const draft = drafts.room(roomId)
   const today = koreanAlertDay()
+  const afterSymbols = new Set(data?.afterMarketDate === today ? data.afterMarketSymbols : [])
 
   useEffect(() => {
     mounted.current = true
@@ -103,10 +106,10 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
   const selected = rows.filter(({ code }) => draft.rows[code]?.selected)
   const rules = selected.map(({ code }) => {
     const row = editable(draft.rows[code])
-    return { code, kind: row.kind, threshold: alertThreshold(row.kind, row.threshold), expires_on: row.expires_on }
+    return { code, kind: row.kind, threshold: alertThreshold(row.kind, row.threshold), expires_on: row.expires_on, frequency: row.frequency }
   })
   const valid = rules.length > 0 && rules.every(rule => rule.threshold !== null && alertExpiry(rule.expires_on, today))
-  const available = data?.ruleManagement === true
+  const available = data?.conditionVersion === 3
   const canActivate = available && data.enabled && data.kakao === 'ready'
   const atLimit = selected.some(({ code }) => (byCode.get(code)?.length || 0) >= ALERT_RULES_PER_SYMBOL)
   const edit = (code, patch) => {
@@ -121,7 +124,7 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
   function closeManager() {
     const trigger = manager.trigger
     setManager(null)
-    requestAnimationFrame(() => (trigger.isConnected ? trigger : manageButton.current)?.focus())
+    requestAnimationFrame(() => (trigger.isConnected ? trigger : title.current)?.focus())
   }
   async function change(body) {
     if (busyRef.current) return { ok: false, message: '앞선 변경을 처리하고 있습니다.' }
@@ -159,8 +162,8 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
 
   return <section className="agent-mode-card alert-agent" aria-label="관심종목 알림 설정">
     <div className="alert-heading">
-      <div className="alert-title"><h2>관심종목 알림</h2>
-        <AlertHelp {...help} label="관심종목 알림 안내">KRX 정규장에 저장한 조건이 충족되면 조건별로 한 번 발송합니다. 같은 종목에 여러 조건을 설정할 수 있습니다. 발송 완료된 조건은 다시 시작하기 전까지 재발송하지 않습니다.</AlertHelp>
+      <div className="alert-title"><h2 ref={title} tabIndex={-1}>관심종목 알림</h2>
+        <AlertHelp {...help} label="관심종목 알림 안내">최초 1회 또는 만료일까지 반복을 선택할 수 있습니다. 반복 알림은 조건에 다시 진입할 때 발송합니다. 만료일은 한국 시간이며 해당 날짜의 마지막 지원 세션까지만 감시합니다.</AlertHelp>
       </div>
       <div className="alert-channel">
         <div className="alert-channel-actions">
@@ -180,7 +183,7 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
         <AlertHelp {...help} label="미저장 초안 안내">대화에서 요청한 조건을 입력했습니다. 내용을 확인한 뒤 저장해야 알림이 활성화됩니다.</AlertHelp>
       </div>}
       {savedDrafts.map(saved => <div key={saved.rule_id} className="alert-draft-notice alert-saved-draft">
-        <p role="status" className="alert-message">미저장 변경 · {rows.find(row => row.code === saved.code)?.name || saved.code} · {alertCondition(saved.kind, saved.threshold)} · 저장 후 적용</p>
+        <p role="status" className="alert-message">미저장 변경 · {rows.find(row => row.code === saved.code)?.name || saved.code} · {alertCondition(saved.kind, saved.threshold)} · {alertFrequencyLabel(saved.frequency)} · 저장 후 적용</p>
         <button type="button" onClick={event => openManager(event, saved.code, saved)}>초안 확인</button>
         <button type="button" onClick={() => drafts.clearSaved(roomId, saved)}>초안 버리기</button>
       </div>)}
@@ -189,7 +192,7 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
       {!loading && rows.length === 0 && <p>관심종목을 등록하면 이 표에서 조건을 선택할 수 있습니다.</p>}
       {rows.length > 0 && <div className="alert-table-scroll" tabIndex={0} role="region" aria-label="종목별 알림 조건 표">
         <table><thead><tr><th scope="col">대상</th><th scope="col">종목</th><th scope="col">조건 종류</th><th scope="col">조건값 · 기준</th>
-          <th scope="col">만료일</th><th scope="col">저장된 조건</th><th scope="col">관리</th></tr></thead>
+          <th scope="col">알림 횟수</th><th scope="col">만료일</th><th scope="col">저장된 조건</th><th scope="col">관리</th></tr></thead>
           <tbody>{rows.map(({ code, name }) => {
             const saved = byCode.get(code) || []
             const row = editable(draft.rows[code])
@@ -201,18 +204,21 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
             return <tr key={code}>
               <td><input type="checkbox" aria-label={`${name} 알림 대상`} disabled={busy} checked={Boolean(row.selected)}
                 onChange={event => edit(code, { selected: event.target.checked })}/></td>
-              <th scope="row"><strong>{name}</strong><small>{code}</small></th>
+              <th scope="row"><strong>{name}</strong><small>{code}</small><small>{afterSymbols.has(code) ? 'KRX 정규장 · 오늘 NXT 대상' : 'KRX 정규장만 지원'}</small></th>
               <td><select aria-label={`${name} 조건 종류`} disabled={busy} value={row.kind}
                 onChange={event => edit(code, { kind: event.target.value, threshold: '', dirty: true })}>
                 <option value="">조건 선택</option>{Object.entries(ALERT_KINDS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
               </select></td>
-              <td><input type="text" inputMode={priceRule(row.kind) ? 'numeric' : 'decimal'} maxLength={12} aria-label={`${name} 조건값`}
-                disabled={busy || !row.kind} value={row.threshold} onChange={event => edit(code, { threshold: event.target.value, dirty: true })}/>
-                {row.kind && <small>{priceRule(row.kind) ? '원 · 현재가' : row.kind === 'fall_lte' ? '% 하락 · 전일 종가 대비' : '% 상승 · 전일 종가 대비'}</small>}</td>
+              <td><AlertValueInput kind={row.kind} label={`${name} 조건값${row.kind === 'price_touch' ? ' · 원' : row.kind ? ' · 퍼센트' : ''}`}
+                disabled={busy || !row.kind} value={row.threshold} onChange={threshold => edit(code, { threshold, dirty: true })}/></td>
+              <td><AlertFrequencySelect label={`${name} 알림 횟수`} disabled={busy} value={row.frequency}
+                onChange={frequency => edit(code, { frequency, dirty: true })}/></td>
               <td><input type="date" min={today} max={addAlertDays(today, 30)} aria-label={`${name} 만료일`} disabled={busy}
                 value={row.expires_on} onChange={event => edit(code, { expires_on: event.target.value, dirty: true })}/></td>
               <td><span className="alert-status">{data ? `${saved.length}개` : '—'}</span>
                 {[...counts].map(([status, count]) => <small key={status}>{stateLabels[status]} {count}개</small>)}
+                {[...new Set(saved.map(rule => reasons[rule.reason]).filter(Boolean))].map(reason => <small key={reason}>{reason}</small>)}
+                {saved.length > 0 && <small>최초 1회 {saved.filter(rule => rule.frequency !== 'repeat').length}개 · 반복 {saved.filter(rule => rule.frequency === 'repeat').length}개</small>}
                 {row.dirty && <small className="alert-unsaved">저장되지 않은 변경</small>}</td>
               <td><button type="button" aria-label={`${name} 알림 관리`} onClick={event => openManager(event, code)}>관리</button></td>
             </tr>
@@ -221,29 +227,29 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
       </div>}
       <div className="alert-save-guide">
         <div className="alert-send-criteria">발송 기준
-          <AlertHelp {...help} label="발송 기준 안내">저장할 때 조건이 이미 충족됐다면 첫 유효 시세 확인에서 바로 발송될 수 있습니다. 조회 사이에 잠깐 도달한 가격은 놓칠 수 있습니다.</AlertHelp>
+          <AlertHelp {...help} label="발송 기준 안내">현재가는 첫 관측이 목표가와 같거나 연속 관측 사이에 목표가를 통과하면 충족됩니다. 조회 사이에 도달했다 돌아오는 움직임은 놓칠 수 있습니다. 등락률은 직전 유효 거래일 기준이며, 당일 첫 관측에서 이미 조건을 충족해도 발송될 수 있습니다. 반복은 조건에서 벗어났다가 다시 충족할 때 발송합니다.</AlertHelp>
         </div>
-        <p className="alert-caption">이미 충족된 조건은 저장 후 바로 발송될 수 있습니다.</p>
+        <p className="alert-caption">등락률이 이미 조건을 충족했다면 첫 유효 시세에서 발송될 수 있습니다.</p>
       </div>
       <div className="alert-actions"><button type="button" disabled={!valid || !canActivate || busy || atLimit} onClick={createSelected}>저장하고 시작</button>
-        <span>새 조건 {selected.length}개 · 관심종목 {rows.length} / 20개 · 만료일 한국 시간 기준</span></div>
+        <span className="alert-selection-summary">새 조건 {selected.length}개 · 관심종목 {rows.length} / 20개</span></div>
       {atLimit && <p className="alert-message">종목당 저장된 조건은 최대 {ALERT_RULES_PER_SYMBOL}개까지 보관할 수 있습니다.</p>}
       {mutationMessage && <p className={mutationMessage.ok ? 'alert-message' : 'alert-error'} role={mutationMessage.ok ? 'status' : 'alert'}>{mutationMessage.message}</p>}
       <section ref={history} id="alert-history" aria-label="발송 이력" className="alert-history">
-        <div className="alert-history-actions"><button ref={manageButton} type="button" onClick={event => openManager(event)}>알림 관리</button></div>
         <h3>발송 이력</h3>
         {data?.history?.length ? <div className="alert-table-scroll" tabIndex={0} role="region" aria-label="발송 이력 표">
           <table><thead><tr><th scope="col">종목</th><th scope="col">충족 조건</th><th scope="col">관측 시세</th><th scope="col">발송 상태</th></tr></thead>
             <tbody>{data.history.map(item => <tr key={item.id}>
-              <th scope="row">{item.name}<small>{item.code}</small></th><td>{alertCondition(item.kind, item.threshold)}</td>
-              <td>{Number(item.price).toLocaleString('ko-KR')}원 · {Number(item.change_rate).toFixed(2)}%<small>{toTime.format(new Date(item.observed_at))} · KRX</small></td>
+              <th scope="row">{item.name}<small>{item.code}</small></th><td>{alertCondition(item.kind, item.threshold)}<small>{alertFrequencyLabel(item.frequency)}</small></td>
+              <td>{Number(item.price).toLocaleString('ko-KR')}원 · {Number(item.change_rate).toFixed(2)}%<small>{toTime.format(new Date(item.observed_at))} · {alertSessionLabel(item.market)}</small>
+                {item.base_price && <small>비교 기준 {item.base_day} · {Number(item.base_price).toLocaleString('ko-KR')}원</small>}</td>
               <td>{stateLabels[item.status]}{reasons[item.reason] && <small>{reasons[item.reason]}</small>}</td>
             </tr>)}</tbody>
           </table>
         </div> : data && !loading && <p>조건 충족 또는 발송 이력이 없습니다.</p>}
       </section>
       {manager && <AlertManageDialog rows={rows} byCode={byCode} initialCode={manager.code} initialDraft={manager.draft}
-        today={today} busy={busy} canActivate={canActivate} available={available} change={change} onClose={closeManager}
+        today={today} afterSymbols={afterSymbols} busy={busy} canActivate={canActivate} available={available} change={change} onClose={closeManager}
         onDraftDone={saved => drafts.clearSaved(saved.roomId, saved)}/>}
     </>}
   </section>

@@ -103,8 +103,8 @@ export function registerAgentRoutes(app, {
       const editor = alertEditor(requestedEditor, alerts?.watchlist ?? [], alerts?.rules)
       const result = await bridge.call('/run', { request_id: reservation.id, question: reservation.question, context,
         ...(alerts ? { alert_context: { watchlist: alerts.watchlist, draft: editor.draft,
-          rules: (alerts.rules || []).map(({ rule_id, version, code, kind, threshold, expires_on, status }) =>
-            ({ rule_id, version, code, kind, threshold, expires_on, status })) } } : {}) })
+          rules: (alerts.rules || []).map(({ rule_id, version, code, kind, threshold, expires_on, status, frequency }) =>
+            ({ rule_id, version, code, kind, threshold, expires_on, status, frequency })) } } : {}) })
       if (!['completed', 'partial', 'failed'].includes(result.status) || !result.usage || Buffer.byteLength(JSON.stringify(result.answer)) > 100000) throw error('invalid_internal_result')
       if (alerts && result.status === 'completed' && result.alert_action) {
         result.answer = await alertAnswer(result.alert_action, {
@@ -152,6 +152,7 @@ export function registerAgentRoutes(app, {
         id: uuid, code: { type: 'string', maxLength: 6 }, kind: { type: 'string', maxLength: 12 },
         threshold: { type: 'string', maxLength: 12 }, expires_on: { type: 'string', maxLength: 10 },
         rule_id: uuid, version: uuid,
+        frequency: { type: 'string', enum: ['once', 'repeat'] },
       } }] },
     },
   }

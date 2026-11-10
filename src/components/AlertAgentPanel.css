@@ -68,8 +68,13 @@
 .alert-agent .alert-unsaved { color: var(--tone-info, #91b7ff); }
 .alert-agent .alert-error { color: var(--red); }
 .alert-history { margin-top: 24px; scroll-margin-top: 85px; }
-.alert-history-actions { display: flex; justify-content: end; margin-bottom: 8px; }
-.alert-history-actions button, .alert-saved-draft button { font-size: 12px; }
+.alert-selection-summary { font-size: 12px; font-weight: 400; }
+.alert-saved-draft button { font-size: 12px; }
+.alert-value-input { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.alert-value-input > input { min-width: 0; }
+.alert-value-input > span { color: var(--text-secondary, #a4b5cc); }
+.alert-value-steps { display: grid; gap: 2px; }
+.alert-value-steps button { display: grid; place-items: center; width: 30px; min-height: 25px; padding: 0; }
 .alert-saved-draft { flex-wrap: wrap; margin-block: 8px; }
 .account-modal.alert-manage {
   position: fixed; inset: 0; margin: auto; width: min(600px, calc(100% - 24px)); max-height: calc(100dvh - 24px);
@@ -93,7 +98,7 @@
 .alert-manage .alert-actions { gap: 6px; }
 .alert-manage button { font-size: 12px; }
 .alert-manage-editor, .alert-manage-confirm { margin-bottom: 12px; }
-.alert-manage-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; border: 0; padding: 0; margin: 12px 0; }
+.alert-manage-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; border: 0; padding: 0; margin: 12px 0; }
 .agent-trading-placeholder { display: grid; justify-items: start; gap: 8px; }
 .agent-trading-placeholder :is(h2, p) { margin: 0; }
 @media (max-width: 640px) {

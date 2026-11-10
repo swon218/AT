@@ -20,6 +20,7 @@ export default function useAgentAlertDrafts(userId) {
       const row = rows[focus] || saved[focus]
       return { revision, draft: row ? { id: row.id, code: row.code, kind: row.kind || '',
         threshold: String(row.threshold ?? ''), expires_on: row.expires_on || '',
+        frequency: row.frequency || 'once',
         ...(row.rule_id ? { rule_id: row.rule_id, version: row.version } : {}) } : null }
     },
     move(from, to) {

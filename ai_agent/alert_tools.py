@@ -62,10 +62,13 @@ class AlertTools:
             if target is None:
                 return {'kind': 'ambiguous_rule', 'code': code}
         old = target or (self.draft if edit_draft else {})
+        if old.get('kind') in ('price_gte', 'price_lte') and args.kind != 'price_touch':
+            return {'kind': 'legacy_conversion_required'}
         kind = args.kind or old.get('kind')
         threshold = args.threshold if args.threshold is not None else old.get('threshold')
         expires_on = args.expires_on or (old.get('expires_on') if old else (self.today + timedelta(days=7)).isoformat())
-        if kind not in ('price_gte', 'price_lte', 'rise_gte', 'fall_lte') or threshold is None or expires_on is None:
+        frequency = args.frequency or old.get('frequency') or 'once'
+        if kind not in ('price_touch', 'rise_gte', 'fall_lte') or threshold is None or expires_on is None:
             return {'kind': 'invalid'}
         price = kind.startswith('price')
         basis = 'price' if price else 'previous_close'
@@ -80,4 +83,4 @@ class AlertTools:
             return {'kind': 'invalid'}
         return {'kind': 'draft', 'edit': edit_draft,
                 **({'rule_id': target['rule_id'], 'version': target['version']} if target else {}),
-                'rule': {'code': code, 'kind': kind, 'threshold': threshold, 'expires_on': expires_on}}
+                'rule': {'code': code, 'kind': kind, 'threshold': threshold, 'expires_on': expires_on, 'frequency': frequency}}

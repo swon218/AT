@@ -10,7 +10,7 @@ export function createAlertStore(settings = config) {
     }) : null
   return async (action, p = {}) => {
     if (!db) throw alertError('alert_unavailable', 503)
-    const { data, error } = await db.rpc('atlas_alert_rpc_v2', { action, p }).abortSignal(AbortSignal.timeout(7000))
+    const { data, error } = await db.rpc('atlas_alert_rpc_v3', { action, p }).abortSignal(AbortSignal.timeout(7000))
     if (!error) return data
     const code = ['alert_dispatch_in_progress', 'alert_kakao_required', 'alert_watchlist_required', 'alert_expired', 'alert_invalid',
       'alert_version_conflict', 'alert_request_conflict', 'alert_invalid_state', 'alert_duplicate_condition', 'alert_rule_limit']

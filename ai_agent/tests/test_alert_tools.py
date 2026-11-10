@@ -8,7 +8,7 @@ from ai_agent.schemas import AlertProposal
 def proposal(**patch):
     return AlertProposal.model_validate({
         'action': 'create', 'symbol': '브이엠', 'basis': 'previous_close',
-        'kind': 'fall_lte', 'threshold': 5, 'expires_on': None, 'rule_id': None, **patch,
+        'kind': 'fall_lte', 'threshold': 5, 'expires_on': None, 'rule_id': None, 'frequency': None, **patch,
     })
 
 
@@ -17,7 +17,7 @@ def test_draft_only_exact_watchlist_and_explicit_basis():
     tools = AlertTools({'watchlist': [{'name': '브이엠', 'code': '089970'}]}, now)
     result = tools.propose(proposal(), '브이엠 5% 하락하면 알려줘')
     assert result == {'kind': 'draft', 'edit': False, 'rule': {
-        'code': '089970', 'kind': 'fall_lte', 'threshold': 5, 'expires_on': '2026-11-17',
+        'code': '089970', 'kind': 'fall_lte', 'threshold': 5, 'expires_on': '2026-11-17', 'frequency': 'once',
     }}
     assert tools.propose(proposal(), '브이엠 매입가 대비 5% 하락하면 알려줘')['kind'] == 'unsupported'
     assert tools.propose(proposal(symbol='브이'), '')['kind'] == 'watchlist_required'
@@ -26,6 +26,8 @@ def test_draft_only_exact_watchlist_and_explicit_basis():
     assert tools.editor()['draft']['threshold'] == 6
     edit = proposal(action='edit', basis='same', symbol=None, threshold=7, kind=None)
     assert tools.propose(edit, '7%로 바꿔줘')['rule']['threshold'] == 7
+    repeat = proposal(kind='price_touch', basis='price', threshold=210000, frequency='repeat')
+    assert tools.propose(repeat, '브이엠 210000원 도달마다 반복')['rule']['frequency'] == 'repeat'
 
 
 def test_saved_edit_requires_exact_rule_and_new_draft_stays_independent():
@@ -40,9 +42,10 @@ def test_saved_edit_requires_exact_rule_and_new_draft_stays_independent():
     edit = dict(action='edit_saved', basis='same', threshold=197600, kind=None)
     assert len(tools.editor()['saved']) == 2
     assert tools.propose(proposal(**edit), '브이엠 조건 수정')['kind'] == 'ambiguous_rule'
-    drafted = tools.propose(proposal(rule_id=first, **edit), '브이엠 197500원 이상을 197600원 이상으로 변경')
+    assert tools.propose(proposal(rule_id=first, **edit), '브이엠 기존 가격 변경')['kind'] == 'legacy_conversion_required'
+    drafted = tools.propose(proposal(rule_id=first, **{**edit, 'kind': 'price_touch', 'basis': 'price'}), '브이엠 목표가 양방향 도달로 변경')
     assert drafted['rule_id'] == first and drafted['version'] == second
-    assert drafted['rule']['threshold'] == 197600 and drafted['rule']['kind'] == 'price_gte'
+    assert drafted['rule']['threshold'] == 197600 and drafted['rule']['kind'] == 'price_touch'
     assert 'rule_id' not in tools.propose(proposal(), '브이엠 5% 하락 조건 추가')
 
 

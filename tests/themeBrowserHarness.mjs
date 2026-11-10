@@ -153,7 +153,7 @@ async function response(path, params, method, authorization, body) {
         Object.assign(rule, body.rule, { version: randomUUID(), status: body.action === 'cancel' ? 'canceled' : 'active' })
       }
     }
-    return { watchlist, rules, history, kakao: 'ready', enabled: true, consentAvailable: true, ruleManagement: true }
+    return { watchlist, rules, history, kakao: 'ready', enabled: true, consentAvailable: true, ruleManagement: true, conditionVersion: 3 }
   }
   if (path === '/api/agent/rooms/1/requests' && method === 'POST') {
     const user = authorization?.slice('Bearer fixture-'.length)
@@ -169,9 +169,10 @@ async function response(path, params, method, authorization, body) {
     const answer = { kind: 'concept', claims: [], sources: [], coverage: [], result_sets: [] }
     const content = price ? `${stock.name} · 저장 조건 변경 초안` : stock && percent ? `${stock.name} · 전일 종가 대비 ${percent[1]}% 하락 알림 초안` : '관심종목을 확인해 주세요.'
     if (stock && percent) answer.alertDraft = { code: stock.code, kind: edit?.kind || 'fall_lte', threshold: Number(percent[1]),
+      frequency: question.includes('반복') ? 'repeat' : edit?.frequency || 'once',
       expires_on: edit?.expires_on || addAlertDays(koreanAlertDay(), 7), id: edit?.id || randomUUID(),
       revision: randomUUID(), baseRevision: alert_editor?.revision ?? null, roomId: room.id, requestId: request_id }
-    if (price) answer.alertDraft = { code: saved.code, kind: saved.kind, threshold: Number(price[1]), expires_on: saved.expires_on,
+    if (price) answer.alertDraft = { code: saved.code, kind: saved.kind, threshold: Number(price[1]), expires_on: saved.expires_on, frequency: saved.frequency || 'once',
       rule_id: saved.rule_id, version: saved.version, id: randomUUID(), revision: randomUUID(),
       baseRevision: alert_editor?.revision ?? null, roomId: room.id, requestId: request_id }
     messages.push({ id: String(messages.length + 3), role: 'user', content: question, request_id, created_at: room.updated_at },

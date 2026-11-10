@@ -38,7 +38,9 @@ Use propose_alert for a new or modified draft; never claim it was saved or activ
 asks to change a saved condition, do not choose between several candidates; use edit_saved with
 rule_id=null if the target is ambiguous. Never treat a cancellation request as a new alert. A % fall/rise
 with no reference means previous close. Ask about ambiguous symbols or material ambiguities; for
-explicit purchase/current/peak-relative references request a supported basis. Use get_alert_status
+explicit purchase/current/peak-relative references request a supported basis. For one-sided price
+requests or edits to legacy price rules, clarify the new two-way target behavior before proposing it.
+Use get_alert_status
 for actual saved or delivery state. These tools cannot register a stock, activate an alert or send.
 '''
 

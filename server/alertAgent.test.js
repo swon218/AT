@@ -7,7 +7,8 @@ import { PGlite } from '@electric-sql/pglite'
 import { alertAnswer, alertEditor } from './alertAgent.js'
 import { registerAgentRoutes } from './agent.js'
 import { createKakaoProvider } from './kakaoProvider.js'
-import { alertMessage, createAlertWorker, parseAlertQuote } from './alertWorker.js'
+import { alertMessage, createAlertWorker, parseAlertQuote, parseAlertReference } from './alertWorker.js'
+import { selectAlertSession } from './alertSessions.js'
 import { addAlertDays, alertThreshold, koreanAlertDay } from '../shared/alertRules.js'
 
 const user = '11111111-1111-4111-8111-111111111111'
@@ -210,6 +211,150 @@ test('v2 migrates sent history and isolates rule versions, pending deliveries, o
   assert.equal((await read()).ruleManagement, true)
 })
 
+test('v3 persists crossings and rate re-entry per session, isolates deliveries and preserves legacy history', async t => {
+  const db = await alertDatabase(t)
+  await db.exec(await load('ALERT_RULES_V2_SUPABASE'))
+  const legacyVersion = randomUUID(), legacyId = randomUUID()
+  await db.exec(`
+    insert into public.watchlist_items(user_id,code,name,slot) values ('${user}','005930','삼성전자',1);
+    insert into public.atlas_kakao_links(kakao_id,user_id,status,tokens,scopes,access_until,verified_at)
+      values ('111111','${user}','connected','{"ciphertext":"sealed"}','{talk_message}',now()+interval '1 hour',now());
+    insert into public.atlas_alert_rules(rule_id,user_id,code,version,kakao_id,kind,threshold,expires_on,status)
+      values ('${legacyId}','${user}','005930','${legacyVersion}','111111','price_gte',220000,'${rule.expires_on}','sent');
+    insert into public.atlas_alert_events(rule_id,user_id,code,name,version,kind,threshold,observed_at,trade_day,base_day,market,price,change_rate,status,attempts,finished_at)
+      values ('${legacyId}','${user}','005930','삼성전자','${legacyVersion}','price_gte',220000,now(),'${today}','${addAlertDays(today, -1)}','KRX',220000,10,'sent',1,now());
+  `)
+  await db.exec(await load('ALERT_CONDITIONS_V3_SUPABASE'))
+  await db.exec(await load('ALERT_CONDITIONS_V3_SUPABASE'))
+  const run = async (action, p = {}) => (await db.query('select public.atlas_alert_rpc_v3($1,$2::jsonb) as value',
+    [action, JSON.stringify({ user_id: user, ...p })])).rows[0].value
+  const change = (mutation, p) => run('mutate', { mutation, operation: randomUUID(), ...p })
+  const option = (kind, threshold, frequency = 'repeat') => ({ ...rule, kind, threshold, frequency })
+  const initial = await run('read')
+  assert.equal(initial.conditionVersion, 3)
+  assert.deepEqual([initial.rules[0].kind, initial.rules[0].frequency, initial.rules[0].status], ['price_gte', 'once', 'sent'])
+  assert.equal(initial.history[0].version, legacyVersion)
+  assert.equal(initial.history[0].frequency, 'once')
+  await assert.rejects(change('create', { rules: [option('price_lte', 200000)] }), /alert_invalid/)
+  const create = { mutation: 'create', operation: randomUUID(), rules: [option('price_touch', 210000), option('price_touch', 211000, 'once'),
+    option('price_touch', 209900, 'once'),
+    option('rise_gte', 5), option('fall_lte', 5)] }
+  await run('mutate', create)
+  assert.equal(await run('mutate', create), true)
+  await db.exec("update public.atlas_alert_rules set activated_at=now()-interval '2 minutes'")
+  const window = { market: 'KRX', phase: 'regular', trade_day: today, previous_day: addAlertDays(today, -1),
+    session_open: `${today}T00:00:00+09:00`, session_close: `${today}T23:59:59+09:00` }
+  let operation = randomUUID()
+  assert.equal(await run('begin_tick', { operation }), true)
+  assert.equal(await run('begin_tick', { operation: randomUUID() }), false)
+  assert.deepEqual(await run('symbols', { operation, ...window }), [stock.code])
+  let observed = Date.now() - 62_000
+  const observe = async (price, { session = window, delta = 1000 } = {}) => {
+    observed += delta
+    await db.exec('update public.atlas_alert_rules set next_check=now()')
+    return run('observe', { operation, ...session, code: stock.code, quote: price === null ? null : {
+      trade_day: today, observed_at: new Date(observed).toISOString(), price, base_price: 200000, prior_close: 200000,
+      base_day: session.previous_day,
+    } })
+  }
+  const read = () => run('read')
+  const history = async (kind, threshold) => (await read()).history.filter(e => e.kind === kind && e.threshold === threshold)
+  const delivery = (event, session = window) => ({ operation, ...session, event_id: event.id, kakao_id: '111111', tokens: { ciphertext: 'sealed' }, day_limit: 30 })
+  const saved = async (kind, threshold) => (await read()).rules.find(a => a.kind === kind && a.threshold === threshold)
+  const ref = row => ({ rule_id: row.rule_id, version: row.version })
+  const touch = () => history('price_touch', 210000)
+  await observe(209900)
+  assert.equal((await touch()).length, 0)
+  assert.equal((await history('price_touch', 209900)).length, 1)
+  await observe(210100)
+  await observe(210100, { delta: 0 })
+  assert.equal((await touch()).length, 1)
+  assert.equal((await touch())[0].price, 210100)
+  await observe(210000)
+  await observe(210000)
+  assert.equal((await touch()).length, 2)
+  await observe(220000)
+  assert.equal((await touch()).length, 2)
+  const once = (await history('price_touch', 211000))[0]
+  const repeat = (await touch())[0]
+  assert.equal((await run('dispatch', delivery(once))).frequency, 'once')
+  await run('finish', { ...delivery(once), result: 'sent' })
+  assert.equal((await saved('price_touch', 211000)).status, 'sent')
+  assert.equal((await run('dispatch', delivery(repeat))).frequency, 'repeat')
+  await assert.rejects(change('cancel', ref(await saved('price_touch', 210000))), /alert_dispatch_in_progress/)
+  await run('finish', { ...delivery(repeat), result: 'sent' })
+  assert.equal((await saved('price_touch', 210000)).status, 'active')
+
+  // Simulate the same-day worker restarting. Observation and event state remain in Postgres.
+  await run('end_tick', { operation })
+  await db.exec('update public.atlas_alert_worker set next_tick=now()')
+  operation = randomUUID()
+  assert.equal(await run('begin_tick', { operation }), true)
+  await observe(210000)
+  assert.equal((await touch()).length, 3)
+  await observe(190000)
+  await observe(189000)
+  await observe(200000)
+  await observe(190000)
+  assert.equal((await history('fall_lte', 5)).length, 2)
+  const uncertain = (await history('fall_lte', 5))[0]
+  await run('dispatch', delivery(uncertain))
+  await run('finish', { ...delivery(uncertain), result: 'unknown' })
+  assert.equal((await saved('fall_lte', 5)).status, 'active')
+  assert.equal((await history('rise_gte', 5)).length, 1)
+  assert.equal((await history('price_touch', 211000)).length, 1)
+  await observe(220000, { delta: -2000 })
+  await observe(190000, { delta: 3000 })
+  assert.equal((await touch()).length, 3)
+  assert.equal((await history('fall_lte', 5)).length, 2)
+  await observe(null)
+  await observe(230000)
+  assert.equal((await touch()).length, 3)
+  await observe(200000)
+  await observe(210000)
+  assert.equal((await touch()).length, 5)
+  assert.equal((await history('rise_gte', 5)).length, 2)
+
+  const after = { ...window, market: 'NXT', phase: 'after', symbols: [stock.code] }
+  await observe(220000, { session: { ...after, symbols: [] } })
+  await observe(220000, { session: after })
+  assert.equal((await touch()).length, 5)
+  assert.equal((await history('rise_gte', 5)).length, 2)
+  await observe(210000, { session: after })
+  const nxt = (await touch())[0]
+  assert.equal(nxt.market, 'NXT')
+  assert.equal(nxt.base_price, 200000)
+  assert.equal(await run('dispatch', delivery(nxt)), null)
+  await db.query('update public.atlas_alert_events set session_close=now() where id=$1', [nxt.id])
+  assert.equal(await run('dispatch', delivery(nxt, after)), null)
+  const down = await saved('fall_lte', 5)
+  const downPending = (await history('fall_lte', 5)).find(e => e.status === 'queued')
+  await db.query('update public.atlas_alert_rules set expires_on=current_date-2 where rule_id=$1', [down.rule_id])
+  assert.equal(await run('dispatch', delivery(downPending)), null)
+
+  // Move only the previous session's stored state to an earlier day; the new quote is current.
+  await db.exec("update public.atlas_alert_observations set trade_day=trade_day-1; update public.atlas_alert_events set trade_day=trade_day-1")
+  await observe(211000)
+  assert.equal((await history('rise_gte', 5)).length, 3)
+  const up = await saved('rise_gte', 5)
+  const edit = { ...ref(up), rule: option('rise_gte', 5, 'once') }
+  await assert.rejects(change('update', { ...edit, user_id: other }), /alert_version_conflict/)
+  await change('update', edit)
+  await assert.rejects(change('cancel', ref(up)), /alert_version_conflict/)
+  assert.equal((await saved('rise_gte', 5)).frequency, 'once')
+  assert.equal((await history('rise_gte', 5)).every(e => e.status === 'canceled'), true)
+  const pending = await saved('price_touch', 210000)
+  await change('cancel', ref(pending))
+  assert.equal((await touch()).filter(e => e.status === 'queued').length, 0)
+  assert.equal((await touch()).filter(e => e.status === 'sent').length, 1)
+  assert.deepEqual((await run('read', { user_id: other })).history, [])
+  await db.exec('set role service_role')
+  await assert.rejects(db.exec('select * from public.atlas_alert_observations'), { code: '42501' })
+  await assert.rejects(db.exec("select public.atlas_alert_rpc_v2('read','{}')"), { code: '42501' })
+  await db.exec('reset role; set role authenticated')
+  await assert.rejects(run('read'), { code: '42501' })
+})
+
 test('scope consent checks exact identity, and only the official memo endpoint sends', async () => {
   const requests = []
   const provider = createKakaoProvider({ kakaoRestKey: 'fixture' }, async (url, options) => {
@@ -234,9 +379,11 @@ test('prices and changes come from the same dated KRX tick; stale, previous-day,
   const session = { date: '2026-11-10', previous: '2026-11-09', open: '2026-11-10T00:00:00Z', close: '2026-11-10T06:30:00Z' }
   const now = Date.parse('2026-11-10T01:00:45Z')
   const raw = { cntr_tm: '20261110100000', cur_prc: '-950', pred_pre: '50', pred_pre_sig: '5' }
-  const parse = (row = raw, at = now) => parseAlertQuote({ return_code: 0, stk_cd: stock.code, stk_tic_chart_qry: [row] }, stock.code, session, at)
+  const parse = (row = raw, at = now, base = 1000) => parseAlertQuote({ return_code: 0, stk_cd: stock.code, stk_tic_chart_qry: [row] }, stock.code, session, at,
+    { base_day: session.previous, base_price: base, prior_close: 1000 })
   assert.equal(parse().change_rate, -5)
-  assert.equal(parse({ ...raw, pred_pre: '0', pred_pre_sig: '3' }).change_rate, 0)
+  assert.equal(parse({ ...raw, pred_pre: '0', pred_pre_sig: '3' }, now, 950).change_rate, 0)
+  assert.equal(parse(raw, now, 999), null)
   for (const row of [{ ...raw, cntr_tm: '20261109100000' }, { ...raw, cntr_tm: '20261110095900' },
     { ...raw, cntr_tm: '20261110100100' }, { ...raw, pred_pre: '' }, { ...raw, cur_prc: '0' }]) {
     assert.equal(parse(row), null)
@@ -246,6 +393,65 @@ test('prices and changes come from the same dated KRX tick; stale, previous-day,
   assert.equal(alertThreshold('price_gte', '0'), null)
   assert.equal(alertThreshold('rise_gte', '1e2'), null)
   assert.equal(alertThreshold('fall_lte', '-5'), null)
+})
+
+test('NXT after-market uses a verified date/window, matching venue and the last traded daily reference', () => {
+  const date = '2026-11-16'
+  const previous = '2026-11-13'
+  const regular = { date, previous, open: `${date}T09:00:00+09:00`, close: `${date}T15:30:00+09:00` }
+  const after = { date, market: 'NXT', phase: 'after', open: `${date}T15:40:00+09:00`, close: `${date}T20:00:00+09:00`, symbols: [stock.code] }
+  const during = Date.parse(`${date}T18:00:30+09:00`)
+  assert.equal(selectAlertSession(regular, after, Date.parse(`${date}T15:29:59+09:00`)).market, 'KRX')
+  assert.equal(selectAlertSession(regular, after, Date.parse(`${date}T15:39:59+09:00`)), null)
+  assert.equal(selectAlertSession(regular, after, Date.parse(after.close)), null)
+  assert.equal(selectAlertSession({ ...regular, closed: true }, after, during), null)
+  assert.equal(selectAlertSession(regular, null, during), null)
+  const session = selectAlertSession(regular, after, during)
+  const stk_cd = `${stock.code}_NX`
+  const daily = { return_code: 0, stk_cd, stk_dt_pole_chart_qry: [
+    { dt: '20261116', trde_qty: '900', cur_prc: '210100' },
+    { dt: '20261113', trde_qty: '0', cur_prc: '198000' },
+    { dt: '20261112', trde_qty: '100', cur_prc: '197000' },
+  ] }
+  const reference = parseAlertReference(daily, { return_code: 0, stk_cd, base_pric: '200000' }, stk_cd, previous)
+  assert.deepEqual(reference, { base_day: '2026-11-12', base_price: 200000, prior_close: 197000 })
+  const payload = { return_code: 0, stk_cd, stk_tic_chart_qry: [{ cntr_tm: '20261116180000', cur_prc: '210000', pred_pre: '10000', pred_pre_sig: '2' }] }
+  assert.equal(parseAlertQuote(payload, stock.code, session, during, reference).change_rate, 5)
+  assert.equal(parseAlertQuote({ ...payload, stk_cd: stock.code }, stock.code, session, during, reference), null)
+  assert.equal(parseAlertQuote({ ...payload, stk_tic_chart_qry: [{ ...payload.stk_tic_chart_qry[0], cntr_tm: '20261116153000' }] }, stock.code, session, during, reference), null)
+})
+
+test('worker requests and observes only the selected NXT venue with the same-market reference and normal call budget', async () => {
+  const date = '2026-11-16'
+  const previous = '2026-11-13'
+  const now = Date.parse(`${date}T18:01:00+09:00`)
+  const calls = []
+  const observed = []
+  const stk_cd = `${stock.code}_NX`
+  const tick = createAlertWorker({
+    settings: { enabled: true }, now: () => now, pause: async () => {},
+    calendar: async () => ({ date, previous, open: `${date}T09:00:00+09:00`, close: `${date}T15:30:00+09:00` }),
+    afterMarket: async () => ({ date, market: 'NXT', phase: 'after', open: `${date}T15:40:00+09:00`, close: `${date}T20:00:00+09:00`, symbols: [stock.code] }),
+    store: async (action, p) => {
+      if (action === 'begin_tick') return true
+      if (action === 'scope_due' || action === 'queue') return []
+      if (action === 'symbols') { assert.deepEqual(p.symbols, [stock.code]); return [stock.code] }
+      if (action === 'observe') observed.push(p)
+    },
+    request: async ({ apiId, body }) => {
+      calls.push({ apiId, body })
+      if (apiId === 'ka10081') return { return_code: 0, stk_cd, stk_dt_pole_chart_qry: [{ dt: '20261113', trde_qty: '10', cur_prc: '200000' }] }
+      if (apiId === 'ka10001') return { return_code: 0, stk_cd, base_pric: '200000' }
+      return { return_code: 0, stk_cd, stk_tic_chart_qry: [{ cntr_tm: '20261116180030', cur_prc: '210000', pred_pre: '10000', pred_pre_sig: '2' }] }
+    },
+  })
+  assert.equal((await tick()).quotes, 1)
+  assert.equal((await tick()).quotes, 1)
+  assert.deepEqual(calls.map(x => x.apiId), ['ka10081', 'ka10001', 'ka10079', 'ka10079'])
+  assert.ok(calls.every(x => x.body.stk_cd === stk_cd))
+  assert.equal(calls[0].body.base_dt, '20261113')
+  assert.equal(observed[0].market, 'NXT')
+  assert.equal(observed[0].quote.base_price, 200000)
 })
 
 test('worker never retries an ambiguous provider response, while confirmed quota rejection is eligible', async () => {
@@ -317,6 +523,9 @@ test('AI drafts recheck membership, preserve room and revision, and never activa
   const post = payload => app.inject({ method: 'POST', url, headers, payload: { operation: randomUUID(), ...payload } })
   assert.equal((await post({ action: 'save', rules: [rule] })).statusCode, 400)
   assert.equal((await post({ action: 'create', rules: Array(21).fill(rule) })).statusCode, 400)
-  assert.equal((await post({ action: 'create', rules: [rule] })).json().error, 'alert_disabled')
+  assert.equal((await post({ action: 'create', rules: [rule] })).statusCode, 400)
+  assert.equal((await post({ action: 'create', rules: [{ ...rule, frequency: 'never' }] })).statusCode, 400)
+  assert.equal((await post({ action: 'create', rules: [{ ...rule, kind: 'price_gte', threshold: 210000, frequency: 'once' }] })).statusCode, 400)
+  assert.equal((await post({ action: 'create', rules: [{ ...rule, frequency: 'repeat' }] })).json().error, 'alert_disabled')
   assert.ok(!actions.includes('mutate'))
 })

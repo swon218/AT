@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
-import { ALERT_KINDS, ALERT_RULES_PER_SYMBOL, addAlertDays, alertCondition, alertExpiry, alertThreshold, priceRule } from '../../shared/alertRules'
+import { ALERT_KINDS, ALERT_RULES_PER_SYMBOL, addAlertDays, alertCondition, alertExpiry, alertFrequencyLabel, alertThreshold, legacyAlertKind, priceRule } from '../../shared/alertRules'
 import { displayAlertStatus, reasons, stateLabels } from '../utils/alertPresentation'
+import { AlertFrequencySelect, AlertValueInput } from './AlertConditionInputs'
 
 const running = status => status === 'active' || status === 'queued'
-const valuesOf = (rule, today) => ({ kind: rule?.kind || 'price_gte', threshold: String(rule?.threshold ?? ''),
+const valuesOf = (rule, today) => ({ kind: legacyAlertKind(rule?.kind) ? 'price_touch' : rule?.kind || 'price_touch',
+  threshold: String(rule?.threshold ?? ''), frequency: rule?.frequency || 'once',
   expires_on: alertExpiry(rule?.expires_on, today) ? rule.expires_on : addAlertDays(today, 7) })
 
-export default function AlertManageDialog({ rows, byCode, initialCode, initialDraft, today, busy, canActivate,
+export default function AlertManageDialog({ rows, byCode, initialCode, initialDraft, today, afterSymbols, busy, canActivate,
   available, change, onDraftDone, onClose }) {
   const dialog = useRef(null)
   const close = useRef(null)
@@ -112,7 +114,7 @@ export default function AlertManageDialog({ rows, byCode, initialCode, initialDr
     <button ref={close} type="button" className="auth-close alert-manage-close" aria-label="알림 관리 닫기"
       disabled={busy} onClick={() => discard('dialog')}><X size={18}/></button>
     <div className="account-heading"><h2 id="alert-manage-title">알림 관리</h2>
-      <p>관심종목 {rows.length}개 · 종목당 조건 {ALERT_RULES_PER_SYMBOL}개까지 · 조건별 1회 발송</p></div>
+      <p>관심종목 {rows.length}개 · 종목당 조건 {ALERT_RULES_PER_SYMBOL}개까지</p></div>
     {!available && <p role="status">알림 관리 서버 연결을 기다리는 중입니다.</p>}
     {available && !canActivate && <p role="status">조건을 시작하거나 수정하려면 알림 감시 상태와 카카오 메시지 동의를 확인해 주세요.</p>}
     <div className="alert-manage-tools">
@@ -130,18 +132,23 @@ export default function AlertManageDialog({ rows, byCode, initialCode, initialDr
     {notice && <p role="status">{notice}</p>}
     {editor && <form className="account-section alert-manage-editor" onSubmit={submit}>
       <h3>{editor.action === 'create' ? '새 조건' : editor.action === 'update' ? '조건 수정' : '조건 다시 설정'} · {rows.find(row => row.code === editor.code)?.name} ({editor.code})</h3>
-      {editor.rule && <p>저장된 조건 · {alertCondition(editor.rule.kind, editor.rule.threshold)} · {editor.rule.expires_on}까지</p>}
-      <p>{editor.action === 'update' ? '변경을 저장하기 전까지 기존 조건이 유지됩니다.'
-        : '이미 충족된 조건은 첫 유효 시세 확인에서 발송될 수 있습니다.'}</p>
+      {editor.rule && <p>저장된 조건 · {alertCondition(editor.rule.kind, editor.rule.threshold)} · {alertFrequencyLabel(editor.rule.frequency)} · {editor.rule.expires_on}까지</p>}
+      {editor.action === 'update' && <p>변경을 저장하기 전까지 기존 조건이 유지됩니다.</p>}
+      {legacyAlertKind(editor.rule?.kind) && <p>기존 이상·이하 조건입니다. 현재가로 저장하면 양방향 목표가 도달 방식으로 전환됩니다.</p>}
+      <p>{priceRule(editor.values.kind) ? '첫 관측이 목표가와 같거나, 연속 관측 사이에 목표가를 지나면 충족됩니다.'
+        : '당일 첫 유효 시세가 이미 등락률 조건을 충족하면 발송될 수 있습니다.'}</p>
       {editor.draft && <p className="alert-unsaved">미저장 대화 초안</p>}
       {stale && <p className="alert-error" role="status">저장된 상태가 바뀌었거나 발송 요청 중입니다. 편집을 닫고 최신 상태를 확인해 주세요.</p>}
       <fieldset className="alert-manage-fields" disabled={busy || Boolean(confirmation)}>
         <label className="account-field"><span>조건 종류</span><select ref={editorFirst} value={editor.values.kind}
           onChange={event => setEditor({ ...editor, values: { ...editor.values, kind: event.target.value, threshold: '' } })}>
           {Object.entries(ALERT_KINDS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-        <label className="account-field"><span>조건값 · {priceRule(editor.values.kind) ? '원 / 현재가' : '% / 전일 종가 대비'}</span>
-          <input type="text" inputMode={priceRule(editor.values.kind) ? 'numeric' : 'decimal'} maxLength={12} value={editor.values.threshold}
-            onChange={event => setEditor({ ...editor, values: { ...editor.values, threshold: event.target.value } })}/></label>
+        <div className="account-field"><span>조건값 · {priceRule(editor.values.kind) ? '목표가' : '전일 기준가 대비'}</span>
+          <AlertValueInput kind={editor.values.kind} value={editor.values.threshold}
+            label={priceRule(editor.values.kind) ? '조건값 · 원' : '조건값 · 퍼센트'} disabled={busy || Boolean(confirmation)}
+            onChange={threshold => setEditor({ ...editor, values: { ...editor.values, threshold } })}/></div>
+        <div className="account-field"><span>알림 횟수</span><AlertFrequencySelect label="알림 횟수" value={editor.values.frequency}
+          onChange={frequency => setEditor({ ...editor, values: { ...editor.values, frequency } })}/></div>
         <label className="account-field"><span>만료일</span><input type="date" min={today} max={addAlertDays(today, 30)} value={editor.values.expires_on}
           onChange={event => setEditor({ ...editor, values: { ...editor.values, expires_on: event.target.value } })}/></label>
       </fieldset>
@@ -174,7 +181,9 @@ export default function AlertManageDialog({ rows, byCode, initialCode, initialDr
           const status = displayAlertStatus(rule, today)
           const blocked = !available || busy || Boolean(editor || confirmation) || status === 'sending'
           return <li key={rule.rule_id || rule.version || row.code}>
-            <div><strong>{alertCondition(rule.kind, rule.threshold)}</strong><small>{rule.expires_on}까지 · {stateLabels[status]}</small>
+            <div><strong>{alertCondition(rule.kind, rule.threshold)}</strong>{legacyAlertKind(rule.kind) && <small>기존 조건 · KRX 정규장</small>}
+              {!legacyAlertKind(rule.kind) && <small>{afterSymbols.has(row.code) ? 'KRX 정규장 · 오늘 NXT 대상' : 'KRX 정규장만 지원'}</small>}
+              <small>{rule.expires_on}까지 · {alertFrequencyLabel(rule.frequency)} · {stateLabels[status]}</small>
               {reasons[rule.reason] && <small>{reasons[rule.reason]}</small>}</div>
             <div className="alert-actions">
               {running(status) ? <><button type="button" disabled={blocked || !canActivate}

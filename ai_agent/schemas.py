@@ -38,9 +38,10 @@ class AlertProposal(Strict):
     rule_id: str | None = Field(pattern=r'^[0-9a-fA-F-]{36}$')
     symbol: str | None = Field(max_length=60)
     basis: Literal['price', 'previous_close', 'same', 'unsupported']
-    kind: Literal['price_gte', 'price_lte', 'rise_gte', 'fall_lte'] | None
+    kind: Literal['price_touch', 'rise_gte', 'fall_lte'] | None
     threshold: float | None = Field(ge=0, le=1_000_000_000)
     expires_on: str | None = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    frequency: Literal['once', 'repeat'] | None
 
 
 class AlertStatus(Strict):
@@ -58,7 +59,7 @@ DESCRIPTIONS = {
     'get_stock_news': 'Search Naver for a previously resolved/screened code, bounded time period and page. Title/snippet only; optional short event keyword, no URL access. Read actual previous results before choosing codes or another page.',
     'get_news_details': 'Read only already acquired article IDs from this room/run. Returns the acquired title/snippet, never fabricated full text or arbitrary URL contents.',
     'get_alert_editor': 'Read the current unsaved draft for this room, the member watchlist and saved conditions with their rule IDs. Use before editing or resolving ambiguity.',
-    'propose_alert': 'Propose an unsaved draft. Create adds a separate condition (exact symbol, rule_id=null). Edit amends this room draft (symbol=null or same symbol, rule_id=null). Edit_saved proposes changes to one saved condition. Supply its exact symbol and rule_id from get_alert_editor only if the user uniquely identified it; otherwise pass rule_id=null to ask the user to choose. Pass null for unchanged fields. Basis price is a KRW price; previous_close is previous session close, the default for bare % fall/rise. Use positive magnitude and do not map unsupported bases. Null expiration for a new draft proposes 7 days. Never save, start, cancel or send.',
+    'propose_alert': 'Propose an unsaved draft. Create adds a separate condition (exact symbol, rule_id=null). Edit amends this room draft (symbol=null or same symbol, rule_id=null). Edit_saved requires an exact symbol and a rule ID from get_alert_editor; use rule_id=null if ambiguous. Pass null for unchanged fields. Use price_touch for a KRW target reached from either direction. Clarify if the user wants a one-sided price condition. For bare % fall/rise use previous_close and positive magnitude. Frequency is once by default, repeat only when requested, null to preserve a draft or rule. Null expiration for a new draft proposes 7 days. Never save, start, cancel or send.',
     'get_alert_status': 'Request a server-authored view of persisted alert rules and recent delivery history for the authenticated member. Use exact symbol or null for all.',
 }
 
