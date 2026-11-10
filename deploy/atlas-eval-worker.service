@@ -1,0 +1,33 @@
+[Unit]
+Description=ATLAS isolated AI evaluation worker
+After=network-online.target atlas-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=atlas-eval
+Group=atlas-eval
+WorkingDirectory=/opt/atlas
+EnvironmentFile=/etc/atlas/eval.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=NODE_ENV=production
+Environment=GIT_CONFIG_COUNT=1
+Environment=GIT_CONFIG_KEY_0=safe.directory
+Environment=GIT_CONFIG_VALUE_0=/opt/atlas
+ExecStart=/opt/atlas/.venv-ai/bin/python -m ai_agent.evaluation.worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=180
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+InaccessiblePaths=-/var/lib/atlas -/etc/atlas/atlas.env -/etc/atlas/ai.env
+UMask=0077
+MemoryMax=768M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

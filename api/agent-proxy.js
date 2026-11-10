@@ -1,7 +1,7 @@
 // A static Vercel Function plus vercel.json rewrite handles every allowed nesting depth.
 // This is a bounded same-origin proxy, never a user-selected upstream or arbitrary URL.
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-const ROUTE = new RegExp(`^(?:status|alerts|rooms(?:/${UUID}(?:/(?:messages|requests(?:/${UUID}/watchlist-confirmation)?))?)?|requests/${UUID})$`)
+const ROUTE = new RegExp(`^(?:status|alerts|rooms(?:/${UUID}(?:/(?:messages|requests(?:/${UUID}/watchlist-confirmation)?))?)?|requests/${UUID}|admin/(?:status|catalog|cases(?:/${UUID})?|runs(?:/${UUID}(?:/cancel)?)?|items/${UUID}(?:/review)?|import/${UUID}))$`)
 const RESERVED = '__atlas_route'
 
 export function proxyTarget(requestUrl, parsedQuery = {}) {

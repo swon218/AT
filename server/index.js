@@ -22,6 +22,7 @@ import { createMarketSessions } from './marketSession.js'
 import { registerMarketCalendarRoutes } from './marketCalendar.js'
 import { registerAddedBrokerRoutes } from './addedBrokers.js'
 import { registerAgentRoutes } from './agent.js'
+import { registerAdminEval } from './adminEval.js'
 import { registerScreenRoutes } from './screener.js'
 import { registerCompanyDartRoutes } from './companyDart.js'
 import { kakaoSafeRequestLog, registerKakaoConnectionRoutes } from './kakaoConnection.js'
@@ -43,6 +44,7 @@ registerExchangeRateRoutes(app)
 registerAddedBrokerRoutes(app)
 registerRecentOrderRoutes(app)
 registerAgentRoutes(app)
+registerAdminEval(app)
 registerScreenRoutes(app)
 registerNewsRoutes(app)
 registerAccountConnectionRoutes(app)

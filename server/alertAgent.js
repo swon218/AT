@@ -9,8 +9,8 @@ const validId = value => typeof value === 'string' && alertUuid.test(value)
 const validStock = row => typeof row?.code === 'string' && alertCode.test(row.code)
   && typeof row.name === 'string' && row.name === row.name.trim() && row.name.length > 0 && Array.from(row.name).length <= 100
 
-export function normalizeAlertRule(value) {
-  if (!value || typeof value.code !== 'string' || !alertCode.test(value.code) || !alertExpiry(value.expires_on)
+export function normalizeAlertRule(value, today = koreanAlertDay()) {
+  if (!value || typeof value.code !== 'string' || !alertCode.test(value.code) || !alertExpiry(value.expires_on, today)
     || !Object.hasOwn(ALERT_KINDS, value.kind) || !Object.hasOwn(ALERT_FREQUENCIES, value.frequency)) return null
   const threshold = alertThreshold(value.kind, value.threshold)
   return threshold === null ? null : { code: value.code, kind: value.kind, threshold, expires_on: value.expires_on, frequency: value.frequency }
@@ -34,7 +34,7 @@ const states = {
   unknown: '발송 결과 확인 불가', canceled: '취소',
 }
 
-export async function alertAnswer(action, { store, userId, roomId, requestId, editor }) {
+export async function alertAnswer(action, { store, userId, roomId, requestId, editor, today = koreanAlertDay() }) {
   if (!action || !userId) return null
   const base = { kind: 'concept', as_of: new Date().toISOString(), claims: [], sources: [], coverage: [], result_sets: [] }
   const say = content => ({ ...base, content })
@@ -66,7 +66,7 @@ export async function alertAnswer(action, { store, userId, roomId, requestId, ed
     return say(['어느 저장 조건을 바꿀지 조건과 만료일을 알려 주세요. 종목 옆 관리 버튼에서도 직접 선택할 수 있습니다.', ...matching].join('\n'))
   }
   if (action.kind !== 'draft' && action.kind !== 'watchlist_confirmation') return null
-  const rule = normalizeAlertRule({ frequency: 'once', ...action.rule })
+  const rule = normalizeAlertRule({ frequency: 'once', ...action.rule }, today)
   const stock = rule && data.watchlist.find(row => row.code === rule.code)
   if (rule && !stock && action.kind === 'watchlist_confirmation' && validStock(action.stock) && action.stock.code === rule.code) {
     if (data.watchlist.length >= WATCHLIST_LIMIT) return say(WATCHLIST_LIMIT_MESSAGE)
@@ -123,7 +123,7 @@ export function registerAlertRoutes(app, {
     const input = { user_id, operation, mutation: action }
     if (action === 'create') {
       if (!Array.isArray(rules) || rules.length < 1 || rules.length > 20) throw alertError('alert_invalid', 400)
-      input.rules = rules.map(normalizeAlertRule)
+      input.rules = rules.map(row => normalizeAlertRule(row))
       if (input.rules.some(row => !row)) throw alertError('alert_invalid', 400)
       const count = new Map()
       for (const row of input.rules) {

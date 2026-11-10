@@ -45,6 +45,8 @@ import ScreenerWorkspace from './components/ScreenerWorkspace'
 import useScreener from './hooks/useScreener'
 import useLabWorkspace from './hooks/useLabWorkspace'
 import { describeQuery } from './utils/screener'
+import useAdminAccess from './hooks/useAdminAccess'
+import AdminEvalPanel from './components/AdminEvalPanel'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
 const defaultStock = {
@@ -105,11 +107,11 @@ function ChartWorkspace({ selected, period, onPeriodChange, currentUser, watchli
 }
 
 function App() {
-  const [activePage, setActivePage] = useState(() => new URLSearchParams(window.location.search).get('agent') === 'alerts' ? 'agent' : 'dashboard')
+  const [activePage, setActivePage] = useState(() => new URLSearchParams(window.location.search).get('page') === 'admin' ? 'admin' : new URLSearchParams(window.location.search).get('agent') === 'alerts' ? 'agent' : 'dashboard')
   const [agentMode, setAgentMode] = useState(() => new URLSearchParams(window.location.search).get('agent') === 'alerts' ? 'alerts' : 'analysis')
   const [alertNotice, setAlertNotice] = useState('')
   const [newsCategory, setNewsCategory] = useState('all')
-  const brokerageDataEnabled = !['lab', 'screen', 'agent', 'news', 'company'].includes(activePage)
+  const brokerageDataEnabled = !['lab', 'screen', 'agent', 'news', 'company', 'admin'].includes(activePage)
   const showStockSearch = brokerageDataEnabled || activePage === 'company'
   const labWorkspace = useLabWorkspace(activePage === 'lab')
   const [selected, setSelected] = useState(defaultStock)
@@ -132,6 +134,9 @@ function App() {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
+  const isAdmin = useAdminAccess(currentUser?.id)
+  const [evalImport, setEvalImport] = useState(null)
+  useEffect(() => { setEvalImport(null) }, [currentUser?.id])
   const brokerConnections = useBrokerConnections(currentUser?.id)
   const [authReady, setAuthReady] = useState(!supabase)
   const watchlist = useWatchlist(currentUser?.id, { authReady, onLogin: () => setAuthModalOpen(true) })
@@ -386,6 +391,7 @@ function App() {
           <button className={`nav-link ${activePage === 'screen' ? 'active' : ''}`} onClick={() => openPage('screen')}><Filter/><span>조건 검색</span></button>
           <button className={`nav-link ${activePage === 'agent' ? 'active' : ''}`} onClick={() => openPage('agent')}><Bot/><span>AI 에이전트</span></button>
           <button className={`nav-link ${activePage === 'assets' ? 'active' : ''}`} onClick={() => openPage('assets')}><WalletCards/><span>자산 현황</span></button>
+          {isAdmin && <button className={`nav-link ${activePage === 'admin' ? 'active' : ''}`} onClick={() => openPage('admin')}><FlaskConical/><span>관리자</span></button>}
           <p>MARKET</p>
           <button type="button" className={`nav-link ${activePage === 'news' ? 'active' : ''}`} aria-label="주요 뉴스 · 공시" aria-current={activePage === 'news' ? 'page' : undefined} title="주요 뉴스 · 공시" onClick={() => openPage('news')}><Newspaper/><span>주요 뉴스 · 공시</span></button>
           <button type="button" className={`nav-link ${activePage === 'company' ? 'active' : ''}`} aria-label="기업 분석" aria-current={activePage === 'company' ? 'page' : undefined} title="기업 분석" onClick={() => { openPage('company'); window.scrollTo(0, 0) }}><Building2 aria-hidden="true"/><span>기업 분석</span></button>
@@ -401,19 +407,20 @@ function App() {
             error={labWorkspace.catalogError || labWorkspace.catalogMessage}
             onRetry={labWorkspace.refresh} onSelect={labWorkspace.selectStock}/>
             : showStockSearch ? <GlobalStockSearch onSelect={activePage === 'company' ? setAnalysisStock : openStockOrder} credentialScope={searchCredentialScope}/>
-              : <div className="lab-workspace-title">{activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : <><Filter/><span>조건 검색</span></>}</div>}
+              : <div className="lab-workspace-title">{activePage === 'admin' ? <><FlaskConical/><span>관리자 · AI 품질 평가</span></> : activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : <><Filter/><span>조건 검색</span></>}</div>}
           <div className="header-actions"><ThemeSwitch/><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
         <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
-          {activePage === 'company' ? <CompanyAnalysisPage stock={analysisStock ?? (selectionRevision > 0 ? selected : null)}/> : activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <>
+          {activePage === 'admin' && !isAdmin && <section className="panel admin-eval" role="status">관리자 권한 확인이 필요합니다. 로그인한 계정의 권한을 확인해 주세요.</section>}
+          {activePage === 'admin' ? (isAdmin && <AdminEvalPanel key={currentUser.id} userId={currentUser.id} importRequest={evalImport} onImported={() => setEvalImport(null)}/>) : activePage === 'company' ? <CompanyAnalysisPage stock={analysisStock ?? (selectionRevision > 0 ? selected : null)}/> : activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <>
             <AgentModeTabs mode={agentMode} onChange={setAgentMode}/>
             <div role="tabpanel" id="agent-mode-panel" aria-labelledby={`agent-tab-${agentMode}`}>
               {agentMode === 'alerts' ? <AlertAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} watchlist={watchlist}
                 drafts={alertDrafts} roomId={agent.active.id} notice={alertNotice}
                 onLogin={() => setAuthModalOpen(true)} onKakao={() => setAccountSettingsOpen(true)} settingsOpen={accountSettingsOpen}/>
                 : agentMode === 'trading' ? <TradingAgentPanel/>
-                  : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }}
+                  : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen, onAddEvaluation: isAdmin ? requestId => { setEvalImport(requestId); openPage('admin') } : null }}
                     onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); setAgentMode('alerts') }}/>}
             </div>
           </> : activePage === 'dashboard' ? <>

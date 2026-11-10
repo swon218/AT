@@ -1,0 +1,765 @@
+[
+  {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "spec": {
+      "title": "RSI 개념",
+      "category": "개념 설명",
+      "question": "RSI가 뭐야?",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_tools"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000002",
+    "spec": {
+      "title": "추세 강도",
+      "category": "개념 설명",
+      "question": "ADX가 높으면 주가가 오른다는 뜻이야?",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_tools"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000003",
+    "spec": {
+      "title": "거래량 지표 비교",
+      "category": "개념 설명",
+      "question": "OBV와 MFI는 무엇이 달라?",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_tools"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000004",
+    "spec": {
+      "title": "변동성 해석",
+      "category": "개념 설명",
+      "question": "ATR을 종목 간에 비교할 때 주의할 점은?",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "holdout",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_tools"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000005",
+    "spec": {
+      "title": "ATR 검산",
+      "category": "지표 조회·조건검색",
+      "question": "삼성전자 확정 일봉 ATR 14 값을 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_stock_indicators"
+        },
+        {
+          "type": "numeric",
+          "name": "atr",
+          "value": 10
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000006",
+    "spec": {
+      "title": "RSI 검산",
+      "category": "지표 조회·조건검색",
+      "question": "삼성전자 확정 일봉 RSI 14를 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "numeric",
+          "name": "rsi",
+          "value": 0
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000007",
+    "spec": {
+      "title": "복수 지표",
+      "category": "지표 조회·조건검색",
+      "question": "네이버 MFI와 CCI를 확정 일봉으로 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_stock_indicators"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000008",
+    "spec": {
+      "title": "RSI 조건",
+      "category": "지표 조회·조건검색",
+      "question": "코스피 RSI 14가 30 이하인 종목을 찾아줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "screen_stocks"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000009",
+    "spec": {
+      "title": "복합 조건",
+      "category": "지표 조회·조건검색",
+      "question": "RSI 14가 30 이하이고 종가가 SMA 20 아래인 종목 찾아줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "screen_stocks"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000010",
+    "spec": {
+      "title": "추세 전환",
+      "category": "지표 조회·조건검색",
+      "question": "슈퍼트렌드 ATR 10 배수 3이 상승 전환한 종목을 찾아줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "holdout",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "screen_stocks"
+        },
+        {
+          "type": "empty"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000011",
+    "spec": {
+      "title": "밤사이 뉴스",
+      "category": "뉴스·복합 조사",
+      "question": "삼성전자 밤사이 뉴스를 근거와 함께 설명해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_stock_news"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000012",
+    "spec": {
+      "title": "뉴스 키워드",
+      "category": "뉴스·복합 조사",
+      "question": "네이버 최근 7일 AI 뉴스를 정리해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_stock_news"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000013",
+    "spec": {
+      "title": "뉴스 상세 한계",
+      "category": "뉴스·복합 조사",
+      "question": "삼성전자 오늘 뉴스의 기사 전문을 읽고 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "holdout",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000014",
+    "spec": {
+      "title": "조건과 뉴스",
+      "category": "뉴스·복합 조사",
+      "question": "코스피 RSI 14가 30 이하인 종목을 찾고 그중 한 종목의 밤사이 뉴스를 확인해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "screen_stocks"
+        },
+        {
+          "type": "tool",
+          "name": "get_stock_news"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000015",
+    "spec": {
+      "title": "등록 종목 초안",
+      "category": "알림 초안·사용자 확인",
+      "question": "네이버 20만원 도달 시 한 번 알림 받고 싶어.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "watched",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "action",
+          "value": "draft"
+        },
+        {
+          "type": "rule",
+          "name": "threshold",
+          "value": 200000
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000016",
+    "spec": {
+      "title": "미등록 종목",
+      "category": "알림 초안·사용자 확인",
+      "question": "삼성전기 100만원일 때 알림 받고 싶어.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "action",
+          "value": "watchlist_confirmation"
+        },
+        {
+          "type": "rule",
+          "name": "threshold",
+          "value": 1000000
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000017",
+    "spec": {
+      "title": "관심종목 가득 참",
+      "category": "알림 초안·사용자 확인",
+      "question": "네이버 20만원일 때 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "full",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "action",
+          "value": "watchlist_confirmation"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000018",
+    "spec": {
+      "title": "추가 승인",
+      "category": "알림 초안·사용자 확인",
+      "question": "네이버 20만원 도달 알림 초안을 만들어줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "approve",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "action",
+          "value": "watchlist_confirmation"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000019",
+    "spec": {
+      "title": "추가 거절",
+      "category": "알림 초안·사용자 확인",
+      "question": "삼성전기 100만원 도달 알림을 받고 싶어.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "decline",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "action",
+          "value": "watchlist_confirmation"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000020",
+    "spec": {
+      "title": "여러 저장 조건",
+      "category": "알림 초안·사용자 확인",
+      "question": "네이버 저장 알림의 가격을 21만원으로 바꿔줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "multiple",
+      "split": "holdout",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000021",
+    "spec": {
+      "title": "반복과 만료 수정",
+      "category": "알림 초안·사용자 확인",
+      "question": "방금 네이버 초안을 21만원, 11월 5일까지 반복으로 바꿔줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "draft",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "action",
+          "value": "draft"
+        },
+        {
+          "type": "rule",
+          "name": "frequency",
+          "value": "repeat"
+        },
+        {
+          "type": "rule",
+          "name": "expires_on",
+          "value": "2026-11-05"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000022",
+    "spec": {
+      "title": "미지원 지표 알림",
+      "category": "알림 초안·사용자 확인",
+      "question": "삼성전자 RSI가 30 아래로 내려가면 카톡 보내줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "watched",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000023",
+    "spec": {
+      "title": "종목명 모호",
+      "category": "모호함·후속 대화",
+      "question": "삼성 알림을 설정해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000024",
+    "spec": {
+      "title": "가격 누락",
+      "category": "모호함·후속 대화",
+      "question": "네이버 가격 알림을 설정해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "watched",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000025",
+    "spec": {
+      "title": "앞선 종목 기억",
+      "category": "모호함·후속 대화",
+      "question": "그 종목의 ATR 14도 알려줘.",
+      "context": [
+        {
+          "role": "user",
+          "content": "앞으로 삼성전자에 관해 질문할게."
+        },
+        {
+          "role": "assistant",
+          "content": "삼성전자에 관한 질문을 이어가 주세요."
+        }
+      ],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_stock_indicators"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000026",
+    "spec": {
+      "title": "비회원 알림",
+      "category": "모호함·후속 대화",
+      "question": "네이버 20만원일 때 알림 받고 싶어.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "guest",
+      "split": "holdout",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "action",
+          "value": "unavailable"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000027",
+    "spec": {
+      "title": "DART 미지원",
+      "category": "미지원·빈 결과·장애",
+      "question": "DART에서 삼성전자 최근 5년 재무제표를 직접 조회해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "base",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000028",
+    "spec": {
+      "title": "뉴스 빈 결과",
+      "category": "미지원·빈 결과·장애",
+      "question": "삼성전자 오늘 뉴스 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "news_empty",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "empty"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000029",
+    "spec": {
+      "title": "뉴스 조회 장애",
+      "category": "미지원·빈 결과·장애",
+      "question": "삼성전자 오늘 뉴스 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "news_error",
+      "split": "dev",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "error",
+          "value": "news_provider_error"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000030",
+    "spec": {
+      "title": "일봉 DB 장애",
+      "category": "미지원·빈 결과·장애",
+      "question": "삼성전자 ATR 14 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "db_error",
+      "split": "holdout",
+      "status": "active",
+      "success": "요청한 종목·조건을 유지하고 도구 근거와 기준일을 설명한다. 미지원·모호한 요청은 정확히 안내한다.",
+      "failure": "허위 수치·출처·실행 완료 안내, 승인 없는 변경, 무관한 조건 대체, 끝없는 도구 호출.",
+      "rubric": "질문의 모든 요구를 충족했는지 검토한다. 자동 검사는 일부 구조만 확인하므로 설명의 사실성·충분성은 직접 평가한다.",
+      "checks": [
+        {
+          "type": "error",
+          "value": "lab_data_not_ready"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  }
+]

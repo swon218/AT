@@ -150,6 +150,7 @@ function Conversation({ agent, compact = false, onExpand }) {
         {!!message.answer?.sources?.length && <ul className="agent-sources">{message.answer.sources.map(source => <li key={source.id}>{safeAgentLink(source.url) ? <a href={safeAgentLink(source.url)} target="_blank" rel="noopener noreferrer">{source.title || source.id}</a> : <span>{source.excerpt || source.id}</span>}<small>{source.source} · {source.published_at || source.as_of} · {source.scope === 'title_and_snippet' ? '제목·요약' : '확정 일봉'}</small></li>)}</ul>}
         {agent.openScreen && message.answer?.result_sets?.filter(set => set.coverage?.kind === 'screen' && importQuery(set.query)).map(set => <button type="button" className="agent-expand-result" key={set.id} onClick={() => agent.openScreen(set.query)}>조건검색에서 조건 열기 · 최신 데이터로 다시 조회<ArrowUpRight size={14}/></button>)}
         <div className="agent-message-state"><Check size={12}/><span>{message.role === 'assistant' ? `${agent.active.requests?.find(r => r.id === message.request_id)?.status === 'partial' ? '부분 완료' : '완료'} · ${message.answer?.as_of || ''}` : '질문 저장됨'}</span></div>
+        {!compact && agent.onAddEvaluation && message.request_id && <button type="button" className="agent-open-screen" onClick={() => agent.onAddEvaluation(message.request_id)}>평가 사례로 추가</button>}
       </div>)}
       {compact && <button type="button" className="agent-expand-result" onClick={onExpand}>이 대화를 넓게 보기<ArrowUpRight size={15}/></button>}
     </div>}
