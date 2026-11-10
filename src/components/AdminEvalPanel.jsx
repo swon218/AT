@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { agentApi } from '../services/agentApi'
 import { compareRuns, summarize, verdict } from '../utils/evalResults'
 import './AdminEvalPanel.css'
+import AdminToolCatalog from './AdminToolCatalog'
 
 const labels={pass:'통과',fail:'실패',review:'검토 필요',hold:'보류',na:'해당 없음',pending:'진행 대기',queued:'대기',running:'실행 중',completed:'완료',failed:'실행 실패',interrupted:'중단',canceled:'취소',code:'코드 검증',live:'실제 모델 평가'}
 const categories=['질문 해석','도구 선택','도구 입력','데이터·계산','근거 없는 답변','미지원 안내','사용자 승인·상태 변경','화면 연결','처리 시간·비용','외부 서비스 장애']
@@ -14,7 +15,7 @@ function Badge({value}){return <span className={`eval-badge ${value}`}>{labels[v
 function download(value,name){const url=URL.createObjectURL(new Blob([pretty(value)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 
 export default function AdminEvalPanel({userId,importRequest,onImported}) {
-  const [tab,setTab]=useState('평가 질문'),[catalog,setCatalog]=useState(null),[cases,setCases]=useState([]),[runs,setRuns]=useState([])
+  const [tab,setTab]=useState('사용가능 도구'),[catalog,setCatalog]=useState(null),[cases,setCases]=useState([]),[runs,setRuns]=useState([])
   const [selected,setSelected]=useState([]),[edit,setEdit]=useState(null),[contextText,setContextText]=useState('[]'),[checkText,setCheckText]=useState('[]')
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false)
   const [mode,setMode]=useState('code'),[repeats,setRepeats]=useState(1),[budget,setBudget]=useState(1),[paid,setPaid]=useState(false)
@@ -64,9 +65,10 @@ export default function AdminEvalPanel({userId,importRequest,onImported}) {
   const stats=run&&summarize(run.items)
   return <section className="admin-eval panel" aria-label="AI 품질 평가">
     <div className="eval-heading"><div><h2>AI 품질 평가</h2><p>질문을 기록하고, 같은 조건으로 실행하고, 개선 결과를 비교합니다.</p></div><button disabled={busy} onClick={()=>task(refresh)}>새로고침</button></div>
-    <nav className="eval-tabs" aria-label="평가 화면">{['평가 질문','평가 실행','실행 결과','버전 비교'].map(t=><button aria-current={tab===t?'page':undefined} className={tab===t?'active':''} onClick={()=>setTab(t)} key={t}>{t}</button>)}</nav>
+    <nav className="eval-tabs" aria-label="평가 화면">{['사용가능 도구','평가 질문','평가 실행','실행 결과','버전 비교'].map(t=><button aria-current={tab===t?'page':undefined} className={tab===t?'active':''} onClick={()=>setTab(t)} key={t}>{t}</button>)}</nav>
     {error&&<p role="alert" className="eval-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
     {busy&&<p role="status">처리 중…</p>}
+    {tab==='사용가능 도구'&&<AdminToolCatalog/>}
     {tab==='평가 질문'&&<>
       <div className="eval-toolbar"><button disabled={busy} onClick={()=>editor(fresh())}>새 평가 질문</button><button disabled={busy||!catalog} onClick={seed}>초기 30개 등록</button><span>{cases.length}개 · 개선용 / 별도 확인용</span><Help>별도 확인용 사례는 수정 방향을 정하는 데 사용하지 않고 마지막 검증에 사용하세요. 사례를 수정하면 새 버전으로 저장됩니다.</Help></div>
       {edit&&<div className="eval-editor">

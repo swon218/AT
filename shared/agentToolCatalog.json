@@ -1,0 +1,45 @@
+{
+  "scope": "분석 에이전트",
+  "groups": [
+    {
+      "id": "daily",
+      "title": "일봉 데이터 · 보조지표",
+      "description": "실험실에 수집된 확정 일봉으로 계산합니다. 장중 현재가나 실시간 차트 데이터가 아닙니다.",
+      "tools": [
+        {"name":"get_stock_indicators","title":"종목별 지표 조회","source":"SQLite · lab.sqlite / candles · 공통 지표 계산 엔진","description":"한 종목의 가격·거래량 및 보조지표 값을 최대 8개 조회합니다. 이동평균, RSI, 볼린저 밴드, MACD, ATR, ADX/DMI, 스토캐스틱, OBV, MFI, CCI, Supertrend 등을 지원합니다.","requirement":"수집된 종목과 충분한 확정 일봉, 검증된 거래일 달력이 필요합니다. 이름으로 요청하면 종목코드부터 확인합니다.","example":"삼성전자 RSI와 볼린저 밴드 값을 알려줘."},
+        {"name":"screen_stocks","title":"복합 조건검색","source":"SQLite · lab.sqlite / symbols·candles · 공통 조건검색 엔진","description":"일봉 지표·가격·거래량 조건 1~8개를 모두 충족하거나 하나 이상 충족하는 종목을 찾습니다. 상향·하향 돌파와 지표 간 비교를 지원합니다.","requirement":"수집 범위 내 종목만 검색합니다. 데이터 부족·품질 문제로 제외된 종목과 기준일을 함께 확인해야 합니다.","example":"RSI가 30 이하이고 종가가 20일 이동평균보다 낮은 종목을 찾아줘."},
+        {"name":"screen_rsi","title":"RSI 전용 조건검색","source":"SQLite · lab.sqlite / candles · Wilder RSI(14)","description":"확정 일봉의 RSI(14)가 지정값 이하인 종목을 RSI가 낮은 순서로 찾습니다. 시장 선택과 페이지 조회를 지원합니다.","requirement":"고정 기간 14의 RSI 전용 도구입니다. 다른 기간이나 복합 조건은 screen_stocks를 사용합니다.","example":"코스피에서 RSI 30 이하인 종목을 찾아줘."}
+      ]
+    },
+    {
+      "id":"news","title":"뉴스 데이터",
+      "description":"네이버 뉴스 검색 결과의 제목·검색 요약·링크·발행 시각을 사용합니다. 기사 전문이나 공식 공시 원문과는 범위가 다릅니다.",
+      "tools":[
+        {"name":"get_stock_news","title":"종목 뉴스 검색","source":"Naver 뉴스 검색 API · legacy 또는 API Gateway hub","description":"확인된 종목의 오늘·장 마감 후부터 현재까지·최근 7일 뉴스를 검색합니다. 키워드와 페이지를 지정할 수 있습니다.","requirement":"분석 AI의 네이버 인증 설정과 종목 식별이 필요합니다. 기간 필터·중복 제거가 적용되며 검색 결과가 없을 수 있습니다.","example":"삼성전자의 최근 일주일 반도체 관련 뉴스를 정리해줘."},
+        {"name":"get_news_details","title":"확보한 뉴스 근거 재조회","source":"현재 요청·대화에서 확보한 뉴스 근거 데이터","description":"이미 확보한 기사 ID로 제목·검색 요약·출처를 다시 확인합니다. 새 API 호출로 기사 본문을 가져오는 기능은 없습니다.","requirement":"현재 실행이나 전달된 대화 맥락에 있는 기사 ID가 필요합니다. 임의 URL은 조회하지 않습니다.","example":"방금 보여준 뉴스의 근거와 링크를 다시 알려줘."}
+      ]
+    },
+    {
+      "id":"catalog","title":"종목 검색 · 시장 기준일",
+      "description":"종목을 식별하고 일봉·뉴스 분석에 사용할 날짜와 시간을 정합니다.",
+      "tools":[
+        {"name":"resolve_symbol","title":"종목명·코드 검색","source":"SQLite · lab.sqlite / symbols","description":"수집 목록에서 종목명이나 코드로 후보를 찾습니다. 네이버/NAVER 같은 표기를 정규화하고 후보가 여러 개면 구분할 수 있게 반환합니다.","requirement":"실험실 종목 목록 기준입니다. 전체 국내 종목을 빠짐없이 포함한다고 보장하지 않습니다.","example":"네이버 종목을 찾아줘."},
+        {"name":"get_market_context","title":"시장 시간·확정 일봉 기준일","source":"서버 한국 시간 · exchange_calendars XKRX + 검토된 휴장일","description":"한국 시간, 거래일 여부, 최근 완료 거래일, 오늘·장 마감 이후 뉴스 조회 범위를 제공합니다.","requirement":"운영자가 검증한 달력 범위 안에서 사용합니다. 실시간 시세나 거래소 상태 피드를 조회하는 도구는 아닙니다.","example":"일봉 분석에 사용하는 최근 완료 거래일이 언제야?"}
+      ]
+    },
+    {
+      "id":"alerts","title":"관심종목 · 알림",
+      "description":"로그인한 회원의 관심종목·알림 정보를 바탕으로 안내와 미저장 초안을 만듭니다. 실제 시세 감시·카카오 발송은 별도 알림 worker가 담당합니다.",
+      "tools":[
+        {"name":"get_alert_editor","title":"관심종목·알림 편집 상태 조회","source":"Node 서버가 전달한 Supabase 관심종목·저장 규칙 + 현재 대화의 초안","description":"관심종목, 저장된 알림 조건과 규칙 ID, 현재 대화의 미저장 초안을 조회합니다.","requirement":"로그인 및 회원별 서버 컨텍스트가 필요합니다. 비회원에게는 로그인 필요 상태를 반환합니다.","example":"내 관심종목과 설정한 알림을 확인해줘."},
+        {"name":"propose_alert","title":"알림 초안·관심종목 추가 제안","source":"회원 알림 컨텍스트 + SQLite 종목 검색 · 서버 확인 카드/초안 생성","description":"목표 가격 도달 또는 전일 종가 대비 상승·하락률, 만료일, 알림 횟수로 미저장 초안을 제안합니다. 관심종목에 없으면 추가 확인 절차로 연결합니다.","requirement":"관심종목 추가는 사용자 동의가 필요하며 최대 20개입니다. 알림 저장·시작은 사용자가 화면에서 확인해야 합니다. 이 도구가 직접 저장·취소·발송하지 않습니다.","example":"네이버가 20만원에 도달하면 한 번 알림 받고 싶어."},
+        {"name":"get_alert_status","title":"저장된 알림·발송 이력 안내","source":"Node 서버 · Supabase atlas_alert_rpc_v3 기반 알림 상태·발송 이력","description":"전체 또는 특정 관심종목의 저장된 알림과 최근 발송 이력을 서버가 작성한 화면으로 안내합니다.","requirement":"로그인한 본인의 정보만 조회합니다. 현재 주가를 직접 조회하거나 카카오 연결을 시험하는 기능은 아닙니다.","example":"삼성전자 알림이 발송됐는지 확인해줘."}
+      ]
+    }
+  ],
+  "unavailable":[
+    {"title":"실시간 현재가 · 분봉·틱 차트","source":"웹의 증권사 시세 API 및 별도 알림 worker","description":"다른 화면과 worker가 사용하는 시세 연결은 있지만, 분석 AI에 등록된 실시간 가격·차트 조회 도구는 없습니다. 일봉 종가를 지금 가격으로 답하면 안 됩니다."},
+    {"title":"기업 분석 · DART 공시·재무","source":"기업 분석 탭의 DART API·DB","description":"기업 분석 탭의 데이터 연결과 별개로, 분석 AI가 DART 공시·재무를 직접 조회하는 도구는 등록되어 있지 않습니다."},
+    {"title":"주문 실행 · 계좌 자산 변경","source":"웹의 증권사 주문·계좌 API","description":"분석 AI에는 주문 실행이나 계좌 변경 도구가 없습니다. 회원의 증권사 비밀키를 모델에 전달하지 않습니다."}
+  ]
+}
