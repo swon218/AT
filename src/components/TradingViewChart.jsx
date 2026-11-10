@@ -383,11 +383,10 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
         const element = pane.getHTMLElement()
         if (!element) return
         paneResizeObserver.observe(element)
-        if (index === 0) return
-        element.classList.add('atlas-chart-pane-divider')
         const badge = index === 1 ? volumeLegendElement : paneLegends.find(item => item.paneIndex === index)?.badge
-        // Pane element is a table row. Place labels in its center chart cell.
-        if (badge) (element.cells?.[1] || element).append(badge)
+        // Use the chart's native separators. Extra content directly on its
+        // table rows can shift the plot and price-scale columns out of alignment.
+        if (badge) element.cells?.[1]?.append(badge)
       })
     })
     document.addEventListener('pointerup', capturePaneLayouts)
