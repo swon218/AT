@@ -144,7 +144,7 @@ function App() {
         setAlertNotice('응답을 기다리는 동안 수정한 조건을 유지했습니다.')
         return
       }
-      setAlertNotice('대화의 조건을 미저장 초안으로 채웠습니다.')
+      setAlertNotice('')
       openPage('agent')
       setAgentMode('alerts')
       agent.setUI({ robotVisible: true, miniOpen: true, position: { x: 1, y: 1 } })

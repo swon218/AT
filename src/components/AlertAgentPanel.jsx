@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Bot, ChartNoAxesCombined, LockKeyhole } from 'lucide-react'
+import { Bell, Bot, ChartNoAxesCombined, CircleAlert, CircleCheck, Info, LockKeyhole } from 'lucide-react'
 import { ALERT_KINDS, addAlertDays, alertCondition, alertExpiry, alertThreshold, koreanAlertDay, priceRule } from '../../shared/alertRules'
 import { agentApi } from '../services/agentApi'
+import AlertHelp from './AlertHelp'
 import './AlertAgentPanel.css'
 
 export const agentModes = [
@@ -44,6 +45,13 @@ const reasons = {
   watchlist_removed: '관심종목 삭제', event_stale: '관측 시각 만료', expired: '만료일 경과',
   quota: '카카오 발송 한도', market_closed: '정규장 종료',
 }
+const kakaoStates = {
+  ready: ['카카오 메시지 전송 동의 완료', CircleCheck, 'success'],
+  consent_required: ['카카오 연결됨 · 메시지 전송 동의 필요', Info, 'warning'],
+  unavailable: ['카카오 연결 상태 확인 불가', CircleAlert, 'warning'],
+  reconnect: ['카카오 재연결 필요', CircleAlert, 'warning'],
+  disconnected: ['카카오 연결 필요', Info, 'neutral'],
+}
 const toTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'medium' })
 const editable = (row, rule) => ({ kind: rule?.kind || '', threshold: rule?.threshold ?? '',
   expires_on: rule?.expires_on || '', ...row })
@@ -53,6 +61,7 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(Boolean(userId))
+  const [activeHelp, setActiveHelp] = useState(null)
   const updateRef = useRef(0)
   const mounted = useRef(false)
   const history = useRef(null)
@@ -87,6 +96,13 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
 
   const rows = watchlist.ready ? watchlist.rows : data?.watchlist || []
   const byCode = new Map((data?.rules || []).map(rule => [rule.code, rule]))
+  const chatDrafts = rows.filter(({ code }) => draft.rows[code]?.roomId === roomId && draft.rows[code]?.dirty)
+  const changesExistingAlert = chatDrafts.some(({ code }) => {
+    const saved = byCode.get(code)
+    return saved?.expires_on >= today && ['active', 'queued'].includes(saved.status)
+  })
+  const [kakaoLabel, KakaoStatusIcon, kakaoTone] = kakaoStates[data?.kakao] ?? kakaoStates.disconnected
+  const help = { active: activeHelp, setActive: setActiveHelp }
   const selected = rows.filter(({ code }) => draft.rows[code]?.selected)
   const rules = selected.map(({ code }) => {
     const row = editable(draft.rows[code], byCode.get(code))
@@ -116,19 +132,31 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
   }
 
   return <section className="agent-mode-card alert-agent" aria-label="관심종목 알림 설정">
-    <div className="alert-heading"><div><h2>관심종목 알림</h2><p>KRX 정규장에 등록한 조건이 충족되면 종목별로 한 번 발송합니다.</p></div>
-      {userId ? <button type="button" onClick={onKakao}>카카오 연결 설정</button> : <button type="button" onClick={onLogin}>로그인</button>}
+    <div className="alert-heading">
+      <div className="alert-title"><h2>관심종목 알림</h2>
+        <AlertHelp {...help} label="관심종목 알림 안내">KRX 정규장에 등록한 조건이 충족되면 종목별로 한 번 발송합니다.</AlertHelp>
+      </div>
+      <div className="alert-channel">
+        <div className="alert-channel-actions">
+          {userId ? <button type="button" className="alert-kakao-settings" onClick={onKakao}>카카오 연결 설정</button> : <button type="button" onClick={onLogin}>로그인</button>}
+          <AlertHelp {...help} label="카카오 전송 방식 안내">카카오톡 나와의 채팅에 메시지를 남깁니다. 푸시 알림이나 알림음은 발생하지 않습니다.</AlertHelp>
+        </div>
+        <p className="alert-caption">나와의 채팅으로 전송 · 푸시/알림음 없음</p>
+      </div>
     </div>
-    <p>카카오톡 나와의 채팅에 메시지를 남깁니다. 푸시 알림이나 알림음은 발생하지 않습니다.</p>
-    <p>저장할 때 조건이 이미 충족됐다면 첫 유효 시세 확인에서 바로 발송될 수 있습니다. 조회 사이에 잠깐 도달한 가격은 놓칠 수 있습니다.</p>
     {!userId ? <p role="status">로그인하면 관심종목의 알림 조건을 설정할 수 있습니다.</p> : <>
       {loading && <p role="status">알림 설정을 불러오는 중입니다.</p>}
-      {data && <p role="status">{data.kakao === 'ready' ? '카카오 메시지 전송 동의 완료'
-        : data.kakao === 'consent_required' ? '카카오 연결됨 · 메시지 전송 동의 필요'
-        : data.kakao === 'unavailable' ? '카카오 연결 상태 확인 불가'
-        : data.kakao === 'reconnect' ? '카카오 재연결 필요' : '카카오 연결 필요'}
-        {!data.enabled && ' · 알림 감시 준비 중'}</p>}
-      {notice && <p role="status">{notice}</p>}
+      {data && <p role="status" className="alert-message alert-kakao-status" data-tone={kakaoTone}>
+        <KakaoStatusIcon size={14} aria-hidden="true"/><span>{kakaoLabel}{!data.enabled && ' · 알림 감시 준비 중'}</span>
+      </p>}
+      {chatDrafts.length > 0 && <div className="alert-draft-notice">
+        <p role="status" className="alert-message">{!data || changesExistingAlert
+          ? '미저장 초안 · 변경 사항은 저장 후 적용됩니다.' : '미저장 초안 · 저장 후 알림이 시작됩니다.'}</p>
+        <AlertHelp {...help} label="미저장 초안 안내">{changesExistingAlert
+          ? '대화에서 요청한 조건을 입력했습니다. 저장할 때까지 기존 알림 조건이 유지됩니다.'
+          : '대화에서 요청한 조건을 입력했습니다. 내용을 확인한 뒤 저장해야 알림이 활성화됩니다.'}</AlertHelp>
+      </div>}
+      {notice && <p role="status" className="alert-message">{notice}</p>}
       {error && <p className="alert-error" role="alert">{error}</p>}
       {!loading && rows.length === 0 && <p>관심종목을 등록하면 이 표에서 조건을 선택할 수 있습니다.</p>}
       {rows.length > 0 && <div className="alert-table-scroll" tabIndex={0} role="region" aria-label="종목별 알림 조건 표">
@@ -162,6 +190,12 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
           })}</tbody>
         </table>
       </div>}
+      <div className="alert-save-guide">
+        <div className="alert-send-criteria">발송 기준
+          <AlertHelp {...help} label="발송 기준 안내">저장할 때 조건이 이미 충족됐다면 첫 유효 시세 확인에서 바로 발송될 수 있습니다. 조회 사이에 잠깐 도달한 가격은 놓칠 수 있습니다.</AlertHelp>
+        </div>
+        <p className="alert-caption">이미 충족된 조건은 저장 후 바로 발송될 수 있습니다.</p>
+      </div>
       <div className="alert-actions"><button type="button" disabled={!valid || !canActivate} onClick={() => change({ action: 'save', rules })}>저장하고 시작</button>
         <span>선택한 {selected.length}개 · 만료일 한국 시간 기준</span></div>
       <section ref={history} id="alert-history" aria-label="발송 이력" className="alert-history">
