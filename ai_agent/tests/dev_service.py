@@ -26,7 +26,7 @@ if __name__ == '__main__':
             async def respond(self, items, instructions, tools, output_limit):
                 # Select scenario from the TEST question only; production has no such code path.
                 question = next(x['content'] for x in items if x.get('role') == 'user' and not x['content'].startswith('DATED ROOM HISTORY'))
-                mode = json.loads(question)['assignment']['goal'].removeprefix('FIXTURE MODE ') if question.startswith('{') else 'market' if '시세' in question else 'stock_screen' if 'SMA' in question else 'composite' if '뉴스' in question and 'RSI' in question else 'news' if '뉴스' in question else 'rsi' if '이하' in question else 'concept'
+                mode = json.loads(question)['assignment']['goal'].removeprefix('FIXTURE MODE ') if question.startswith('{') else 'fundamental' if '재무' in question else 'market' if '시세' in question else 'stock_screen' if 'SMA' in question else 'composite' if '뉴스' in question and 'RSI' in question else 'news' if '뉴스' in question else 'rsi' if '이하' in question else 'concept'
                 return await AdaptiveProvider(mode).respond(items, instructions, tools, output_limit)
         def tools_factory():
             return ResearchTools(settings, news=NewsSource(replace(settings, naver_id='fixture', naver_secret='fixture'), news_transport()), now=NOW)

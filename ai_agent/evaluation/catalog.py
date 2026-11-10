@@ -70,7 +70,7 @@ def cases():
 
 
 def all_cases():
-    return cases() + json.loads((Path(__file__).parents[2] / 'shared/marketEvalCases.json').read_text(encoding='utf-8'))
+    return cases() + [row for name in ('marketEvalCases.json','fundamentalEvalCases.json') for row in json.loads((Path(__file__).parents[2] / 'shared' / name).read_text(encoding='utf-8'))]
 
 
 if __name__ == '__main__':

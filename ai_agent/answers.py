@@ -36,7 +36,7 @@ def current_required(question):
         return True
     if re.search(r'그중|그 중|앞서|이전|아까|방금', question) and not re.search(r'오늘|현재|최신|최근|밤사이', question):
         return False
-    return bool(re.search(r'뉴스|밤사이|오늘|현재|지금|시세|분봉|틱|최근|찾아|검색해|종목들|이하|이상', question, re.I))
+    return bool(re.search(r'뉴스|공시|재무|실적|사업보고서|밤사이|오늘|현재|지금|시세|분봉|틱|최근|찾아|검색해|종목들|이하|이상', question, re.I))
 
 
 def condition_amount(match):
@@ -72,9 +72,15 @@ def clarification_has_unverified_facts(summary, question, draft):
 
 def validate_final(final, tools, question, *, alert_editor_read=False):
     verified_intraday = any(claim.evidence_id.startswith('m_') and claim.evidence_id in tools.fresh_ids for claim in final.claims)
-    unsupported = r'DART|다트|실시간' if verified_intraday else r'DART|다트|실시간|장중'
+    verified_dart = any(claim.evidence_id.startswith('d_') and claim.evidence_id in tools.fresh_ids for claim in final.claims)
+    unsupported = r'실시간' + ('' if verified_intraday else r'|장중') + ('' if verified_dart else r'|DART|다트')
     if re.search(r'(?:' + unsupported + r')[^\n.!?]{0,30}(?:확인했|조회했|수신했|제공받|분석했)', final.model_dump_json(), re.I):
         raise ValueError('unavailable_source_claim')
+    for line in [final.summary, *(claim.text for claim in final.claims)]:
+        if re.search(r'(?:공시|보고서)[^\n.!?]{0,15}(?:본문|전문|전체)[^\n.!?]{0,25}(?:확인했|읽었|조회했|분석했)',line):
+            body_evidence=any(tools.evidence.get(claim.evidence_id,{}).get('body_available') and claim.evidence_id in tools.fresh_ids for claim in final.claims)
+            if not body_evidence or re.search(r'전문|전체',line) or not re.search(r'일부|추출',line):
+                raise ValueError('unavailable_source_claim')
     if re.search(r'(?:지금|반드시|즉시).{0,8}(?:매수|매도)|(?:매수|매도).{0,4}(?:추천|하세요)|사세요|파세요|수익.{0,5}보장|확실히.{0,8}(?:상승|하락)', final.model_dump_json()):
         raise ValueError('unsafe_investment_instruction')
     if final.kind in ('clarification', 'insufficient'):
@@ -109,8 +115,12 @@ def validate_final(final, tools, question, *, alert_editor_read=False):
             text = source.get('excerpt') or (source.get('title', '') + ' ' + source.get('snippet', ''))
             if claim.excerpt not in text:
                 raise ValueError('excerpt_mismatch')
-            if claim.evidence_id.startswith(('r_', 'f_', 'i_', 'q_', 'm_')) and claim.excerpt != source['excerpt']:
+            if claim.evidence_id.startswith(('r_', 'f_', 'i_', 'q_', 'm_', 'd_')) and claim.excerpt != source['excerpt']:
                 raise ValueError('rsi_value_mismatch')
+            if re.search(r'(?:DART|다트|공시\s*(?:본문|전문))[^\n.!?]{0,30}(?:확인했|조회했|수신했|제공받|분석했)',claim.text,re.I) and not claim.evidence_id.startswith('d_'):
+                raise ValueError('unavailable_source_claim')
+            if re.search(r'(?:공시|보고서)\s*(?:본문|전문)[^\n.!?]{0,30}(?:확인했|읽었|조회했|분석했)',claim.text) and not source.get('body_available'):
+                raise ValueError('unavailable_source_claim')
             if claim.relation == 'direct' and source.get('relevance') == 'indirect_or_unrelated_review_required':
                 raise ValueError('unverified_company_relevance')
             # Numeric assertions must be present in the cited evidence; Korean linguistic entailment is evaluated separately.
@@ -159,6 +169,12 @@ def materialize(final, tools, now, prompt_version='atlas-langgraph-v1'):
             reasons = [REASONS.get(reason, reason) for reason in c['excluded']]
             reasons.extend(f"{item['label']} — {item['reason']}" for item in c['unavailable'])
             lines.append(f"지표 조회: {c['name']}({c['code']}), 실험실 확정 일봉 기준 {c['as_of']}." + (f" 확인 불가: {', '.join(reasons)}." if reasons else ''))
+        elif c['kind'] == 'fundamental':
+            lines.append(f"공식 기업 자료: {c['name']}({c['code']}), DART 기업코드 {c['corp_code']}, 종류 {c['data_kind']}. 저장 갱신 {c.get('collected_at')}, 조회 {c.get('queried_at')}, 만료 자료 {c.get('stale')}. 조건 {json.dumps(c.get('requested_conditions'),ensure_ascii=False)}.")
+            lines.append(c.get('correction_policy') or '')
+            if c.get('page') is not None:
+                lines.append(f"공시 {c['page']}/{c.get('pages')}페이지, 전체 유형 {c.get('total')}건. 다음 페이지 {c.get('has_next')}. 제목·목록 범위.")
+            lines.extend(c.get('warnings') or [])
         else:
             lines.append(f"뉴스 조회: {c['name']}({c['code']}), {c['period']['start']} ~ {c['period']['end']}, {c['page']}페이지 {c['fetched']}건 수신/{c['accepted']}건 기간 내 확보. 제목·요약 범위.")
     screens = [c for c in coverage if c['kind'] in ('rsi', 'screen')]

@@ -65,10 +65,33 @@ class IntradayBars(MarketQuote):
     limit: int = Field(ge=1,le=120)
 
 
+class CompanyCode(Strict):
+    code: str = Field(pattern=r'^[0-9][0-9A-Z]{5}$')
+
+
+class CompanyDisclosures(CompanyCode):
+    start_date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    end_date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    type: Literal['all','periodic','results','finance','ownership','treasury','other']
+    page: int = Field(ge=1,le=100)
+
+
+class CompanyFinancials(CompanyCode):
+    scope: Literal['CFS','OFS']
+    period_type: Literal['annual','quarterly']
+    basis: Literal['single_period','cumulative']
+    year: int | None = Field(ge=2015,le=2100)
+    quarter: int | None = Field(ge=1,le=4)
+    compare_to_year: int | None = Field(ge=2015,le=2100)
+    metrics: list[Literal['sales','operating','net','assets','liabilities','equity','cash','borrowings','operatingCash','capex','freeCash','salesGrowth','operatingGrowth','netGrowth','margin','roe']] = Field(min_length=1,max_length=4)
+
+
 TOOL_MODELS = {'resolve_symbol': Resolve, 'get_market_context': Context, 'screen_rsi': Screen,
                'screen_stocks': StockScreen, 'get_stock_indicators': IndicatorLookup, 'get_stock_news': News, 'get_news_details': Details,
                'get_alert_editor': Context, 'propose_alert': AlertProposal, 'get_alert_status': AlertStatus,
-               'resolve_market_symbol':MarketResolve, 'get_market_quote':MarketQuote, 'get_intraday_bars':IntradayBars}
+               'resolve_market_symbol':MarketResolve, 'get_market_quote':MarketQuote, 'get_intraday_bars':IntradayBars,
+               'get_company_profile':CompanyCode,'get_company_disclosures':CompanyDisclosures,
+               'get_company_financials':CompanyFinancials,'get_company_business':CompanyCode}
 METRIC_GUIDE = ('Legacy metrics use period/slow/signal/multiplier (unused fields=1; defaults RSI14, BB20/2, MACD12/26/9). '
                 'Advanced metrics use null for unused fields and for defaults: ATR/ATR% 14; DMI/ADX DI14, ADX smoothing14; '
                 'stoch K/D 14/3/3; OBV raw has no period, obv_ma SMA20; MFI14; CCI20 HLC3; Supertrend ATR10 ×3. '
@@ -76,6 +99,10 @@ METRIC_GUIDE = ('Legacy metrics use period/slow/signal/multiplier (unused fields
                 'supertrend_flip is +1 up flip, -1 down flip, 0 unchanged. ADX is strength; OBV/MFI are not investor money flow.')
 
 DESCRIPTIONS = {
+    'get_company_profile':'Map verified stock code to DART corporate code and read company basics from existing Supabase DART snapshot. Names can first use resolve_market_symbol. Snapshot-only: does not trigger DART collection. Cold/missing data is an explicit error, never an empty success. Include collection time and stale status.',
+    'get_company_disclosures':'Read saved official DART filing list for inclusive dates (maximum 365 day difference), classification and page 1..100, up to 30 filings/page. Uses exact existing snapshot key; a new range may not be collected. Filter is title-based after pagination; totals are unfiltered. Titles/receipts/links only, NO filing body. Final-report policy and stale cache disclosed.',
+    'get_company_financials':'Read existing DART financial snapshots (latest 5 annual / 8 quarterly reports) with exact decimal amounts and currency. Scope CFS consolidated or OFS separate must match user intent. Pick 1..4 metrics. year/quarter null lists stored periods. basis=single_period is annual or single-quarter income, period-end balances; cumulative unsupported, Q4 income and many quarter cash flows missing if accounting basis unavailable. compare_to_year requires year, and quarter for quarterly; ratio-metric comparisons unsupported. Server compares same account/scope/currency/quarter only; zero/negative base yields no percent. Independent accounting-policy comparability unverified. Never fill missing values with zero.',
+    'get_company_business':'Read only previously collected business-report text excerpts (up to 4 sections of 700 characters) from the existing document parser. Not arbitrary filing bodies, tables or whole-report reading. Return receipt, period, original URL, correction and collection time. Missing excerpts are empty, not inferred from titles.',
     'resolve_market_symbol':'Resolve Korean stock name/code against the existing operator public Kiwoom catalog. Ambiguous names require clarification. No personal account read.',
     'get_market_quote':'Latest available KRX quote with price, prior-close change and cumulative volume. Code required. NXT/SOR unsupported. Provider timestamp and realtime/delay status are unknown for ka10001; disclose this even on a fresh HTTP response.',
     'get_intraday_bars':'Read adjusted KRX minute bars (1/5/10/15/30/60) or tick bars (1/3/5/10/30). Dates inclusive, maximum 7 calendar days, 2 pages, 120 received bars; default dates null mean today. At most 24 rows plus full received-range deterministic summary reach the model. Partial range, cache, stale data and unknown bar completion must be disclosed. No intraday indicator calculation.',

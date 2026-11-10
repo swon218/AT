@@ -50,7 +50,7 @@ def metadata(settings):
             'role_manifest':{name:list(role.tools) for name,role in SPECIALISTS.items()},
             'graph_limits':{'parallel':MAX_PARALLEL,'batches':MAX_WAVES},
             'dataset':DATASET,'data_hash':digest({'stocks':STOCKS,'now':NOW,'generator':inspect.getsource(make_data),'news':inspect.getsource(transport_for),'state':inspect.getsource(state_for),'research_data':inspect.getsource(FixedResearchData)}),
-            'now':NOW.isoformat(),'model':settings.model,'settings':{k:getattr(settings,k) for k in ('rounds','tool_calls','tokens','seconds','max_usd','output_tokens','input_usd_per_million','output_usd_per_million')}}
+            'now':NOW.isoformat(),'model':settings.model,'settings':{k:getattr(settings,k) for k in ('rounds','tool_calls','external_requests','tool_seconds','tokens','seconds','max_usd','output_tokens','input_usd_per_million','output_usd_per_million')}}
 
 
 def make_data(path):
@@ -97,9 +97,15 @@ class ContractProvider:
     async def respond(self,items,instructions,tools,output_limit):
         usage={'input_tokens':0,'output_tokens':0,'reasoning_tokens':0,'cached_tokens':0}
         if any(tool['name']=='delegate_research' for tool in tools) and not any(item.get('type')=='function_call_output' for item in items):
-            task={'agent':'market' if self.scenario.startswith('market_') else 'technical','goal':'고정 공급자 데이터 확인','symbols':['005930'], 'period':None,'constraints':'평가 fixture만 확인','deliverable':'조회 근거와 범위'}
+            task={'agent':'market' if self.scenario.startswith('market_') else 'fundamental' if self.scenario.startswith('fundamental_') else 'technical','goal':'고정 공급자 데이터 확인','symbols':['005930'], 'period':None,'constraints':'평가 fixture만 확인','deliverable':'조회 근거와 범위'}
             return Turn([{'type':'function_call','call_id':str(uuid4()),'name':'delegate_research','arguments':json.dumps({'tasks':[task]})}],'',usage)
         if not any(item.get('type')=='function_call_output' for item in items):
+            if any(tool['name']=='get_company_financials' for tool in tools):
+                name='get_company_disclosures' if self.scenario in ('fundamental_disclosures','fundamental_news','fundamental_empty') else 'get_company_financials' if self.scenario in ('fundamental_financials','fundamental_daily','fundamental_quarter') else 'get_company_business' if self.scenario=='fundamental_business' else 'get_company_profile'
+                args={'code':'005930'}
+                if name=='get_company_disclosures': args.update(start_date='2026-01-01',end_date='2026-10-27',type='all',page=1)
+                if name=='get_company_financials': args.update(scope='CFS',period_type='quarterly' if self.scenario=='fundamental_quarter' else 'annual',basis='single_period',year=2025,quarter=3 if self.scenario=='fundamental_quarter' else None,compare_to_year=None,metrics=['sales','operating'])
+                return Turn([{'type':'function_call','call_id':str(uuid4()),'name':name,'arguments':json.dumps(args)}],'',usage)
             if any(tool['name']=='get_market_quote' for tool in tools):
                 name='get_intraday_bars' if self.scenario=='market_intraday' else 'get_market_quote'
                 args={'code':'005930','market':'KRX'}

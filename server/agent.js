@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { createAgentAuthenticator, createAgentStore, createAgentWatchlistConfirmer } from './agentStore.js'
 import { alertAnswer, alertEditor, registerAlertRoutes } from './alertAgent.js'
 import { createAlertStore } from './alertStore.js'
-import { agentMarketData } from './agentMarketData.js'
+import { agentResearchData } from './agentResearchData.js'
 
 const uuid = { type: 'string', format: 'uuid' }
 const error = (code, statusCode = 400) => Object.assign(new Error(code), { statusCode })
@@ -43,7 +43,7 @@ export function registerAgentRoutes(app, {
   publicOrigin = process.env.AI_PUBLIC_ORIGIN || 'http://127.0.0.1:5173',
   secureCookie = process.env.NODE_ENV === 'production', enabled = process.env.AI_ENABLED !== 'false',
   alertStore = createAlertStore(), alertOptions, confirmWatchlist = createAgentWatchlistConfirmer(),
-  dataService = agentMarketData,
+  dataService = agentResearchData,
 } = {}) {
   const cookieName = secureCookie ? '__Host-atlas_ai_guest' : 'atlas_ai_guest'
   const guestDays = Math.max(1, Math.min(30, Number(process.env.AI_GUEST_DAYS || 7)))

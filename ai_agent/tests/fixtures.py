@@ -80,13 +80,20 @@ class AdaptiveProvider:
             reports = [report for item in items if item.get('type') == 'function_call_output'
                        for report in json.loads(item['output']).get('reports', [])]
             if not reports or self.mode == 'composite' and not any(report['agent'] == 'news' for report in reports):
-                agent = 'market' if self.mode == 'market' else 'news' if self.mode in ('news', 'ambiguous') or reports else 'technical'
+                agent = 'fundamental' if self.mode == 'fundamental' else 'market' if self.mode == 'market' else 'news' if self.mode in ('news', 'ambiguous') or reports else 'technical'
                 return delegation(agent, symbols=[row['code'] for report in reports for row in report.get('matched_symbols', [])], goal='FIXTURE MODE ' + self.mode)
             claims = [claim for report in reports for claim in (report.get('findings') or {}).get('claims', [])]
             clarification = next((report['findings'] for report in reports if report['status'] == 'clarification'), None)
             return answer(clarification or final('research' if claims else 'insufficient', '확보된 자료를 확인했습니다.' if claims else '자료를 확인하지 못했습니다.', claims))
         outputs = [json.loads(x['output']) for x in items if x.get('type') == 'function_call_output']
         self.results.extend(output for output in outputs if output not in self.results)
+        if self.mode == 'fundamental':
+            if not outputs:
+                return call('get_company_profile', {'code':'005930'})
+            if not any(output.get('period_type') for output in outputs):
+                return call('get_company_financials',{'code':'005930','scope':'CFS','period_type':'annual','basis':'single_period','year':2025,'quarter':None,'compare_to_year':None,'metrics':['sales','operating']})
+            claims=[{'text':source['excerpt'],'excerpt':source['excerpt'],'evidence_id':source['id'],'stance':'neutral','relation':'direct'} for output in outputs for source in output.get('items',[]) if source.get('id')]
+            return answer(final('research' if claims else 'insufficient','확보된 기업 자료와 한계를 확인했습니다.',claims))
         if self.mode == 'market':
             if not outputs:
                 return call('resolve_market_symbol', {'query':'삼성전자'})

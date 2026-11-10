@@ -1,0 +1,243 @@
+[
+  {
+    "id": "00000000-0000-4000-8200-000000000001",
+    "title": "기업 매핑·기본 정보",
+    "spec": {
+      "title": "기업 매핑·기본 정보",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 기업 정보를 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_profile",
+      "split": "dev",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_profile"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8200-000000000002",
+    "title": "공식 공시 날짜·페이지",
+    "spec": {
+      "title": "공식 공시 날짜·페이지",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 2026년 공시 목록을 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_disclosures",
+      "split": "dev",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_disclosures"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8200-000000000003",
+    "title": "연간 연결 실적",
+    "spec": {
+      "title": "연간 연결 실적",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 2025년 연결 매출과 영업이익을 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_financials",
+      "split": "dev",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_financials"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8200-000000000004",
+    "title": "분기·별도 구분",
+    "spec": {
+      "title": "분기·별도 구분",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 단일분기 실적을 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_quarter",
+      "split": "dev",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_financials"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8200-000000000005",
+    "title": "사업 본문 범위",
+    "spec": {
+      "title": "사업 본문 범위",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 사업보고서의 제품 문단을 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_business",
+      "split": "dev",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_business"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8200-000000000006",
+    "title": "뉴스와 공식 공시",
+    "spec": {
+      "title": "뉴스와 공식 공시",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 뉴스와 공식 공시를 구분해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_news",
+      "split": "dev",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_disclosures"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8200-000000000007",
+    "title": "재무와 확정 일봉",
+    "spec": {
+      "title": "재무와 확정 일봉",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 연간 실적과 확정 일봉 RSI를 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_daily",
+      "split": "dev",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_financials"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8200-000000000008",
+    "title": "공시 없음",
+    "spec": {
+      "title": "공시 없음",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 선택 기간 공시가 있는지 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_empty",
+      "split": "dev",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_disclosures"
+        },
+        {
+          "type": "no_mutation"
+        },
+        {
+          "type": "empty"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8200-000000000009",
+    "title": "DART 공급자 제한",
+    "spec": {
+      "title": "DART 공급자 제한",
+      "category": "기업·공시·재무",
+      "question": "삼성전자 기업 정보 조회 오류를 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "fundamental_error",
+      "split": "holdout",
+      "status": "active",
+      "success": "고정 공식 자료 도구와 근거·기간·조회 범위를 사용하고 한계를 표시한다.",
+      "failure": "자료 없이 현재 정보나 공시 전문·재무 수치를 주장하거나 운영 데이터에 쓴다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_company_profile"
+        },
+        {
+          "type": "no_mutation"
+        },
+        {
+          "type": "error",
+          "value": "dart_rate_limit"
+        }
+      ]
+    }
+  }
+]

@@ -1,5 +1,5 @@
 {
-  "version": "atlas-langgraph-market-v1",
+  "version": "atlas-langgraph-research-v1",
   "agents": [
     {
       "id": "orchestrator",
@@ -39,6 +39,17 @@
       ]
     },
     {
+      "id": "fundamental",
+      "name": "기업·공시·재무 조사 에이전트",
+      "tools": [
+        "resolve_market_symbol",
+        "get_company_profile",
+        "get_company_disclosures",
+        "get_company_financials",
+        "get_company_business"
+      ]
+    },
+    {
       "id": "alert",
       "name": "알림 설계 에이전트",
       "tools": [
@@ -49,7 +60,5 @@
       ]
     }
   ],
-  "future": [
-    "Fundamental Research Agent"
-  ]
+  "future": []
 }

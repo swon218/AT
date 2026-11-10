@@ -8,6 +8,7 @@ import { importQuery } from '../utils/screener'
 import { alertCondition, alertFrequencyLabel } from '../../shared/alertRules'
 import { WATCHLIST_LIMIT_MESSAGE } from '../../shared/watchlist'
 import architecture from '../../shared/agentArchitecture.json'
+import { agentSourceLabel, agentSourceTime } from '../utils/agentSources'
 
 const suggestions = [
   { label: '조건으로 종목 찾기', text: '일봉 RSI 30 이하인 종목을 찾아줘', icon: Search },
@@ -30,7 +31,7 @@ const validationMessages = {
   evidence_required: '사실 주장에 연결된 근거가 없습니다.',
   invalid_evidence_id: '조회 결과에서 해당 근거를 찾지 못했습니다.',
   excerpt_mismatch: '인용한 내용이 조회 결과와 일치하지 않습니다.',
-  rsi_value_mismatch: '지표 인용이 조회한 값과 일치하지 않습니다.',
+  rsi_value_mismatch: '인용한 수치·문장이 조회한 근거와 일치하지 않습니다.',
   unverified_company_relevance: '해당 종목과의 직접적인 관련성을 확인하지 못했습니다.',
   unsupported_number: '인용한 근거에서 해당 수치를 확인하지 못했습니다.',
   claim_content_mismatch: '답변의 설명이 인용한 자료와 일치하지 않습니다.',
@@ -155,7 +156,7 @@ function Conversation({ agent, compact = false, onExpand }) {
         <div className={message.role === 'assistant' ? 'agent-assistant-message' : 'agent-user-message'}>{message.content.split('\n').map((line, i) => <p key={i}>{line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => part.startsWith('**') ? <strong key={j}>{part.slice(2, -2)}</strong> : part.startsWith('`') ? <code key={j}>{part.slice(1, -1)}</code> : part)}</p>)}</div>
         {message.answer?.watchlistConfirmation && <WatchlistConfirmation agent={agent} message={message} latest={latest}/>}
         {message.answer?.result_sets?.filter(set => set.coverage?.kind === 'indicator' && (set.items.length || set.coverage.unavailable?.length)).map(set => <IndicatorResult key={set.id} result={set}/>)}
-        {!!message.answer?.sources?.length && <ul className="agent-sources">{message.answer.sources.map(source => <li key={source.id}>{safeAgentLink(source.url) ? <a href={safeAgentLink(source.url)} target="_blank" rel="noopener noreferrer">{source.title || source.id}</a> : <span>{source.excerpt || source.id}</span>}<small>{source.source} · {source.published_at || source.as_of} · {source.scope === 'title_and_snippet' ? '제목·요약' : '확정 일봉'}</small></li>)}</ul>}
+        {!!message.answer?.sources?.length && <ul className="agent-sources">{message.answer.sources.map(source => <li key={source.id}>{safeAgentLink(source.url) ? <a href={safeAgentLink(source.url)} target="_blank" rel="noopener noreferrer">{source.title || source.excerpt || source.id}</a> : <span>{source.excerpt || source.id}</span>}<small>{source.source} · {agentSourceTime(source)} · {agentSourceLabel(source)}</small>{safeAgentLink(source.comparison_url)&&<a href={safeAgentLink(source.comparison_url)} target="_blank" rel="noopener noreferrer">비교 기간 원문</a>}</li>)}</ul>}
         {agent.openScreen && message.answer?.result_sets?.filter(set => set.coverage?.kind === 'screen' && importQuery(set.query)).map(set => <button type="button" className="agent-expand-result" key={set.id} onClick={() => agent.openScreen(set.query)}>조건검색에서 조건 열기 · 최신 데이터로 다시 조회<ArrowUpRight size={14}/></button>)}
         <div className="agent-message-state"><Check size={12}/><span>{message.role === 'assistant' ? `${agent.active.requests?.find(r => r.id === message.request_id)?.status === 'partial' ? '부분 완료' : '완료'} · ${message.answer?.as_of || ''}` : '질문 저장됨'}</span></div>
         {!compact && agent.onAddEvaluation && message.request_id && <button type="button" className="agent-open-screen" onClick={() => agent.onAddEvaluation(message.request_id)}>평가 사례로 추가</button>}

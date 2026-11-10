@@ -109,8 +109,8 @@ async def test_node_boundary_is_fixed_authenticated_bounded_and_accounts_shared_
 @pytest.mark.asyncio
 async def test_new_admin_cases_use_same_graph_with_fixed_data_and_old_cases_are_preserved():
     cases=all_cases()
-    assert len(cases)==36 and len({row['id'] for row in cases})==36
-    for specimen in cases[-6:-3]:
+    assert len(cases)>=36 and len({row['id'] for row in cases})==len(cases)
+    for specimen in cases[30:33]:
         result=await evaluate({'mode':'code','specimen':specimen},Settings())
         assert result['grade']=='review',result
         assert result['usage']['paid_model_calls']==0 and result['usage']['budget_usd']==0

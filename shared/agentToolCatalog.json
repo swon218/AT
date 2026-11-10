@@ -140,13 +140,53 @@
           "example": "삼성전자의 오늘 5분봉 흐름을 보여줘."
         }
       ]
+    },
+    {
+      "id": "fundamental",
+      "agent": "fundamental",
+      "title": "기업 · 공식 공시 · 재무",
+      "description": "기업 분석 서비스의 기존 DART 저장 자료를 읽습니다. AI가 새 수집을 실행하지 않으며, 수집되지 않은 기간은 조회 불가로 구분합니다.",
+      "tools": [
+        {
+          "name": "get_company_profile",
+          "title": "기업 식별 · 기본 정보",
+          "description": "종목코드와 DART 기업코드를 연결하고 기업명·시장·대표·결산월 등 저장된 기본 정보를 조회합니다.",
+          "source": "Node · 기존 기업 분석 서비스 / Supabase atlas_dart_symbols·jobs",
+          "requirement": "DB에 수집된 기업 개요가 필요합니다. 이름은 공개 종목 식별 도구로 확인하며, 모호하면 재질문합니다.",
+          "example": "삼성전자 기업 기본 정보를 알려줘."
+        },
+        {
+          "name": "get_company_disclosures",
+          "title": "기간별 공식 공시 목록",
+          "description": "기간·유형·페이지별 제목·접수번호·공시일·정정·원문 링크를 조회합니다. 본문을 읽은 결과가 아닙니다.",
+          "source": "기존 DART list.json 수집 스냅샷 / Supabase atlas_dart_jobs",
+          "requirement": "기존 수집과 동일한 기간·페이지. 날짜 차이 최대 365일, 페이지당 30건·최대 100페이지. 유형은 페이지 수신 후 제목 분류입니다.",
+          "example": "삼성전자의 올해 공식 공시와 최근 뉴스를 구분해서 알려줘."
+        },
+        {
+          "name": "get_company_financials",
+          "title": "재무 수치 · 기간 비교",
+          "description": "연결/별도·연간/단일분기 수치와 같은 계정·통화·분기 기준의 증감을 서버에서 정확한 소수로 계산합니다.",
+          "source": "기존 fnlttSinglAcntAll.json 정규화 / Supabase 저장 스냅샷",
+          "requirement": "최근 연간 최대 5개·분기 최대 8개 보고서, 한 번에 4개 지표. 누적 조회와 검증 없는 분기 차감은 미지원. 0·음수 기준 증감률은 산출하지 않습니다. 회계정책 비교는 미검증입니다.",
+          "example": "삼성전자 2025년과 2024년 연결 매출액·영업이익 변화를 비교해줘."
+        },
+        {
+          "name": "get_company_business",
+          "title": "사업보고서 추출 문단",
+          "description": "수집된 사업보고서에서 추출한 사업·제품·수주·연구개발 문단만 근거로 설명합니다.",
+          "source": "기존 DART document.xml 파서 / Supabase 사업 스냅샷",
+          "requirement": "최대 4개 영역·각 700자. 표·원문 전체·임의 공시 본문은 지원하지 않습니다. 보고기간·접수번호·정정·저장 시각을 유지합니다.",
+          "example": "삼성전자 사업보고서에서 확보된 제품·서비스 설명을 알려줘."
+        }
+      ]
     }
   ],
   "unavailable": [
     {
-      "title": "기업 분석 · DART 공시·재무",
-      "source": "기업 분석 탭의 DART API·DB",
-      "description": "기업 분석 탭의 데이터 연결과 별개로, 분석 AI가 DART 공시·재무를 직접 조회하는 도구는 등록되어 있지 않습니다."
+      "title": "임의 공시 원문 · 누적 재무 · 기관 수급",
+      "description": "공시 목록만으로 본문 분석을 하지 않습니다. 저장되지 않은 범위, 누적 재무와 검증 없는 분기 차감, 기관·외국인 수급은 미지원입니다.",
+      "source": "이번 도구 허용 범위 밖"
     },
     {
       "title": "주문 실행 · 계좌 자산 변경",

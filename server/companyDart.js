@@ -255,22 +255,27 @@ export function createCompanyDart({ store, transport, now = Date.now, options = 
     return { filings: allFilings, data: { ...shares, treasury: recent.items.filter(item => item.type === 'treasury').slice(0, 12).map(official) } }
   }
 
-  async function read(symbol, query) {
+  async function read(symbol, query, { refresh = true, includeIdentity = false, beforeRead = () => true } = {}) {
     const args = parseRequest(query, now())
+    const allowRead = () => { if (beforeRead() === false) throw new DartError('external_request_limit') }
+    allowRead()
     const mapping = await store.symbol(symbol)
     if (!mapping) {
+      allowRead()
       const catalog = await store.job(codesJob.key)
       if (!catalog?.checked_at) throw new DartError(catalog?.error_code || 'dart_catalog_not_ready')
       return { status: 'unsupported' }
     }
     const corp = mapping.corp_code
     const job = { key: keyFor(corp, args), corp_code: corp, kind: args.section, args: { ...args, type: 'all' } }
+    allowRead()
     const row = await store.job(job.key)
-    if (!fresh(row) && !leased(row) && !cooling(row)) {
+    if (refresh && !fresh(row) && !leased(row) && !cooling(row)) {
       if (!key && !row?.checked_at) throw new DartError('dart_key_missing')
       if (key && pending.size < 12) void start(job, signal => collect(job, signal)).catch(() => {})
     }
-    const details = { checkedAt: row?.checked_at ?? null, retryAt: row?.retry_at ?? null }
+    const details = { checkedAt: row?.checked_at ?? null, retryAt: row?.retry_at ?? null,
+      ...(includeIdentity ? { identity: { code: mapping.symbol, corp_code: corp, name: mapping.name }, expiresAt: row?.expires_at ?? null } : {}) }
     if (row?.checked_at) {
       let data = row.data
       if (args.section === 'disclosures') {
@@ -304,8 +309,10 @@ export function createCompanyDart({ store, transport, now = Date.now, options = 
 }
 
 export const configuredCompanyDart = () => createCompanyDart({ key: config.openDartKey, store: createDartStore(config) })
+// Public UI and AI snapshots share jobs, leases and the existing refresh policy.
+export const companyDart = configuredCompanyDart()
 
-export function registerCompanyDartRoutes(app, { service = configuredCompanyDart(), now = Date.now } = {}) {
+export function registerCompanyDartRoutes(app, { service = companyDart, now = Date.now } = {}) {
   const counts = new Map()
   let minute, total
   app.get('/api/public/company/:symbol', async (request, reply) => {

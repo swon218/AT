@@ -134,7 +134,7 @@ class ResearchTools:
         # Only server-owned messages of this room are passed here. Historical sources remain dated.
         for message in context or []:
             for source in (message.get('answer') or {}).get('sources', [])[:60]:
-                if isinstance(source, dict) and str(source.get('id', '')).startswith(('n_', 'r_', 'f_', 'i_', 'q_', 'm_')):
+                if isinstance(source, dict) and str(source.get('id', '')).startswith(('n_', 'r_', 'f_', 'i_', 'q_', 'm_', 'd_')):
                     self.evidence[source['id']] = {**source, 'historical': True}
                     if source.get('code') and source.get('name'):
                         self.resolved[source['code']] = {'code': source['code'], 'name': source['name']}
@@ -386,3 +386,19 @@ class ResearchTools:
             raise ToolError('unknown_article_id')
         return {'status': 'success', 'items': [self.evidence[i] for i in args.article_ids],
                 'warnings': ['확보된 제목·요약만 반환합니다. 원문 조회 도구가 아닙니다.']}
+
+    async def get_company_profile(self, args):
+        from .fundamental_tools import company_data
+        return await company_data(self,args,'get_company_profile',stable_id)
+
+    async def get_company_disclosures(self, args):
+        from .fundamental_tools import company_data
+        return await company_data(self,args,'get_company_disclosures',stable_id)
+
+    async def get_company_financials(self, args):
+        from .fundamental_tools import company_data
+        return await company_data(self,args,'get_company_financials',stable_id)
+
+    async def get_company_business(self, args):
+        from .fundamental_tools import company_data
+        return await company_data(self,args,'get_company_business',stable_id)

@@ -6,8 +6,8 @@ import { alertAnswer } from './alertAgent.js'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode })
-export const seeds = ['evalCases.json','marketEvalCases.json'].flatMap(name => JSON.parse(readFileSync(new URL('../shared/' + name, import.meta.url), 'utf8')))
-export const scenarios = ['base','watched','full','approve','decline','multiple','draft','guest','news_error','news_empty','db_error','market_quote','market_intraday','market_news','market_daily','market_error']
+export const seeds = ['evalCases.json','marketEvalCases.json','fundamentalEvalCases.json'].flatMap(name => JSON.parse(readFileSync(new URL('../shared/' + name, import.meta.url), 'utf8')))
+export const scenarios = ['base','watched','full','approve','decline','multiple','draft','guest','news_error','news_empty','db_error','market_quote','market_intraday','market_news','market_daily','market_error','fundamental_profile','fundamental_disclosures','fundamental_financials','fundamental_quarter','fundamental_business','fundamental_news','fundamental_daily','fundamental_empty','fundamental_error']
 export function validateCase(value) {
   const fields = ['title','category','question','context','dataset','scenario','success','failure','rubric','checks','split','status','source']
   if (!value || Object.keys(value).some(k => !fields.includes(k)) || JSON.stringify(value).length > 18000) throw fail('eval_invalid')
@@ -22,7 +22,7 @@ export function validateCase(value) {
   for (const check of value.checks) {
     if (!check || !['tool','no_tools','action','rule','kind','numeric','empty','error','no_mutation'].includes(check.type)
       || Object.keys(check).some(k=>!['type','name','value'].includes(k)) || JSON.stringify(check).length>500) throw fail('eval_invalid')
-    if(check.type==='tool' && !['resolve_symbol','get_market_context','screen_rsi','screen_stocks','get_stock_indicators','get_stock_news','get_news_details','get_alert_editor','propose_alert','get_alert_status','resolve_market_symbol','get_market_quote','get_intraday_bars'].includes(check.name)) throw fail('eval_invalid')
+    if(check.type==='tool' && !['resolve_symbol','get_market_context','screen_rsi','screen_stocks','get_stock_indicators','get_stock_news','get_news_details','get_alert_editor','propose_alert','get_alert_status','resolve_market_symbol','get_market_quote','get_intraday_bars','get_company_profile','get_company_disclosures','get_company_financials','get_company_business'].includes(check.name)) throw fail('eval_invalid')
     if(check.type==='numeric' && (typeof check.name!=='string'||!Number.isFinite(check.value))) throw fail('eval_invalid')
     if(check.type==='rule' && !['code','kind','threshold','frequency','expires_on'].includes(check.name)) throw fail('eval_invalid')
     if(['action','kind','error'].includes(check.type) && (typeof check.value!=='string'||check.value.length>100)) throw fail('eval_invalid')
@@ -56,7 +56,7 @@ export function registerAdminEval(app,{store=evalStore(),authenticate=createAgen
   }
   const id = req => { if(!uuid.test(req.params.id)) throw fail('eval_invalid'); return req.params.id }
   app.get('/api/agent/admin/status',guarded(async()=>({admin:true})))
-  app.get('/api/agent/admin/catalog',guarded(async()=>({seeds,scenarios,datasets:[{id:'atlas-fixed-v1',now:'2026-10-28T08:00:00+09:00',description:'합성 일봉·뉴스·시세 / KST 고정 시각'}],maxBudget:25,maxRepeats:3,perItemBudget:0.25,worker:Date.now()-workerAt<30000?workerInfo:null,
+  app.get('/api/agent/admin/catalog',guarded(async()=>({seeds,scenarios,datasets:[{id:'atlas-fixed-v1',now:'2026-10-28T08:00:00+09:00',description:'합성 일봉·뉴스·시세·DART 공시·재무 / KST 고정 시각'}],maxBudget:25,maxRepeats:3,perItemBudget:0.25,worker:Date.now()-workerAt<30000?workerInfo:null,
     runtime:app.hasDecorator('agentResearchRuntime')?await app.agentResearchRuntime():null})))
   app.get('/api/agent/admin/cases',guarded((req,owner)=>store('cases',owner)))
   app.put('/api/agent/admin/cases/:id',{bodyLimit:24000},guarded((req,owner)=>{

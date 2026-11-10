@@ -92,7 +92,7 @@ test('paid confirmation, case allowlists, own conversation import and worker aut
  }finally{await h.close()}
 })
 test('seed cases, fail counts and comparison do not hide unknown or changed conditions',()=>{
- assert.equal(seeds.length,36);assert.equal(seeds.filter(c=>c.spec.split==='holdout').length,7)
+ assert.equal(seeds.length,45);assert.equal(seeds.filter(c=>c.spec.split==='holdout').length,8)
  seeds.forEach(c=>validateCase(c.spec))
  const items=[{state:'completed',grade:'review'},{state:'failed'},{state:'canceled'},{state:'completed',review:{status:'pass'},checks:[{status:'fail',critical:true}]}]
  const s=summarize(items);assert.equal(s.total,4);assert.equal(s.fail,2);assert.equal(s.critical,1);assert.equal(s.review,1)
