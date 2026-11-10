@@ -1,10 +1,55 @@
 {
-  "version": "atlas-langgraph-v1",
+  "version": "atlas-langgraph-market-v1",
   "agents": [
-    {"id":"orchestrator","name":"총괄 에이전트","tools":["delegate_research"]},
-    {"id":"news","name":"뉴스 조사 에이전트","tools":["resolve_symbol","get_market_context","get_stock_news","get_news_details"]},
-    {"id":"technical","name":"일봉 분석 에이전트","tools":["resolve_symbol","get_market_context","get_stock_indicators","screen_stocks","screen_rsi"]},
-    {"id":"alert","name":"알림 설계 에이전트","tools":["resolve_symbol","get_alert_editor","propose_alert","get_alert_status"]}
+    {
+      "id": "orchestrator",
+      "name": "총괄 에이전트",
+      "tools": [
+        "delegate_research"
+      ]
+    },
+    {
+      "id": "news",
+      "name": "뉴스 조사 에이전트",
+      "tools": [
+        "resolve_symbol",
+        "get_market_context",
+        "get_stock_news",
+        "get_news_details"
+      ]
+    },
+    {
+      "id": "technical",
+      "name": "일봉 분석 에이전트",
+      "tools": [
+        "resolve_symbol",
+        "get_market_context",
+        "get_stock_indicators",
+        "screen_stocks",
+        "screen_rsi"
+      ]
+    },
+    {
+      "id": "market",
+      "name": "시장 데이터 에이전트",
+      "tools": [
+        "resolve_market_symbol",
+        "get_market_quote",
+        "get_intraday_bars"
+      ]
+    },
+    {
+      "id": "alert",
+      "name": "알림 설계 에이전트",
+      "tools": [
+        "resolve_symbol",
+        "get_alert_editor",
+        "propose_alert",
+        "get_alert_status"
+      ]
+    }
   ],
-  "future": ["Market Data Agent", "Fundamental Research Agent"]
+  "future": [
+    "Fundamental Research Agent"
+  ]
 }

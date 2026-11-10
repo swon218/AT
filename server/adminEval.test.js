@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { registerAdminEval, seeds, validateCase, materializeEvaluation } from './adminEval.js'
 import { proxyTarget } from '../api/agent-proxy.js'
-import { summarize, compareRuns } from '../src/utils/evalResults.js'
+import { summarize, compareRuns, seedCaseId } from '../src/utils/evalResults.js'
 
 const migration=await readFile(new URL('../deploy/AI_EVAL_SUPABASE.sql',import.meta.url),'utf8')
 async function harness(){
@@ -92,7 +92,7 @@ test('paid confirmation, case allowlists, own conversation import and worker aut
  }finally{await h.close()}
 })
 test('seed cases, fail counts and comparison do not hide unknown or changed conditions',()=>{
- assert.equal(seeds.length,30);assert.equal(seeds.filter(c=>c.spec.split==='holdout').length,6)
+ assert.equal(seeds.length,36);assert.equal(seeds.filter(c=>c.spec.split==='holdout').length,7)
  seeds.forEach(c=>validateCase(c.spec))
  const items=[{state:'completed',grade:'review'},{state:'failed'},{state:'canceled'},{state:'completed',review:{status:'pass'},checks:[{status:'fail',critical:true}]}]
  const s=summarize(items);assert.equal(s.total,4);assert.equal(s.fail,2);assert.equal(s.critical,1);assert.equal(s.review,1)
@@ -105,6 +105,15 @@ test('SQL detects conflicting pre-existing schema',async()=>{
   await db.exec('create table admin_users(id int)')
   await assert.rejects(db.exec(migration),/Conflicting table/)
  }finally{await db.close()}
+})
+
+test('seed identity is stable per owner and never replaces another owner or seed',async()=>{
+ const owner=randomUUID(),seed=randomUUID()
+ const id=await seedCaseId(owner,seed)
+ assert.equal(id,await seedCaseId(owner,seed))
+ assert.notEqual(id,await seedCaseId(randomUUID(),seed))
+ assert.notEqual(id,await seedCaseId(owner,randomUUID()))
+ assert.match(id,/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
 })
 test('architecture comparisons require matching model, data, rubric revision and request budget',()=>{
  const metadata={dataset:'fixed',data_hash:'same-data',model:'same-model',now:'fixed-date',settings:{rounds:8,max_usd:0.25}}

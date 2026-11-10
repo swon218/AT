@@ -109,20 +109,30 @@ export function createStockSearch({ now = Date.now, pause = delay, ttl = STOCK_C
   return search
 }
 
-export async function getStockQuote(symbol, { requester }) {
+export async function getStockQuote(symbol, { requester, includeMetadata = false }) {
   if (!validCode(symbol)) throw httpError('올바른 6자리 종목코드가 필요합니다.', 400)
   const body = await requester({ apiId: 'ka10001', endpoint: '/api/dostk/stkinfo', body: { stk_cd: symbol }, timeoutMs: 7_000 })
   const code = String(body.stk_cd || '').replace(/^A/, '').split('_')[0]
   if (code !== symbol || !body.stk_nm) throw httpError('종목 시세 응답을 확인할 수 없습니다.')
   const price = numeric(body.cur_prc)
   const volume = numeric(body.trde_qty)
-  return { code, name: body.stk_nm, price: price === null ? null : Math.abs(price), change: numeric(body.flu_rt), volume: volume === null ? null : Math.abs(volume) }
+  const result = { code, name: body.stk_nm, price: price === null ? null : Math.abs(price), change: numeric(body.flu_rt), volume: volume === null ? null : Math.abs(volume) }
+  if (includeMetadata) {
+    const delta = numeric(body.pred_pre)
+    const direction = { 1: 1, 2: 1, 3: 0, 4: -1, 5: -1 }[body.pred_pre_sig]
+    result.changeAmount = delta !== null && direction !== undefined ? Math.abs(delta) * direction : null
+  }
+  return result
 }
 
 const searchStocks = createStockSearch({
   snapshotPath: fileURLToPath(new URL('../data/stock-catalog.json', import.meta.url)),
   onError: error => console.warn('Stock catalog refresh/cache failed:', error.message),
 })
+
+export async function searchResearchStock(query, requester) {
+  return searchStocks(query, { requester, cacheScope: 'operator' })
+}
 
 export async function warmStockSearchCatalog() {
   return searchStocks.catalog(await marketRequestContext({ headers: {} }))

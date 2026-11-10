@@ -24,7 +24,7 @@ test('real HTTP Node -> FastAPI -> adaptive fixture -> read-only tools -> SQL ->
     assert.equal(result.status, 'completed', JSON.stringify(result))
     assert.equal(result.usage.model_calls, 8)
     assert.equal(result.usage.input_tokens, 200)
-    assert.equal(result.answer.execution.architecture, 'atlas-langgraph-v1')
+    assert.equal(result.answer.execution.architecture, 'atlas-langgraph-market-v1')
     assert.ok(result.steps.some(s => s.name === 'delegate_research' && s.agent === 'orchestrator'))
     assert.equal(result.answer.sources.length, 4)
     assert.deepEqual(new Set(result.answer.sources.map(source => source.id.slice(0, 2))), new Set(['n_', 'r_']))

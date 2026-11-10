@@ -15,14 +15,14 @@ function todayInSeoul() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/-/g, '')
 }
 
-function normalizeTime(value) {
+export function normalizeTime(value) {
   const digits = String(value || '').replace(/\D/g, '')
   if (digits.length >= 14) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}T${digits.slice(8, 10)}:${digits.slice(10, 12)}:${digits.slice(12, 14)}+09:00`
   if (digits.length >= 8) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
   return ''
 }
 
-function chartDefinition(symbol, interval) {
+export function chartDefinition(symbol, interval) {
   if (interval.endsWith('분')) return {
     apiId: 'ka10080', endpoint: '/api/dostk/chart', listKeys: ['stk_min_pole_chart_qry'],
     body: { stk_cd: symbol, tic_scope: interval.replace('분', ''), upd_stkpc_tp: '1' },

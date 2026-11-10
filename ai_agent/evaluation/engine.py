@@ -21,6 +21,7 @@ from ai_agent.schemas import tools_schema
 from ai_agent.screen_engine import ScreenEngine
 from ai_agent.screener import RsiScreener
 from ai_agent.tools import ResearchTools, NewsSource
+from .data_fixtures import FixedResearchData
 
 NOW=datetime.fromisoformat('2026-10-28T08:00:00+09:00')
 DATASET='atlas-fixed-v1'
@@ -48,7 +49,7 @@ def metadata(settings):
             'schema_hash':digest([DELEGATE,tools_schema()]),
             'role_manifest':{name:list(role.tools) for name,role in SPECIALISTS.items()},
             'graph_limits':{'parallel':MAX_PARALLEL,'batches':MAX_WAVES},
-            'dataset':DATASET,'data_hash':digest({'stocks':STOCKS,'now':NOW,'generator':inspect.getsource(make_data),'news':inspect.getsource(transport_for),'state':inspect.getsource(state_for)}),
+            'dataset':DATASET,'data_hash':digest({'stocks':STOCKS,'now':NOW,'generator':inspect.getsource(make_data),'news':inspect.getsource(transport_for),'state':inspect.getsource(state_for),'research_data':inspect.getsource(FixedResearchData)}),
             'now':NOW.isoformat(),'model':settings.model,'settings':{k:getattr(settings,k) for k in ('rounds','tool_calls','tokens','seconds','max_usd','output_tokens','input_usd_per_million','output_usd_per_million')}}
 
 
@@ -91,14 +92,27 @@ class RecordedTools(ResearchTools):
 
 class ContractProvider:
     """Deterministic plumbing probe. Explicitly NOT a model-quality evaluation."""
+    def __init__(self, scenario='base'):
+        self.scenario = scenario
     async def respond(self,items,instructions,tools,output_limit):
         usage={'input_tokens':0,'output_tokens':0,'reasoning_tokens':0,'cached_tokens':0}
         if any(tool['name']=='delegate_research' for tool in tools) and not any(item.get('type')=='function_call_output' for item in items):
-            task={'agent':'technical','goal':'고정된 평가 시각과 달력 확인','symbols':[], 'period':None,'constraints':'공개 달력만 확인','deliverable':'시각과 조회 범위'}
+            task={'agent':'market' if self.scenario.startswith('market_') else 'technical','goal':'고정 공급자 데이터 확인','symbols':['005930'], 'period':None,'constraints':'평가 fixture만 확인','deliverable':'조회 근거와 범위'}
             return Turn([{'type':'function_call','call_id':str(uuid4()),'name':'delegate_research','arguments':json.dumps({'tasks':[task]})}],'',usage)
         if not any(item.get('type')=='function_call_output' for item in items):
+            if any(tool['name']=='get_market_quote' for tool in tools):
+                name='get_intraday_bars' if self.scenario=='market_intraday' else 'get_market_quote'
+                args={'code':'005930','market':'KRX'}
+                if name=='get_intraday_bars': args.update(kind='minute',interval=1,start_date='2026-10-27',end_date='2026-10-27',limit=30)
+                return Turn([{'type':'function_call','call_id':str(uuid4()),'name':name,'arguments':json.dumps(args)}],'',usage)
             return Turn([{'type':'function_call','call_id':str(uuid4()),'name':'get_market_context','arguments':'{}'}],'',usage)
-        text=json.dumps({'kind':'concept','summary':'평가 실행 경로를 확인했습니다. 질문 이해 품질 검증은 실제 모델 평가가 필요합니다.','sentiment':'자료 부족','claims':[],'uncertainty':['코드 검증용 모의 응답입니다.']},ensure_ascii=False)
+        evidence=[]
+        for item in items:
+            if item.get('type')!='function_call_output': continue
+            value=json.loads(item['output'])
+            evidence.extend({'text':row['excerpt'],'evidence_id':row['id'],'excerpt':row['excerpt'],'stance':'neutral','relation':'direct'} for row in value.get('items',[]) if row.get('id') and row.get('excerpt'))
+            evidence.extend(claim for report in value.get('reports',[]) for claim in (report.get('findings') or {}).get('claims',[]))
+        text=json.dumps({'kind':'research' if evidence else 'insufficient','summary':'평가 실행 경로를 확인했습니다. 질문 이해 품질 검증은 실제 모델 평가가 필요합니다.','sentiment':'중립' if evidence else '자료 부족','claims':evidence[:12],'uncertainty':['코드 검증용 모의 응답입니다.']},ensure_ascii=False)
         return Turn([],text,usage)
 
 
@@ -106,7 +120,7 @@ def grade(spec,result,outputs,mode):
     checks=[]
     def add(name,ok,critical=False): checks.append({'name':name,'status':'pass' if ok else 'fail','critical':critical})
     if mode=='code':
-        add('운영 LangGraph·전문 담당·고정 시각 도구 실행',result['status']=='completed' and any(o['name']=='get_market_context' for o in outputs) and result.get('architecture')==ARCHITECTURE)
+        add('운영 LangGraph·전문 담당·고정 공급자 도구 실행',result['status'] in ('completed','partial') and bool(outputs) and result.get('architecture')==ARCHITECTURE)
         checks.append({'name':'질문 이해·도구 선택·답변 품질','status':'na','critical':False})
         return checks,'review'
     action=result.get('alert_action') or {}
@@ -140,9 +154,9 @@ async def evaluate(job,settings,provider=None):
         news=NewsSource(s,transport=transport_for(spec['scenario']))
         context=state_for(spec['scenario'])
         tools=RecordedTools(s,news=news,now=NOW,context=spec['context'],alert_context=context,
-                            screener=RsiScreener(),screen_engine=ScreenEngine())
+                            screener=RsiScreener(),screen_engine=ScreenEngine(),data=FixedResearchData(spec['scenario'],NOW))
         tools.outputs=[]
-        p=provider or (ContractProvider() if mode=='code' else OpenAIProvider(s))
+        p=provider or (ContractProvider(spec['scenario']) if mode=='code' else OpenAIProvider(s))
         try: result=await ResearchGraph(s,p,tools).run(spec['question'],spec['context'])
         finally:
             if isinstance(p,OpenAIProvider) and p.client: await p.client.close()

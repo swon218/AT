@@ -19,7 +19,7 @@ from .fixtures import NOW, USAGE, answer, call, delegation, final, make_lab, new
 
 def role_name(tools):
     names = {tool['name'] for tool in tools}
-    return 'orchestrator' if 'delegate_research' in names else 'alert' if 'propose_alert' in names else 'technical' if 'screen_rsi' in names else 'news'
+    return 'orchestrator' if 'delegate_research' in names else 'market' if 'get_market_quote' in names else 'alert' if 'propose_alert' in names else 'technical' if 'screen_rsi' in names else 'news'
 
 
 class RoleProvider:
@@ -74,12 +74,12 @@ def technical_script():
 
 @pytest.mark.asyncio
 async def test_direct_concept_and_unavailable_features_never_create_fake_workers(tools):
-    for question, result in [('RSI 개념 설명', final()), ('실시간 가격과 DART 실적', final('insufficient', '실시간 시세와 기업 공시는 분석 도구에 연결되지 않았습니다.'))]:
+    for question, result in [('RSI 개념 설명', final()), ('DART 실적', final('insufficient', '기업 공시는 분석 도구에 연결되지 않았습니다.'))]:
         provider = RoleProvider(orchestrator=[answer(result)])
         response = await ResearchGraph(tools.settings, provider, tools).run(question, [])
         assert response['status'] == 'completed'
         assert [item['agent'] for item in provider.calls] == ['orchestrator']
-        assert 'Market Data Agent' not in SPECIALISTS and 'Fundamental Research Agent' not in SPECIALISTS
+        assert 'market' in SPECIALISTS and 'fundamental' not in SPECIALISTS
 
 
 @pytest.mark.asyncio

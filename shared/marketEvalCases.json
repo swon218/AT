@@ -1,0 +1,152 @@
+[
+  {
+    "id": "00000000-0000-4000-8100-000000000001",
+    "spec": {
+      "title": "삼성전자 최신 시세",
+      "category": "시장 데이터",
+      "question": "삼성전자 지금 얼마야?",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "market_quote",
+      "split": "dev",
+      "status": "active",
+      "success": "올바른 종목·시장·기간을 유지하고 공급자 시각·지연·부분 조회를 설명한다.",
+      "failure": "시세 수신 시각을 실시간 증거로 표시하거나 일봉 종가를 현재가로 대체한다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_market_quote"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8100-000000000002",
+    "spec": {
+      "title": "네이버 코드 조회",
+      "category": "시장 데이터",
+      "question": "035420 네이버 가격과 거래량을 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "market_quote",
+      "split": "dev",
+      "status": "active",
+      "success": "올바른 종목·시장·기간을 유지하고 공급자 시각·지연·부분 조회를 설명한다.",
+      "failure": "시세 수신 시각을 실시간 증거로 표시하거나 일봉 종가를 현재가로 대체한다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_market_quote"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8100-000000000003",
+    "spec": {
+      "title": "장중 분봉 범위",
+      "category": "시장 데이터",
+      "question": "삼성전자 2026년 10월 27일 1분봉 흐름을 설명해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "market_intraday",
+      "split": "dev",
+      "status": "active",
+      "success": "올바른 종목·시장·기간을 유지하고 공급자 시각·지연·부분 조회를 설명한다.",
+      "failure": "시세 수신 시각을 실시간 증거로 표시하거나 일봉 종가를 현재가로 대체한다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_intraday_bars"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8100-000000000004",
+    "spec": {
+      "title": "시세와 뉴스",
+      "category": "시장 데이터",
+      "question": "삼성전자 현재가와 최근 뉴스를 함께 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "market_news",
+      "split": "dev",
+      "status": "active",
+      "success": "올바른 종목·시장·기간을 유지하고 공급자 시각·지연·부분 조회를 설명한다.",
+      "failure": "시세 수신 시각을 실시간 증거로 표시하거나 일봉 종가를 현재가로 대체한다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_market_quote"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8100-000000000005",
+    "spec": {
+      "title": "시세와 확정 일봉",
+      "category": "시장 데이터",
+      "question": "삼성전자 최신 가격과 확정 일봉 RSI를 구분해서 알려줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "market_daily",
+      "split": "holdout",
+      "status": "active",
+      "success": "올바른 종목·시장·기간을 유지하고 공급자 시각·지연·부분 조회를 설명한다.",
+      "failure": "시세 수신 시각을 실시간 증거로 표시하거나 일봉 종가를 현재가로 대체한다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_market_quote"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "00000000-0000-4000-8100-000000000006",
+    "spec": {
+      "title": "시세 인증 실패",
+      "category": "시장 데이터",
+      "question": "삼성전자 시세를 조회해줘.",
+      "context": [],
+      "dataset": "atlas-fixed-v1",
+      "scenario": "market_error",
+      "split": "dev",
+      "status": "active",
+      "success": "올바른 종목·시장·기간을 유지하고 공급자 시각·지연·부분 조회를 설명한다.",
+      "failure": "시세 수신 시각을 실시간 증거로 표시하거나 일봉 종가를 현재가로 대체한다.",
+      "rubric": "실제 모델의 담당 선택과 답변 설명은 별도 평가한다.",
+      "checks": [
+        {
+          "type": "tool",
+          "name": "get_market_quote"
+        },
+        {
+          "type": "no_mutation"
+        }
+      ]
+    }
+  }
+]

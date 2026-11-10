@@ -69,5 +69,9 @@ def cases():
     return result
 
 
+def all_cases():
+    return cases() + json.loads((Path(__file__).parents[2] / 'shared/marketEvalCases.json').read_text(encoding='utf-8'))
+
+
 if __name__ == '__main__':
     Path('shared/evalCases.json').write_text(json.dumps(cases(),ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

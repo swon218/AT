@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { createAgentAuthenticator, createAgentStore, createAgentWatchlistConfirmer } from './agentStore.js'
 import { alertAnswer, alertEditor, registerAlertRoutes } from './alertAgent.js'
 import { createAlertStore } from './alertStore.js'
+import { agentMarketData } from './agentMarketData.js'
 
 const uuid = { type: 'string', format: 'uuid' }
 const error = (code, statusCode = 400) => Object.assign(new Error(code), { statusCode })
@@ -42,10 +43,17 @@ export function registerAgentRoutes(app, {
   publicOrigin = process.env.AI_PUBLIC_ORIGIN || 'http://127.0.0.1:5173',
   secureCookie = process.env.NODE_ENV === 'production', enabled = process.env.AI_ENABLED !== 'false',
   alertStore = createAlertStore(), alertOptions, confirmWatchlist = createAgentWatchlistConfirmer(),
+  dataService = agentMarketData,
 } = {}) {
   const cookieName = secureCookie ? '__Host-atlas_ai_guest' : 'atlas_ai_guest'
   const guestDays = Math.max(1, Math.min(30, Number(process.env.AI_GUEST_DAYS || 7)))
   const inFlight = new Map()
+  app.decorate('agentResearchRuntime', async () => {
+    try {
+      const service = await bridge.call('/health')
+      return { architecture: service.architecture, agents: service.registered_agents || [], providers: dataService.status?.() || {} }
+    } catch { return { agents: [], providers: {} } }
+  })
   // Fastify normally strips extra JSON properties. Reject them before validation for AI
   // routes only, without changing validation behavior of existing broker/dashboard routes.
   app.addHook('preValidation', async request => {
@@ -199,5 +207,25 @@ export function registerAgentRoutes(app, {
     if (!step || !Number.isInteger(step.seq) || step.seq < 1 || step.seq > 100 || !['model', 'tool', 'validation'].includes(step.kind)) throw error('invalid_step')
     return store.call('step', active.owner, { request_id: request.body.request_id, event: step,
       ...(step.result?.usage_status ? { usage: { ...step.result.usage_total, status: step.result.usage_status } } : {}) })
+  }))
+  app.post('/api/internal/agent/data', { bodyLimit: 4000 }, wrap(async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const supplied = String(request.headers['x-atlas-internal'] || '')
+    if (internalSecret.length < 32 || !equal(supplied, internalSecret)) throw error('internal_auth_required', 401)
+    const body = request.body
+    if (!body || Object.keys(body).some(key => !['request_id','tool','arguments','max_calls'].includes(key))
+        || !Number.isInteger(body.max_calls) || body.max_calls < 1 || body.max_calls > 2) throw error('invalid_arguments')
+    const active = inFlight.get(body.request_id)
+    if (!active) throw error('request_not_active', 409)
+    const record = await store.call('request', active.owner, { request_id: body.request_id })
+    if (record.status !== 'running') throw error('request_not_active', 409)
+    let calls = 0
+    const permit = () => {
+      if (inFlight.get(body.request_id) !== active) throw Object.assign(new Error(), { safeCode: 'request_not_active' })
+      if (calls >= body.max_calls || (active.dataReads || 0) >= 8) throw Object.assign(new Error(), { safeCode: 'external_request_limit' })
+      calls++; active.dataReads = (active.dataReads || 0) + 1
+    }
+    const result = await dataService.read(body.tool, body.arguments, permit)
+    return { ...result, external_requests: calls, served_at: new Date().toISOString() }
   }))
 }

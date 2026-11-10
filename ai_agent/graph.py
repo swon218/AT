@@ -122,7 +122,7 @@ class ResearchGraph:
         tools = copy.copy(self.tools)
         tools.agent = agent
         tools.evidence = {key: dict(value) for key, value in self.tools.evidence.items()
-                          if (agent == 'news' and key.startswith('n_')) or (agent == 'technical' and key.startswith(('r_', 'f_', 'i_')))}
+                          if key.startswith(SPECIALISTS[agent].evidence_prefixes)}
         tools.resolved = dict(self.tools.resolved)
         tools.fresh_ids = set(self.tools.fresh_ids).intersection(tools.evidence)
         tools.coverage, tools.result_sets = [], []
@@ -200,7 +200,7 @@ class ResearchGraph:
             status = 'clarification'
         elif final and final.kind == 'insufficient':
             status = 'failed' if failures else 'empty'
-        elif tools.fresh_ids and (failures or any(c.get('excluded') or c.get('not_scanned') or c.get('unavailable') for c in tools.coverage)):
+        elif tools.fresh_ids and (failures or any(c.get('excluded') or c.get('not_scanned') or c.get('unavailable') or c.get('incomplete') for c in tools.coverage)):
             status = 'partial'
         cited_ids = [claim.evidence_id for claim in final.claims] if final else []
         evidence_ids = list(dict.fromkeys(cited_ids + sorted(tools.fresh_ids)))

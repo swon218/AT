@@ -7,7 +7,7 @@ import { registerAgentRoutes, createAgentBridge } from '../../server/agent.js'
 import { testDatabase } from './agentDatabase.js'
 import { registerScreenRoutes, createScreenBridge } from '../../server/screener.js'
 
-export async function startHarness({ port = 13000, pythonPort = 18010, publicOrigin = 'http://127.0.0.1:15173' } = {}) {
+export async function startHarness({ port = 13000, pythonPort = 18010, publicOrigin = 'http://127.0.0.1:15173', dataService } = {}) {
   if (process.env.NODE_ENV === 'production') throw new Error('Test harness is forbidden in production')
   const secret = 'local-fixture-only-'.repeat(3)
   const { db, store } = await testDatabase()
@@ -15,6 +15,7 @@ export async function startHarness({ port = 13000, pythonPort = 18010, publicOri
   const userA = randomUUID(), userB = randomUUID()
   await db.query('INSERT INTO auth.users VALUES($1),($2)', [userA, userB])
   registerAgentRoutes(app, { store, cookieSecret: secret, internalSecret: secret,
+    ...(dataService ? { dataService } : {}),
     publicOrigin, secureCookie: false,
     authenticate: async token => {
       if (token === 'Bearer fixture-user-a') return userA

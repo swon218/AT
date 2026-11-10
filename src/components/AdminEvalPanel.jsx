@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { agentApi } from '../services/agentApi'
-import { compareRuns, summarize, verdict } from '../utils/evalResults'
+import { compareRuns, seedCaseId, summarize, verdict } from '../utils/evalResults'
 import './AdminEvalPanel.css'
 import AdminToolCatalog from './AdminToolCatalog'
 
@@ -51,8 +51,8 @@ export default function AdminEvalPanel({userId,importRequest,onImported}) {
   })}
   async function seed(){await task(async()=>{
     const existing=new Set(cases.map(c=>c.spec.source?.seed_id))
-    for(const c of catalog.seeds)if(!existing.has(c.id))await api('/cases/'+crypto.randomUUID(),{method:'PUT',body:{revision:0,spec:{...c.spec,source:{seed_id:c.id}}}})
-    await refresh();setNotice('초기 30개 사례를 등록했습니다. 설명·성공 기준은 프로젝트 요구에 맞게 검토해 주세요.')
+    for(const c of catalog.seeds)if(!existing.has(c.id))await api('/cases/'+await seedCaseId(userId,c.id),{method:'PUT',body:{revision:0,spec:{...c.spec,source:{seed_id:c.id}}}})
+    await refresh();setNotice('미등록 기본 사례를 추가했습니다. 기존 사례와 수동 평가 기록은 보존됩니다.')
   })}
   async function start(){await task(async()=>{
     const payload={mode,repeats,budget:mode==='live'?budget:0,paidConfirmed:mode==='live'&&paid,cases:cases.filter(c=>selected.includes(c.id)).map(c=>({id:c.id,revision:c.revision}))}
@@ -68,9 +68,9 @@ export default function AdminEvalPanel({userId,importRequest,onImported}) {
     <nav className="eval-tabs" aria-label="평가 화면">{['사용가능 도구','평가 질문','평가 실행','실행 결과','버전 비교'].map(t=><button aria-current={tab===t?'page':undefined} className={tab===t?'active':''} onClick={()=>setTab(t)} key={t}>{t}</button>)}</nav>
     {error&&<p role="alert" className="eval-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
     {busy&&<p role="status">처리 중…</p>}
-    {tab==='사용가능 도구'&&<AdminToolCatalog/>}
+    {tab==='사용가능 도구'&&<AdminToolCatalog runtime={catalog?.runtime}/>}
     {tab==='평가 질문'&&<>
-      <div className="eval-toolbar"><button disabled={busy} onClick={()=>editor(fresh())}>새 평가 질문</button><button disabled={busy||!catalog} onClick={seed}>초기 30개 등록</button><span>{cases.length}개 · 개선용 / 별도 확인용</span><Help>별도 확인용 사례는 수정 방향을 정하는 데 사용하지 않고 마지막 검증에 사용하세요. 사례를 수정하면 새 버전으로 저장됩니다.</Help></div>
+      <div className="eval-toolbar"><button disabled={busy} onClick={()=>editor(fresh())}>새 평가 질문</button><button disabled={busy||!catalog} onClick={seed}>미등록 기본 사례 추가</button><span>{cases.length}개 · 개선용 / 별도 확인용</span><Help>별도 확인용 사례는 수정 방향을 정하는 데 사용하지 않고 마지막 검증에 사용하세요. 사례를 수정하면 새 버전으로 저장됩니다.</Help></div>
       {edit&&<div className="eval-editor">
         <h3>{edit.revision?'평가 질문 수정':'평가 질문 등록'} · 버전 {edit.revision+1}</h3>
         {['title','category','question','success','failure','rubric'].map((key,n)=><label key={key}>{['제목','분류','질문','성공 기준','실패 기준','수동 검토 기준'][n]}{n<2?<input value={edit.spec[key]} onChange={e=>setEdit({...edit,spec:{...edit.spec,[key]:e.target.value}})}/>:<textarea rows={3} value={edit.spec[key]} onChange={e=>setEdit({...edit,spec:{...edit.spec,[key]:e.target.value}})}/>}</label>)}

@@ -80,13 +80,20 @@ class AdaptiveProvider:
             reports = [report for item in items if item.get('type') == 'function_call_output'
                        for report in json.loads(item['output']).get('reports', [])]
             if not reports or self.mode == 'composite' and not any(report['agent'] == 'news' for report in reports):
-                agent = 'news' if self.mode in ('news', 'ambiguous') or reports else 'technical'
+                agent = 'market' if self.mode == 'market' else 'news' if self.mode in ('news', 'ambiguous') or reports else 'technical'
                 return delegation(agent, symbols=[row['code'] for report in reports for row in report.get('matched_symbols', [])], goal='FIXTURE MODE ' + self.mode)
             claims = [claim for report in reports for claim in (report.get('findings') or {}).get('claims', [])]
             clarification = next((report['findings'] for report in reports if report['status'] == 'clarification'), None)
             return answer(clarification or final('research' if claims else 'insufficient', '확보된 자료를 확인했습니다.' if claims else '자료를 확인하지 못했습니다.', claims))
         outputs = [json.loads(x['output']) for x in items if x.get('type') == 'function_call_output']
         self.results.extend(output for output in outputs if output not in self.results)
+        if self.mode == 'market':
+            if not outputs:
+                return call('resolve_market_symbol', {'query':'삼성전자'})
+            if not outputs[-1].get('values'):
+                return call('get_market_quote', {'code':outputs[-1]['items'][0]['code'],'market':'KRX'})
+            source = outputs[-1]['items'][0]
+            return answer(final('research','조회 가능한 시세와 한계를 확인했습니다.',[{'text':source['excerpt'],'excerpt':source['excerpt'],'evidence_id':source['id'],'stance':'neutral','relation':'direct'}]))
         is_technical = any(tool['name'] == 'screen_rsi' for tool in tools)
         mode = 'rsi' if self.mode == 'composite' and is_technical else self.mode
         assignment = json.loads(items[0]['content']) if items and items[0].get('content', '').startswith('{') else {}

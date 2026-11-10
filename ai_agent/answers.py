@@ -36,7 +36,7 @@ def current_required(question):
         return True
     if re.search(r'그중|그 중|앞서|이전|아까|방금', question) and not re.search(r'오늘|현재|최신|최근|밤사이', question):
         return False
-    return bool(re.search(r'뉴스|밤사이|오늘|현재|최근|찾아|검색해|종목들|이하|이상', question, re.I))
+    return bool(re.search(r'뉴스|밤사이|오늘|현재|지금|시세|분봉|틱|최근|찾아|검색해|종목들|이하|이상', question, re.I))
 
 
 def condition_amount(match):
@@ -71,7 +71,9 @@ def clarification_has_unverified_facts(summary, question, draft):
 
 
 def validate_final(final, tools, question, *, alert_editor_read=False):
-    if re.search(r'(?:DART|다트|실시간|장중)[^\n.!?]{0,30}(?:확인했|조회했|수신했|제공받|분석했)', final.model_dump_json(), re.I):
+    verified_intraday = any(claim.evidence_id.startswith('m_') and claim.evidence_id in tools.fresh_ids for claim in final.claims)
+    unsupported = r'DART|다트|실시간' if verified_intraday else r'DART|다트|실시간|장중'
+    if re.search(r'(?:' + unsupported + r')[^\n.!?]{0,30}(?:확인했|조회했|수신했|제공받|분석했)', final.model_dump_json(), re.I):
         raise ValueError('unavailable_source_claim')
     if re.search(r'(?:지금|반드시|즉시).{0,8}(?:매수|매도)|(?:매수|매도).{0,4}(?:추천|하세요)|사세요|파세요|수익.{0,5}보장|확실히.{0,8}(?:상승|하락)', final.model_dump_json()):
         raise ValueError('unsafe_investment_instruction')
@@ -107,7 +109,7 @@ def validate_final(final, tools, question, *, alert_editor_read=False):
             text = source.get('excerpt') or (source.get('title', '') + ' ' + source.get('snippet', ''))
             if claim.excerpt not in text:
                 raise ValueError('excerpt_mismatch')
-            if claim.evidence_id.startswith(('r_', 'f_', 'i_')) and claim.excerpt != source['excerpt']:
+            if claim.evidence_id.startswith(('r_', 'f_', 'i_', 'q_', 'm_')) and claim.excerpt != source['excerpt']:
                 raise ValueError('rsi_value_mismatch')
             if claim.relation == 'direct' and source.get('relevance') == 'indirect_or_unrelated_review_required':
                 raise ValueError('unverified_company_relevance')
@@ -149,6 +151,10 @@ def materialize(final, tools, now, prompt_version='atlas-langgraph-v1'):
             exclusions = ', '.join(f"{REASONS.get(reason, reason)} {count}개" for reason, count in c['excluded'].items())
             detail = f' ({exclusions})' if exclusions else ''
             lines.append(f"{title} 범위: 수집 대상 {c['universe']}개, 유효 {c['valid']}개, 제외 {sum(c['excluded'].values())}개{detail}, 미검색 {c['not_scanned']}개. 조건 일치 {c['matches']}개 중 {c['returned']}개 반환, {c['page']}페이지. 기준 {c['as_of']}, {c['sort']}.")
+        elif c['kind'] in ('quote','intraday'):
+            label = '최신 조회 시세' if c['kind'] == 'quote' else '장중 차트'
+            lines.append(f"{label}: {c['name']}({c['code']}), 시장 {c['market']}, 공급자 기준 {c.get('provider_at') or '확인 불가'}, 조회 {c.get('queried_at') or '확인 불가'}, 캐시 {c.get('cache_hit')}, 현재 정규장 상태 {c.get('current_session')}, 오래된 데이터 {c.get('data_stale')}. 실시간·지연 여부 확인 불가.")
+            lines.extend(c.get('warnings') or [])
         elif c['kind'] == 'indicator':
             reasons = [REASONS.get(reason, reason) for reason in c['excluded']]
             reasons.extend(f"{item['label']} — {item['reason']}" for item in c['unavailable'])

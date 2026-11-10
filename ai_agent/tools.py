@@ -16,6 +16,7 @@ from .schemas import TOOL_MODELS
 from .screener import SCREENER, ScanBusy, ScanChanged, FingerprintUnavailable
 from .screen_engine import SCREEN_ENGINE, ScreenSnapshotChanged
 from .alert_tools import AlertTools, normalize_stock_symbol
+from .data_source import DataError
 
 PROMPT_VERSION = 'atlas-research-v1'
 
@@ -118,8 +119,9 @@ class NewsSource:
 
 
 class ResearchTools:
-    def __init__(self, settings, news=None, now=None, context=None, screener=None, screen_engine=None, alert_context=None):
+    def __init__(self, settings, news=None, now=None, context=None, screener=None, screen_engine=None, alert_context=None, data=None):
         self.settings, self.news = settings, news or NewsSource(settings)
+        self.data = data
         self.now = now or datetime.now(KST)
         self.alerts = AlertTools(alert_context, self.now)
         self.alert_action = None
@@ -132,7 +134,7 @@ class ResearchTools:
         # Only server-owned messages of this room are passed here. Historical sources remain dated.
         for message in context or []:
             for source in (message.get('answer') or {}).get('sources', [])[:60]:
-                if isinstance(source, dict) and str(source.get('id', '')).startswith(('n_', 'r_', 'f_')):
+                if isinstance(source, dict) and str(source.get('id', '')).startswith(('n_', 'r_', 'f_', 'i_', 'q_', 'm_')):
                     self.evidence[source['id']] = {**source, 'historical': True}
                     if source.get('code') and source.get('name'):
                         self.resolved[source['code']] = {'code': source['code'], 'name': source['name']}
@@ -165,13 +167,16 @@ class ResearchTools:
         try:
             method = getattr(self, name)
             value = await asyncio.wait_for(method(args), self.settings.tool_seconds)
-            value.update(queried_at=self.now.isoformat(), conditions=args.model_dump(), retryable=False)
+            value.setdefault('queried_at', self.now.isoformat())
+            value.update(conditions=args.model_dump(), retryable=False)
             value.setdefault('warnings', [])
             value.setdefault('source', 'ATLAS read-only research')
             value.setdefault('as_of', self.now.isoformat())
             return value
         except ToolError as exc:
             return self.error(exc.code, exc.retryable)
+        except DataError as exc:
+            return self.error(str(exc))
         except asyncio.TimeoutError:
             return self.error('tool_timeout', True)
         except ValueError as exc:
@@ -185,6 +190,18 @@ class ResearchTools:
 
     async def get_alert_editor(self, _args):
         return self.alerts.editor()
+
+    async def resolve_market_symbol(self, args):
+        from .market_tools import market_symbol
+        return await market_symbol(self, args)
+
+    async def get_market_quote(self, args):
+        from .market_tools import market_quote
+        return await market_quote(self, args, stable_id)
+
+    async def get_intraday_bars(self, args):
+        from .market_tools import intraday
+        return await intraday(self, args, stable_id)
 
     async def propose_alert(self, args):
         try:
