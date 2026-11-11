@@ -1,5 +1,7 @@
 # VPS 헤르메스 전달 지시문
 
+> 과거 고정 합성 데이터 평가 worker의 최초 설치 기록입니다. 현재 관리자 행별 실행 UI의 반영은 [ADMIN_EVAL_UI_HERMES.md](./ADMIN_EVAL_UI_HERMES.md)를 따릅니다. 신규 실행은 운영 `atlas-ai.service`를 사용하며 이 문서의 별도 모델·키 설정을 새 UI에 적용하지 않습니다. 기존 평가 이력·worker 호환 경로를 위해 이 기록은 보존합니다.
+
 GitHub main의 `관리자 탭 AI 품질개선` 커밋을 배포한다. 전달받은 최종 전체 SHA를 TARGET_SHA로 사용한다. 최신 main을 무조건 적용하지 않는다. 유료 OpenAI 평가·실제 회원 데이터 변경·카카오 발송은 실행하지 않는다.
 
 1. `/opt/atlas`의 현재 SHA와 clean 상태, 실행 사용자·경로·systemd unit·환경파일을 확인한다. 이전 SHA를 기록한다. 다른 미배포 작업이 있으면 덮어쓰지 않고 보고한다. 기존 코드의 운영 기본값은 API `/etc/atlas/atlas.env`, AI `/etc/atlas/ai.env`이며 실제 unit을 우선한다.

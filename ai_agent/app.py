@@ -15,6 +15,7 @@ from .roles import ARCHITECTURE
 from .roles import SPECIALISTS
 from .data_source import NodeResearchData
 from .schemas import RunInput
+from .runtime import runtime_metadata
 from .tools import NewsSource, ResearchTools
 from .screen_models import StockScreen
 from .screen_engine import SCREEN_ENGINE, ScreenSnapshotChanged
@@ -56,7 +57,7 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
         return {'ok': True, 'provider': recent, 'model': s.model, 'key_configured': bool(s.api_key),
                 'alert_tools': True, 'architecture': ARCHITECTURE, 'registered_agents': list(SPECIALISTS),
                 'lab_ready': bool(s.lab_path and __import__('pathlib').Path(s.lab_path).is_file()),
-                'news_configured': bool(s.naver_id and s.naver_secret)}
+                'news_configured': bool(s.naver_id and s.naver_secret),'runtime':runtime_metadata(s)}
 
     @app.get('/calendar/order-days')
     async def order_days(date: str, x_atlas_internal: str = Header(default='')):
@@ -157,6 +158,7 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
             if tools.data is None:
                 tools.data = NodeResearchData(s, body.request_id)
             result = await ResearchGraph(s, model, tools, emit).run(body.question, body.context)
+            result['runtime'] = runtime_metadata(s)
             if result['error_code'] in ('authentication_error', 'permission_error', 'billing_error', 'billing_or_rate_limit', 'connection_failed', 'provider_error'):
                 recent['state'] = result['error_code']
             recent['error_code'] = result['error_code']

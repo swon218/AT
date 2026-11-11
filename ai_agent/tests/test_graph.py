@@ -218,6 +218,15 @@ async def test_internal_endpoint_rejects_forged_identity_and_deduplicates_finish
         second = await client.post('/run', json=payload, headers=headers)
         assert first.json() == second.json()
         assert len(provider.calls) == 1
+        health = (await client.get('/health', headers=headers)).json()
+        runtime = first.json()['runtime']
+        assert runtime == health['runtime']
+        assert runtime['model'] == tools.settings.model
+        assert runtime['limits']['max_usd'] == tools.settings.max_usd
+        assert runtime['role_manifest'] == {name: list(role.tools) for name, role in SPECIALISTS.items()}
+        assert len(runtime['prompt_hash']) == 64 and len(runtime['schema_hash']) == 64
+        assert tools.settings.internal_secret not in json.dumps(runtime)
+        assert not {'api_key', 'internal_secret', 'callback_url', 'lab_path'} & runtime.keys()
 
 
 @pytest.mark.asyncio

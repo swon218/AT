@@ -51,8 +51,41 @@ export function registerAgentRoutes(app, {
   app.decorate('agentResearchRuntime', async () => {
     try {
       const service = await bridge.call('/health')
-      return { architecture: service.architecture, agents: service.registered_agents || [], providers: dataService.status?.() || {} }
+      return { architecture: service.architecture, agents: service.registered_agents || [], providers: dataService.status?.() || {},
+        preparation:{news:service.news_configured===true,technical:service.lab_ready===true,alert:service.alert_tools===true},
+        execution: service.runtime || null, key_configured: service.key_configured === true, enabled }
     } catch { return { agents: [], providers: {} } }
+  })
+  // Admin evaluations use this exact bridge/model/graph, with their own durable
+  // records and read-only proposals. They never create ordinary conversation rows.
+  app.decorate('agentProductionRunner', {
+    async ready(owner) {
+      if (!enabled) throw error('agent_disabled',503)
+      if ([...inFlight.values()].some(active=>active.owner===`u:${owner}`)) throw error('concurrency_limit',409)
+      const service=await bridge.call('/health')
+      if (!service.key_configured) throw error('api_key_missing',503)
+      if (!service.runtime?.role_manifest) throw error('eval_runtime_not_ready',503)
+      if(!service.runtime.model||!service.runtime.limits||!['rounds','tool_calls','external_requests','tokens','seconds','max_usd'].every(name=>Number.isFinite(service.runtime.limits[name])&&service.runtime.limits[name]>0)||service.runtime.limits.max_usd>25)throw error('eval_runtime_not_ready',503)
+      return service.runtime
+    },
+    async run({id,owner,question,onStep,isActive}) {
+      const active={owner:`u:${owner}`,evaluation:{onStep,isActive}}
+      if(inFlight.has(id)||[...inFlight.values()].some(value=>value.owner===active.owner)) throw error('concurrency_limit',409)
+      inFlight.set(id,active)
+      try {
+        if(!await isActive())throw error('request_not_active',409)
+        const alerts=await alertStore('read',{user_id:owner}).catch(()=>null)
+        const result=await bridge.call('/run',{request_id:id,question,context:[],
+          ...(alerts?{alert_context:{watchlist:alerts.watchlist,draft:null,rules:(alerts.rules||[]).map(({rule_id,version,code,kind,threshold,expires_on,status,frequency})=>({rule_id,version,code,kind,threshold,expires_on,status,frequency}))}}:{})})
+        if(!['completed','partial','failed'].includes(result.status)||!result.usage||!result.runtime||Buffer.byteLength(JSON.stringify(result.answer))>100000) throw error('invalid_internal_result')
+        if(alerts&&result.status==='completed'&&result.alert_action) {
+          result.presentation=await alertAnswer(result.alert_action,{store:async action=>{if(action!=='read')throw error('eval_write_forbidden');return alerts},
+            userId:owner,roomId:id,requestId:id,editor:{revision:null,draft:null}})
+          result.proposal_only=true
+        }
+        return result
+      } finally {if(inFlight.get(id)===active)inFlight.delete(id)}
+    },
   })
   // Fastify normally strips extra JSON properties. Reject them before validation for AI
   // routes only, without changing validation behavior of existing broker/dashboard routes.
@@ -191,6 +224,7 @@ export function registerAgentRoutes(app, {
     if (!service.key_configured) throw error('api_key_missing', 503)
     if (!request.body.question.trim()) throw error('empty_question')
     const { request_id, question, alert_editor } = request.body
+    if([...inFlight.values()].some(active=>active.owner===owner)) throw error('concurrency_limit',409)
     const reservation = await store.call('reserve', owner, { room_id: request.params.id, request_id, question })
     if (reservation.created) {
       inFlight.set(reservation.id, { owner })
@@ -205,6 +239,10 @@ export function registerAgentRoutes(app, {
     if (!active) throw error('request_not_active', 409)
     const step = request.body.step
     if (!step || !Number.isInteger(step.seq) || step.seq < 1 || step.seq > 100 || !['model', 'tool', 'validation'].includes(step.kind)) throw error('invalid_step')
+    if(active.evaluation) {
+      if(!await active.evaluation.isActive())throw error('request_not_active',409)
+      return active.evaluation.onStep(step)
+    }
     return store.call('step', active.owner, { request_id: request.body.request_id, event: step,
       ...(step.result?.usage_status ? { usage: { ...step.result.usage_total, status: step.result.usage_status } } : {}) })
   }))
@@ -217,8 +255,12 @@ export function registerAgentRoutes(app, {
         || !Number.isInteger(body.max_calls) || body.max_calls < 1 || body.max_calls > 2) throw error('invalid_arguments')
     const active = inFlight.get(body.request_id)
     if (!active) throw error('request_not_active', 409)
-    const record = await store.call('request', active.owner, { request_id: body.request_id })
-    if (record.status !== 'running') throw error('request_not_active', 409)
+    if(active.evaluation) {
+      if(!await active.evaluation.isActive())throw error('request_not_active',409)
+    } else {
+      const record = await store.call('request', active.owner, { request_id: body.request_id })
+      if (record.status !== 'running') throw error('request_not_active', 409)
+    }
     let calls = 0
     const permit = () => {
       if (inFlight.get(body.request_id) !== active) throw Object.assign(new Error(), { safeCode: 'request_not_active' })

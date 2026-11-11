@@ -9,6 +9,7 @@ import uvicorn
 from ai_agent.app import create_app
 from ai_agent.config import Settings
 from ai_agent.tools import NewsSource, ResearchTools
+from ai_agent.provider import ProviderError
 from .fixtures import AdaptiveProvider, NOW, make_lab, news_transport
 
 if __name__ == '__main__':
@@ -26,6 +27,8 @@ if __name__ == '__main__':
             async def respond(self, items, instructions, tools, output_limit):
                 # Select scenario from the TEST question only; production has no such code path.
                 question = next(x['content'] for x in items if x.get('role') == 'user' and not x['content'].startswith('DATED ROOM HISTORY'))
+                if '실패 테스트' in question:
+                    raise ProviderError('billing_or_rate_limit')
                 mode = json.loads(question)['assignment']['goal'].removeprefix('FIXTURE MODE ') if question.startswith('{') else 'fundamental' if '재무' in question else 'market' if '시세' in question else 'stock_screen' if 'SMA' in question else 'composite' if '뉴스' in question and 'RSI' in question else 'news' if '뉴스' in question else 'rsi' if '이하' in question else 'concept'
                 return await AdaptiveProvider(mode).respond(items, instructions, tools, output_limit)
         def tools_factory():

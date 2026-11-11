@@ -24,7 +24,7 @@ async function harness(){
   registerAdminEval(app,{store,workerSecret:'x'.repeat(40),authenticate:async token=>{
     if(!token?.startsWith('Bearer ')||![owner,other,member].includes(token.slice(7)))throw Object.assign(new Error('invalid_authentication'),{statusCode:401})
     return token.slice(7)
-  },agentStore:{call:async(action,actor)=>{if(actor!==`u:${owner}`)throw Object.assign(new Error('not_found'),{statusCode:404});return action==='request'?{id:randomUUID(),room_id:randomUUID(),question:'평가 질문',answer:{content:'대답'}}:{messages:[]}}}})
+  }})
   const request=(url,method='GET',payload,who=owner)=>app.inject({url,method,headers:who?{authorization:`Bearer ${who}`}:{},payload})
   const save=async(spec=seeds[0].spec)=>{const id=randomUUID();await store('save_case',owner,{id,revision:0,spec});return{id,revision:1}}
   const start=async(mode='code',budget=0,repeats=1)=>{const c=await save();const body={id:randomUUID(),mode,budget,repeats,cases:[c],paidConfirmed:mode==='live'};await store('start',owner,body);return body}
@@ -78,13 +78,12 @@ test('single claim, conservative unknown cost, stale run interruption and no pai
   assert.equal(r.run.reserved,0.25)
  }finally{await h.close()}
 })
-test('paid confirmation, case allowlists, own conversation import and worker authentication',async()=>{
+test('paid confirmation, case allowlists and worker authentication',async()=>{
  const h=await harness();try{
   const c=await h.save()
   assert.equal((await h.request('/api/agent/admin/runs','POST',{id:randomUUID(),mode:'live',budget:1,repeats:1,cases:[c]})).statusCode,400)
   assert.throws(()=>validateCase({...seeds[0].spec,python:'print(1)'}))
   assert.throws(()=>validateCase({...seeds[0].spec,dataset:'/var/lib/atlas/lab.sqlite'}))
-  assert.equal((await h.request('/api/agent/admin/import/'+randomUUID(),'GET',undefined,h.other)).statusCode,404)
   assert.equal((await h.app.inject({url:'/api/internal/eval/claim',method:'POST',payload:{}})).statusCode,401)
   assert.equal((await h.app.inject({url:'/api/internal/eval/claim',method:'POST',headers:{'x-atlas-eval':'x'.repeat(40)},payload:{}})).statusCode,200)
   assert.equal(proxyTarget('/api/agent/admin/items/'+randomUUID()+'/review')?.startsWith('/api/agent/admin/'),true)

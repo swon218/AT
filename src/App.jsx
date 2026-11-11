@@ -135,8 +135,6 @@ function App() {
   const [loggingOut, setLoggingOut] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
   const isAdmin = useAdminAccess(currentUser?.id)
-  const [evalImport, setEvalImport] = useState(null)
-  useEffect(() => { setEvalImport(null) }, [currentUser?.id])
   const brokerConnections = useBrokerConnections(currentUser?.id)
   const [authReady, setAuthReady] = useState(!supabase)
   const watchlist = useWatchlist(currentUser?.id, { authReady, onLogin: () => setAuthModalOpen(true) })
@@ -413,14 +411,14 @@ function App() {
 
         <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
           {activePage === 'admin' && !isAdmin && <section className="panel admin-eval" role="status">관리자 권한 확인이 필요합니다. 로그인한 계정의 권한을 확인해 주세요.</section>}
-          {activePage === 'admin' ? (isAdmin && <AdminEvalPanel key={currentUser.id} userId={currentUser.id} importRequest={evalImport} onImported={() => setEvalImport(null)}/>) : activePage === 'company' ? <CompanyAnalysisPage stock={analysisStock ?? (selectionRevision > 0 ? selected : null)}/> : activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <>
+          {activePage === 'admin' ? (isAdmin && <AdminEvalPanel key={currentUser.id} userId={currentUser.id}/>) : activePage === 'company' ? <CompanyAnalysisPage stock={analysisStock ?? (selectionRevision > 0 ? selected : null)}/> : activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <>
             <AgentModeTabs mode={agentMode} onChange={setAgentMode}/>
             <div role="tabpanel" id="agent-mode-panel" aria-labelledby={`agent-tab-${agentMode}`}>
               {agentMode === 'alerts' ? <AlertAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} watchlist={watchlist}
                 drafts={alertDrafts} roomId={agent.active.id} notice={alertNotice}
                 onLogin={() => setAuthModalOpen(true)} onKakao={() => setAccountSettingsOpen(true)} settingsOpen={accountSettingsOpen}/>
                 : agentMode === 'trading' ? <TradingAgentPanel/>
-                  : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen, onAddEvaluation: isAdmin ? requestId => { setEvalImport(requestId); openPage('admin') } : null }}
+                  : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }}
                     onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); setAgentMode('alerts') }}/>}
             </div>
           </> : activePage === 'dashboard' ? <>

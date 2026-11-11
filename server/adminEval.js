@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { timingSafeEqual } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { createAgentAuthenticator, createAgentStore } from './agentStore.js'
+import { createAgentAuthenticator } from './agentStore.js'
 import { alertAnswer } from './alertAgent.js'
+import { registerProductionEvaluation } from './adminEvalProduction.js'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode })
@@ -36,13 +37,13 @@ export function evalStore(client) {
     if (!db) throw fail('database_not_configured',503)
     const {data,error} = await db.rpc('atlas_eval_rpc',{action,actor,payload}).abortSignal(AbortSignal.timeout(8000))
     if (error) {
-      const code = ['admin_forbidden','eval_not_found','eval_conflict','eval_busy','eval_invalid','eval_case_not_ready','eval_limit'].find(x=>error.message?.includes(x))
+      const code = ['admin_forbidden','eval_not_found','eval_note_conflict','eval_conflict','eval_busy','eval_invalid','eval_case_not_ready','eval_limit','concurrency_limit','minute_limit'].find(x=>error.message?.includes(x))
       throw fail(code || 'eval_database_unavailable', code==='admin_forbidden'?403:code==='eval_not_found'?404:code?409:503)
     }
     return data
   }
 }
-export function registerAdminEval(app,{store=evalStore(),authenticate=createAgentAuthenticator(),agentStore=createAgentStore(),
+export function registerAdminEval(app,{store=evalStore(),authenticate=createAgentAuthenticator(),
   origin=process.env.AI_PUBLIC_ORIGIN||'http://127.0.0.1:5173',workerSecret=process.env.AI_EVAL_SECRET||''}={}) {
   let workerInfo=null, workerAt=0
   const guarded = fn => async(req,reply)=> {
@@ -51,13 +52,19 @@ export function registerAdminEval(app,{store=evalStore(),authenticate=createAgen
       if ((req.headers.origin && req.headers.origin!==origin)||req.headers['sec-fetch-site']==='cross-site') throw fail('origin_forbidden',403)
       const owner=await authenticate(req.headers.authorization||'')
       await store('access',owner)
-      return await fn(req,owner)
+      return await fn(req,owner,reply)
     } catch(e) { return reply.code(e.statusCode||503).send({error:e.statusCode?e.message:'eval_unavailable'}) }
   }
   const id = req => { if(!uuid.test(req.params.id)) throw fail('eval_invalid'); return req.params.id }
   app.get('/api/agent/admin/status',guarded(async()=>({admin:true})))
-  app.get('/api/agent/admin/catalog',guarded(async()=>({seeds,scenarios,datasets:[{id:'atlas-fixed-v1',now:'2026-10-28T08:00:00+09:00',description:'합성 일봉·뉴스·시세·DART 공시·재무 / KST 고정 시각'}],maxBudget:25,maxRepeats:3,perItemBudget:0.25,worker:Date.now()-workerAt<30000?workerInfo:null,
-    runtime:app.hasDecorator('agentResearchRuntime')?await app.agentResearchRuntime():null})))
+  app.get('/api/agent/admin/catalog',guarded(async(req,owner)=>{
+    let schema=null
+    try {schema=await store('ui_status',owner)}catch{/* Old SQL stays readable; no execution is advertised. */}
+    return {seeds,scenarios,datasets:[{id:'atlas-fixed-v1',now:'2026-10-28T08:00:00+09:00',description:'합성 일봉·뉴스·시세·DART 공시·재무 / KST 고정 시각'}],maxBudget:25,maxRepeats:3,perItemBudget:0.25,worker:Date.now()-workerAt<30000?workerInfo:null,
+      features:{questionRows:schema?.version===2,productionExecution:schema?.version===2&&app.hasDecorator('agentProductionRunner')},
+      runtime:app.hasDecorator('agentResearchRuntime')?await app.agentResearchRuntime():null}
+  }))
+  registerProductionEvaluation(app,{store,guarded,id})
   app.get('/api/agent/admin/cases',guarded((req,owner)=>store('cases',owner)))
   app.put('/api/agent/admin/cases/:id',{bodyLimit:24000},guarded((req,owner)=>{
     if(Object.keys(req.body||{}).some(k=>!['revision','spec'].includes(k))||!Number.isInteger(req.body?.revision)||req.body.revision<0) throw fail('eval_invalid')
@@ -80,15 +87,6 @@ export function registerAdminEval(app,{store=evalStore(),authenticate=createAgen
     const b=req.body||{}
     if(!['pass','fail','hold'].includes(b.status)||typeof b.note!=='string'||b.note.length>2000||typeof b.category!=='string'||b.category.length>60||Object.keys(b).some(k=>!['status','note','category'].includes(k))) throw fail('eval_invalid')
     return store('review',owner,{id:id(req),review:b})
-  }))
-  app.get('/api/agent/admin/import/:id',guarded(async(req,owner)=>{
-    // Existing RPC enforces ownership; admin does NOT confer access to other rooms.
-    const result=await agentStore.call('request',`u:${owner}`,{request_id:id(req)})
-    const room=await agentStore.call('messages',`u:${owner}`,{room_id:result.room_id})
-    const messages=room.messages||[]; const at=messages.findIndex(m=>m.request_id===result.id)
-    return {question:result.question,context:messages.slice(Math.max(0,at-6),Math.max(0,at)).map(m=>({role:m.role,content:m.content.slice(0,700)})),
-      source:{request_id:result.id,error:result.error_code||null,answer:String(result.answer?.content||'').slice(0,1800)},
-      steps:(result.steps||[]).slice(0,30).map(s=>({name:s.name,status:s.status,result:s.result}))}
   }))
   app.post('/api/internal/eval/:action',{bodyLimit:220000},async(req,reply)=>{
     reply.header('Cache-Control','no-store')

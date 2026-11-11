@@ -21,7 +21,7 @@ function positionHelp(trigger, tooltip) {
   tooltip.style.top = `${Math.max(top, Math.min(anchorY, bottom - height))}px`
 }
 
-export default function AlertHelp({ label, children, active, setActive }) {
+export default function AlertHelp({ label, children, active, setActive, persistent = false, symbol = '?', triggerClassName = 'alert-help-trigger', contentClassName = '' }) {
   const id = useId()
   const trigger = useRef(null)
   const tooltip = useRef(null)
@@ -31,6 +31,7 @@ export default function AlertHelp({ label, children, active, setActive }) {
   function show(pin = false) {
     clearTimeout(closeTimer.current)
     setActive(current => {
+      if (persistent) return { id, pinned: true }
       if (current?.id === id && current.pinned) return pin ? null : current
       return { id, pinned: pin }
     })
@@ -42,6 +43,7 @@ export default function AlertHelp({ label, children, active, setActive }) {
   }
 
   function leave(event) {
+    if (persistent) return
     if (event.pointerType !== 'mouse') return
     clearTimeout(closeTimer.current)
     closeTimer.current = setTimeout(() => {
@@ -81,12 +83,12 @@ export default function AlertHelp({ label, children, active, setActive }) {
   }, [open, children])
 
   return <>
-    <button ref={trigger} type="button" className="alert-help-trigger" aria-label={label} aria-describedby={id} aria-expanded={open}
+    <button ref={trigger} type="button" className={triggerClassName} aria-label={label} aria-describedby={open ? id : undefined} aria-expanded={open}
       onPointerEnter={event => { if (event.pointerType === 'mouse') show() }} onPointerLeave={leave}
       onFocus={event => { if (event.currentTarget.matches(':focus-visible')) show() }}
-      onBlur={() => { if (!trigger.current.matches(':hover') && !tooltip.current.matches(':hover')) dismiss() }}
-      onClick={() => show(true)}><span aria-hidden="true">?</span></button>
-    {createPortal(<div ref={tooltip} id={id} role="tooltip" className="alert-help-tooltip" hidden={!open}
+      onBlur={() => { if (!persistent && !trigger.current.matches(':hover') && !tooltip.current.matches(':hover')) dismiss() }}
+      onClick={() => show(true)}><span aria-hidden="true">{symbol}</span></button>
+    {createPortal(<div ref={tooltip} id={id} role="tooltip" className={`alert-help-tooltip ${contentClassName}`} hidden={!open}
       onPointerEnter={() => clearTimeout(closeTimer.current)} onPointerLeave={leave}>{children}</div>, document.body)}
   </>
 }
