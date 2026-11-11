@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
+import {screenQueryIssue} from '../shared/screenerSemantics.js'
 
 export const screenSchema = JSON.parse(readFileSync(new URL('../shared/screener-schema.json', import.meta.url), 'utf8'))
-const allowedErrors = new Set(['screen_busy', 'screen_data_changed', 'screen_snapshot_unverified', 'screen_data_not_ready', 'snapshot_changed', 'calendar_unverified'])
+const allowedErrors = new Set(['screen_busy', 'screen_data_changed', 'screen_snapshot_unverified', 'screen_data_not_ready', 'snapshot_changed', 'calendar_unverified', 'screen_unit_mismatch', 'screen_threshold_range', 'screen_state_comparison', 'screen_state_operator'])
 const fail = (code, statusCode = 503) => Object.assign(new Error(code), { statusCode })
 
 export function createScreenBridge({ base = process.env.AI_INTERNAL_URL || 'http://127.0.0.1:8010', secret = process.env.AI_INTERNAL_SECRET || '', fetcher = fetch } = {}) {
@@ -17,7 +18,7 @@ export function createScreenBridge({ base = process.env.AI_INTERNAL_URL || 'http
       if (Buffer.byteLength(raw) > 256000) throw fail('screen_response_too_large')
       let data
       try { data = JSON.parse(raw) } catch { throw fail('screen_unavailable') }
-      if (!response.ok) throw fail(response.status === 422 ? 'invalid_screen_query' : allowedErrors.has(data.detail) ? data.detail : 'screen_unavailable', response.status === 422 ? 400 : response.status === 409 ? 409 : 503)
+      if (!response.ok) throw fail(allowedErrors.has(data.detail) ? data.detail : response.status === 422 ? 'invalid_screen_query' : 'screen_unavailable', response.status === 422 ? 400 : response.status === 409 ? 409 : 503)
       return data
     },
   }
@@ -29,6 +30,8 @@ export function registerScreenRoutes(app, { bridge = createScreenBridge(), publi
     reply.header('Cache-Control', 'no-store')
     const origin = request.headers.origin, site = request.headers['sec-fetch-site']
     if ((origin && origin !== publicOrigin) || (site && site !== 'same-origin') || (body && origin !== publicOrigin)) return reply.code(403).send({ error: 'screen_origin_forbidden' })
+    const issue=body&&screenQueryIssue(body)
+    if(issue)return reply.code(400).send({error:issue})
     if (Date.now() - admission.start >= 60000) { admission.start = Date.now(); admission.count = 0 }
     if (++admission.count > maxRequests) return reply.header('Retry-After', '30').code(429).send({ error: 'screen_rate_limited' })
     if (admission.active >= 2) return reply.code(503).send({ error: 'screen_busy' })

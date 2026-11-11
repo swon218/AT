@@ -1,4 +1,6 @@
+import {screenIssues} from '../../shared/screenerSemantics.js'
 const messages = {
+  ...screenIssues,
   screen_unavailable: '조건검색 서버에 연결할 수 없습니다. 서버 배포 또는 연결 상태를 확인해 주세요.',
   screen_data_not_ready: '일봉 데이터를 읽을 수 없습니다. 수집 상태를 확인한 뒤 다시 시도해 주세요.',
   invalid_screen_query: '조건의 기간과 숫자를 확인해 주세요. MACD의 단기 기간은 장기 기간보다 작아야 합니다.',

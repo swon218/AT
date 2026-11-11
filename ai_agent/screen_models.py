@@ -1,6 +1,7 @@
 """Shared, bounded query contract for the screener UI and model function tool."""
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .screen_semantics import condition_error
 
 
 class Strict(BaseModel):
@@ -86,8 +87,15 @@ class Operand(Strict):
 
 class Condition(Strict):
     left: ScreenMetric
-    operator: Literal['lt', 'lte', 'gt', 'gte', 'crosses_above', 'crosses_below']
+    operator: Literal['lt', 'lte', 'gt', 'gte', 'crosses_above', 'crosses_below', 'eq']
     right: Operand
+
+    @model_validator(mode='after')
+    def compatible_units(self):
+        code = condition_error(self)
+        if code:
+            raise ValueError(code)
+        return self
 
 
 class StockScreen(Strict):

@@ -1,10 +1,10 @@
-import schema from '../../shared/screener-schema.json' with { type: 'json' }
 import { ADVANCED_DEFAULTS } from './advancedIndicatorCatalog.js'
+import {screenCatalog,metricSpec,sameMetricGroup,ratioComparison,comparableMetrics,conditionIssue,screenQueryIssue,screenIssues,validScreenShape} from '../../shared/screenerSemantics.js'
+export {screenCatalog,metricSpec,sameMetricGroup,ratioComparison,comparableMetrics,conditionIssue,screenQueryIssue,screenIssues}
 
-export const metricNames = { close: '종가', open: '시가', high: '고가', low: '저가', volume: '거래량', sma: '이동평균선 (SMA)', ema: '지수이동평균선 (EMA)', rsi: 'RSI', bb_lower: '볼린저밴드 하단', bb_middle: '볼린저밴드 중심', bb_upper: '볼린저밴드 상단', volume_sma: '평균 거래량', macd: 'MACD', macd_signal: 'MACD 시그널', macd_histogram: 'MACD 히스토그램',
-  atr: 'ATR', atr_percent: 'ATR%', adx: 'ADX', plus_di: '+DI', minus_di: '−DI', stoch_k: '스토캐스틱 K', stoch_d: '스토캐스틱 D', obv: 'OBV', obv_ma: 'OBV 평균', mfi: 'MFI', cci: 'CCI', supertrend: '슈퍼트렌드', supertrend_direction: '슈퍼트렌드 방향', supertrend_flip: '슈퍼트렌드 전환' }
-export const operators = { lt: '미만 (<)', lte: '이하 (≤)', gt: '초과 (>)', gte: '이상 (≥)', crosses_above: '상향 돌파', crosses_below: '하향 돌파' }
-export const isPrice = name => ['open', 'high', 'low', 'close', 'volume'].includes(name)
+export const metricNames=Object.fromEntries(Object.entries(screenCatalog.metrics).map(([name,spec])=>[name,spec.title]))
+export const operators = { lt: '미만 (<)', lte: '이하 (≤)', gt: '초과 (>)', gte: '이상 (≥)', crosses_above: '상향 돌파', crosses_below: '하향 돌파', eq:'상태 일치' }
+export const isRawMetric = name => ['open', 'high', 'low', 'close', 'volume'].includes(name)
 const d = ADVANCED_DEFAULTS
 const advancedPeriods = { atr: d.atr.period, atr_percent: d.atr.period, adx: d.dmi.period, plus_di: d.dmi.period, minus_di: d.dmi.period,
   stoch_k: d.stochastic.period, stoch_d: d.stochastic.period, obv: null, obv_ma: d.obv.maPeriod, mfi: d.mfi.period,
@@ -15,7 +15,7 @@ export function metric(name = 'rsi') {
     k_smoothing: name.startsWith('stoch_') ? d.stochastic.kPeriod : null, d_smoothing: name === 'stoch_d' ? d.stochastic.dPeriod : null,
     average_type: name === 'obv_ma' ? d.obv.maType : null, source: name === 'cci' ? d.cci.source : null,
     atr_multiplier: name.startsWith('supertrend') ? d.supertrend.multiplier : null }
-  return { name, period: isPrice(name) ? 1 : name.startsWith('macd') ? 12 : name === 'rsi' ? 14 : 20,
+  return { name, period: isRawMetric(name) ? 1 : name.startsWith('macd') ? 12 : name === 'rsi' ? 14 : 20,
     slow: name.startsWith('macd') ? 26 : 1, signal: name.startsWith('macd') ? 9 : 1, multiplier: name.startsWith('bb_') ? 2 : 1 }
 }
 
@@ -32,32 +32,68 @@ export const presets = [
   { label: 'RSI 30 이하', condition },
   { label: '볼린저 하단 터치', condition: () => ({ left: metric('low'), operator: 'lte', right: relative('bb_lower') }) },
   { label: '20일선 아래', condition: () => ({ left: metric('close'), operator: 'lt', right: relative('sma') }) },
-  { label: '거래량 2배', condition: () => ({ left: metric('volume'), operator: 'gte', right: relative('volume_sma', 2) }) },
+  { label: '거래량 200% (2배)', condition: () => ({ left: metric('volume'), operator: 'gte', right: relative('volume_sma', 2) }) },
+  { label:'거래량 120% · 편의 예시',condition:()=>({left:metric('volume'),operator:'gte',right:relative('volume_sma',1.2)}) },
+  { label:'가격 이동평균의 103% · 편의 예시',condition:()=>({left:metric('close'),operator:'gte',right:relative('sma',1.03)}) },
+  ...[['rsi',70,'gte'],['mfi',20,'lte'],['mfi',80,'gte'],['stoch_k',20,'lte'],['stoch_k',80,'gte'],['adx',20,'gte'],['adx',25,'gte'],['cci',-100,'lte'],['cci',100,'gte']].map(([name,value,operator])=>({label:`${metricNames[name]} ${operators[operator]} ${value}`,reference:true,condition:()=>({left:metric(name),operator,right:constant(value)})})),
 ]
 export function metricLabel(m) {
   if (isAdvancedMetric(m.name)) {
     const defaults = metric(m.name)
-    const values = advancedMetricFields.flatMap(([key]) => defaults[key] === null ? [] : [m[key] ?? defaults[key]])
+    const values = advancedMetricFields.flatMap(([key,title]) => defaults[key] === null ? [] : [`${title} ${m[key] ?? defaults[key]}${key==='atr_multiplier'?'배':['period','adx_period','k_smoothing','d_smoothing'].includes(key)?'봉':''}`])
     return metricNames[m.name] + (values.length ? `(${values.join(', ')})` : '')
   }
-  return `${metricNames[m.name]}${isPrice(m.name) ? '' : m.name.startsWith('macd') ? `(${m.period},${m.slow},${m.signal})` : m.name.startsWith('bb_') ? `(${m.period},${m.multiplier})` : `(${m.period})`}`
+  if(['sma','ema','volume_sma'].includes(m.name))return `${m.period}봉 ${metricNames[m.name]}`
+  return `${metricNames[m.name]}${isRawMetric(m.name) ? '' : m.name.startsWith('macd') ? `(${m.period}, ${m.slow}, ${m.signal}봉)` : m.name.startsWith('bb_') ? `(${m.period}봉, ${m.multiplier}배)` : `(${m.period}봉)`}`
+}
+// Decimal exponent shifting avoids 1.005 * 100 -> 100.499999999... display drift.
+function scaleDecimal(value,places){
+  if(value===null||value===undefined||typeof value==='boolean'||(typeof value==='string'&&!value.trim())||!Number.isFinite(Number(value)))return ''
+  const [base,exponent='0']=String(value).split(/e/i)
+  return Number(`${base}e${Number(exponent)+places}`)
+}
+export const factorToPercent=value=>scaleDecimal(value,2)
+export const percentToFactor=value=>scaleDecimal(value,-2)
+export function screenNumber(n){
+  if(!Number.isFinite(n))return '—'
+  const rounded=n.toLocaleString('ko-KR',{maximumFractionDigits:6})
+  return n!==0&&Number(rounded.replaceAll(',',''))===0?n.toExponential(3):rounded
+}
+export function metricValue(name,value,withUnit=true){
+  if(!Number.isFinite(value))return '—'
+  const spec=metricSpec(name)
+  return spec.states?.[value]??`${screenNumber(value)}${withUnit?' '+(spec.unit||''):''}`
+}
+export function describeCondition(c){
+  const r=c.right
+  const value=r.kind==='constant'?metricValue(c.left.name,r.value):ratioComparison(c.left.name,r.metric.name)?`${metricLabel(r.metric)}의 ${screenNumber(factorToPercent(r.factor))}%`:`${metricLabel(r.metric)}${r.factor===1?'':` × ${screenNumber(r.factor)} (고급 배수)`}`
+  return `${metricLabel(c.left)} ${operators[c.operator]} ${value}`
 }
 export function describeQuery(q) {
-  return `${q.market === 'ALL' ? '코스피·코스닥' : q.market} 확정 일봉 기준, ` + q.conditions.map(c => `${metricLabel(c.left)} ${operators[c.operator]} ${c.right.kind === 'constant' ? c.right.value : `${c.right.factor === 1 ? '' : c.right.factor + '배의 '}${metricLabel(c.right.metric)}`}`).join(q.match === 'all' ? ' 그리고 ' : ' 또는 ')
+  return `${q.market === 'ALL' ? '코스피·코스닥' : q.market} 확정 일봉 기준, ` + q.conditions.map(describeCondition).join(q.match === 'all' ? ' 그리고 ' : ' 또는 ')
 }
-// Validate server-persisted AI queries before opening a form. The Python model
-// remains authoritative for every actual search, including unknown fields.
-export function importQuery(input) {
-  const validate = (value, node) => {
-    if (node.$ref) return validate(value, schema.$defs[node.$ref.split('/').at(-1)])
-    if (node.anyOf) return node.anyOf.some(n => validate(value, n))
-    if (node.enum && !node.enum.includes(value)) return false
-    if (node.type === 'null') return value === null
-    if (node.type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value) && (node.required || []).every(k => k in value) && Object.keys(value).every(k => node.properties[k] && validate(value[k], node.properties[k]))
-    if (node.type === 'array') return Array.isArray(value) && value.length >= (node.minItems || 0) && value.length <= (node.maxItems || Infinity) && value.every(v => validate(v, node.items))
-    if (['number', 'integer'].includes(node.type)) return typeof value === 'number' && Number.isFinite(value) && (node.type !== 'integer' || Number.isInteger(value)) && value >= (node.minimum ?? -Infinity) && value <= (node.maximum ?? Infinity)
-    if (node.type === 'string') return typeof value === 'string' && (!node.pattern || new RegExp(node.pattern).test(value))
-    return true
+export const defaultOperand=(name,kind='constant')=>kind==='constant'||metricSpec(name).states?constant(metricSpec(name).default):relative(metricSpec(name).target)
+export function changeConditionMetric(c,left,{preserveConstant=false,preserveOperator=false}={}){
+  if(left.name===c.left.name)return {...c,left}
+  const spec=metricSpec(left.name),old=metricSpec(c.left.name)
+  let right
+  if(spec.states){
+    const keep=old.states&&c.right.kind==='constant'&&Object.hasOwn(spec.states,c.right.value)
+    return {left,operator:old.states?c.operator:'eq',right:constant(keep?c.right.value:spec.default)}
   }
-  return validate(input, schema) ? { ...structuredClone(input), page: 1, snapshot_id: null } : null
+  if(c.right.kind==='metric')right=sameMetricGroup(left.name,c.right.metric.name)?c.right:defaultOperand(left.name,'metric')
+  else {
+    const keep=(preserveConstant||old.group===spec.group)&&old.domain===spec.domain&&Number.isFinite(c.right.value)&&c.right.value>=spec.min&&c.right.value<=spec.max
+    right=keep?c.right:defaultOperand(left.name)
+  }
+  return {left,operator:!old.states&&(preserveOperator||old.group===spec.group)?c.operator:spec.operator,right}
+}
+export function queryProblem(q){
+  const code=screenQueryIssue(q)
+  return code?screenIssues[code]:''
+}
+// Restore structurally valid old conditions verbatim, including incompatible
+// units. Show a correction error and block execution instead of reinterpreting them.
+export function importQuery(input) {
+  return validScreenShape(input) ? { ...structuredClone(input), page: 1, snapshot_id: null } : null
 }

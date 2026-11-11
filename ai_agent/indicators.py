@@ -5,6 +5,7 @@ All inputs are validated, completed lab OHLCV. Never model arithmetic or live da
 import math
 from . import advanced_indicators
 from .screen_models import AdvancedMetric
+from .screen_semantics import metric_spec, ratio_comparison, percent
 
 VERSION = 'daily-indicators-v2'
 NAMES = {'open': '시가', 'high': '고가', 'low': '저가', 'close': '종가', 'volume': '거래량',
@@ -15,7 +16,8 @@ NAMES = {'open': '시가', 'high': '고가', 'low': '저가', 'close': '종가',
          'stoch_k': '스토캐스틱 K', 'stoch_d': '스토캐스틱 D', 'obv': 'OBV', 'obv_ma': 'OBV 평균',
          'mfi': 'MFI', 'cci': 'CCI', 'supertrend': '슈퍼트렌드', 'supertrend_direction': '슈퍼트렌드 방향',
          'supertrend_flip': '슈퍼트렌드 전환'}
-OPERATORS = {'lt': '<', 'lte': '≤', 'gt': '>', 'gte': '≥', 'crosses_above': '상향 교차', 'crosses_below': '하향 교차'}
+NAMES.update({name: metric_spec(name)['title'] for name in NAMES})
+OPERATORS = {'lt': '미만 (<)', 'lte': '이하 (≤)', 'gt': '초과 (>)', 'gte': '이상 (≥)', 'crosses_above': '상향 돌파', 'crosses_below': '하향 돌파', 'eq': '상태 일치'}
 
 
 def key(m):
@@ -29,23 +31,33 @@ def key(m):
 
 def label(m):
     if isinstance(m, AdvancedMetric):
-        settings = [str(m.period)] if m.period is not None else []
-        if m.adx_period is not None: settings.append(f'평활 {m.adx_period}')
-        if m.k_smoothing is not None: settings.append(f'K {m.k_smoothing}')
-        if m.d_smoothing is not None: settings.append(f'D {m.d_smoothing}')
-        if m.average_type is not None: settings.append(m.average_type)
-        if m.source is not None: settings.append(m.source.upper())
-        if m.atr_multiplier is not None: settings.append(f'배수 {m.atr_multiplier:g}')
+        settings = [f'기간 {m.period}봉'] if m.period is not None else []
+        if m.adx_period is not None: settings.append(f'ADX 평활 {m.adx_period}봉')
+        if m.k_smoothing is not None: settings.append(f'K 평활 {m.k_smoothing}봉')
+        if m.d_smoothing is not None: settings.append(f'D 평활 {m.d_smoothing}봉')
+        if m.average_type is not None: settings.append(f'OBV 평균 종류 {m.average_type}')
+        if m.source is not None: settings.append(f'가격 소스 {m.source}')
+        if m.atr_multiplier is not None: settings.append(f'ATR 배수 {m.atr_multiplier:g}배')
         return NAMES[m.name] + (f'({", ".join(settings)})' if settings else '')
     if m.name in ('open', 'high', 'low', 'close', 'volume'): return NAMES[m.name]
-    if m.name.startswith('macd'): return f'{NAMES[m.name]}({m.period}, {m.slow}, {m.signal})'
-    if m.name.startswith('bb_'): return f'{NAMES[m.name]}({m.period}, {m.multiplier:g})'
-    return f'{NAMES[m.name]}({m.period})'
+    if m.name in ('sma', 'ema', 'volume_sma'): return f'{m.period}봉 {NAMES[m.name]}'
+    if m.name.startswith('macd'): return f'{NAMES[m.name]}({m.period}, {m.slow}, {m.signal}봉)'
+    if m.name.startswith('bb_'): return f'{NAMES[m.name]}({m.period}봉, {m.multiplier:g}배)'
+    return f'{NAMES[m.name]}({m.period}봉)'
 
 
 def condition_label(c):
-    right = f'{c.right.value:g}' if c.right.kind == 'constant' else label(c.right.metric)
-    if c.right.factor != 1: right = f'{c.right.factor:g} × {right}'
+    spec = metric_spec(c.left.name)
+    if 'states' in spec:
+        right = spec['states'][str(int(c.right.value))]
+    elif c.right.kind == 'constant':
+        right = f'{c.right.value:g} {spec["unit"]}'
+    elif ratio_comparison(c.left.name, c.right.metric.name):
+        right = f'{label(c.right.metric)}의 {percent(c.right.factor):g}%'
+    else:
+        right = label(c.right.metric)
+        if c.right.factor != 1:
+            right += f' × {c.right.factor:g} (고급 배수)'
     return f'{label(c.left)} {OPERATORS[c.operator]} {right}'
 
 
@@ -138,13 +150,11 @@ def latest_pair(candles, m):
 
 
 def metric_unit(name):
-    if name in ('open', 'high', 'low', 'close', 'sma', 'ema', 'atr', 'supertrend') or name.startswith(('bb_', 'macd')): return '원'
-    if name in ('volume', 'volume_sma', 'obv', 'obv_ma'): return '주'
-    if name == 'atr_percent': return '%'
-    return ''
+    return metric_spec(name)['unit']
 
 
 def compare(operator, left, right, previous_left, previous_right):
+    if operator == 'eq': return left == right
     if operator == 'lt': return left < right
     if operator == 'lte': return left <= right
     if operator == 'gt': return left > right

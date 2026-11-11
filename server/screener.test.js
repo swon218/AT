@@ -2,18 +2,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import Fastify from 'fastify'
 import { createScreenBridge, registerScreenRoutes } from './screener.js'
+import {defaultQuery} from '../src/utils/screener.js'
 
 const origin = 'https://atlas.example'
 test('public screen route checks origin, preserves strict arguments, bounds admission, exposes no raw errors', async () => {
   const received = []
   const app = Fastify()
-  registerScreenRoutes(app, { publicOrigin: origin, maxRequests: 3, bridge: { call: async (path, body) => { received.push([path, body]); if (body?.fail) throw new Error('database_secret'); return { ok: true } } } })
+  registerScreenRoutes(app, { publicOrigin: origin, maxRequests: 3, bridge: { call: async (path, body) => { received.push([path, body]); if (received.length===2) throw new Error('database_secret'); return { ok: true } } } })
   try {
     assert.equal((await app.inject({ method: 'POST', url: '/api/screener', payload: {} })).statusCode, 403)
     assert.equal((await app.inject({ method: 'POST', url: '/api/screener', headers: { origin: 'https://other.example' }, payload: {} })).statusCode, 403)
-    assert.equal((await app.inject({ method: 'POST', url: '/api/screener', headers: { origin }, payload: { extra: 'must reach strict validator' } })).statusCode, 200)
-    assert.equal(received[0][1].extra, 'must reach strict validator')
-    const failed = await app.inject({ method: 'POST', url: '/api/screener', headers: { origin }, payload: { fail: true } })
+    assert.equal((await app.inject({ method: 'POST', url: '/api/screener', headers: { origin }, payload: {...defaultQuery(),extra:'must not be stripped'} })).statusCode, 400)
+    assert.equal(received.length,0)
+    assert.equal((await app.inject({method:'POST',url:'/api/screener',headers:{origin},payload:defaultQuery()})).statusCode,200)
+    assert.deepEqual(received[0][1],defaultQuery())
+    const failed = await app.inject({ method: 'POST', url: '/api/screener', headers: { origin }, payload: defaultQuery() })
     assert.equal(failed.statusCode, 503); assert.deepEqual(failed.json(), { error: 'screen_unavailable' })
     assert.equal((await app.inject('/api/screener')).statusCode, 200)
     assert.equal((await app.inject('/api/screener')).statusCode, 429)

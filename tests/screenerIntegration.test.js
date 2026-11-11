@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { startHarness } from './support/agentHarness.js'
-import { defaultQuery, presets } from '../src/utils/screener.js'
+import { defaultQuery, presets, metric, relative } from '../src/utils/screener.js'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as pause } from 'node:timers/promises'
 
@@ -17,6 +17,10 @@ test('manual HTTP search crosses Node -> FastAPI -> real fixture SQLite without 
     const bb = await send({ ...defaultQuery(), conditions: [presets[1].condition()] })
     assert.equal(bb.status, 200); assert.equal((await bb.json()).coverage.valid, 3)
     assert.equal((await send({ ...defaultQuery(), sql: 'select *' })).status, 400)
+    const bad=await send({...defaultQuery(),conditions:[{left:metric('volume'),operator:'gte',right:relative('sma')}]})
+    assert.equal(bad.status,400);assert.deepEqual(await bad.json(),{error:'screen_unit_mismatch'})
+    const invalid=await send({...defaultQuery(),conditions:[{...defaultQuery().conditions[0],right:{kind:'constant',value:101,metric:null,factor:1}}]})
+    assert.equal(invalid.status,400);assert.deepEqual(await invalid.json(),{error:'screen_threshold_range'})
     assert.equal((await h.db.query('SELECT count(*)::int n FROM atlas_ai.requests')).rows[0].n, 0)
     assert.equal((await h.db.query('SELECT count(*)::int n FROM atlas_ai.rooms')).rows[0].n, 0)
     const cookie = (await fetch(h.base + '/api/agent/status')).headers.get('set-cookie').split(';')[0]

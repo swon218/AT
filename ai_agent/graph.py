@@ -9,12 +9,14 @@ from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import RetryPolicy, Send
 from langsmith import tracing_context
+from pydantic import ValidationError
 
 from .alert_tools import ALERT_NEXT_STEP
 from .answers import (materialize, validate_final, VALIDATION_CODES, VALIDATION_HINTS, WATCHLIST_APPROVAL)
 from .execution import Execution, RunLimit, RunStopped
 from .roles import ARCHITECTURE, DELEGATE, Delegation, ORCHESTRATOR, SPECIALISTS, MAX_WAVES
 from .schemas import Final, TOOL_MODELS, tools_schema
+from .screen_semantics import validation_code
 
 
 class GraphState(TypedDict, total=False):
@@ -145,8 +147,9 @@ class ResearchGraph:
             if name not in allowed:
                 raise ValueError('forbidden_tool')
             parsed = TOOL_MODELS[name].model_validate_json(arguments).model_dump()
-        except (KeyError, ValueError):
-            result = tools.error('forbidden_tool' if name not in allowed else 'invalid_arguments')
+        except (KeyError, ValueError) as exc:
+            code = validation_code(exc.errors()) if name == 'screen_stocks' and isinstance(exc, ValidationError) else 'invalid_arguments'
+            result = tools.error('forbidden_tool' if name not in allowed else code)
             await self.execution.event('tool', name if name in allowed else 'forbidden', 'error', agent, result={'code': result['code']})
             return result
         fingerprint = (name, json.dumps(parsed, sort_keys=True))

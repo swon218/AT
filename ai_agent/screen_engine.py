@@ -8,6 +8,7 @@ from .indicators import VERSION, key, label, condition_label, latest_pair, warmu
 from .market import market_context
 from .screener import RsiScreener, ScanBusy, ScanChanged
 from .screen_models import AdvancedMetric
+from .screen_semantics import VERSION as CONDITION_VERSION, metric_spec, percent, ratio_comparison
 
 
 class ScreenSnapshotChanged(Exception):
@@ -113,7 +114,7 @@ class ScreenEngine:
         for value in row.get('metrics', []):
             item = {**value, **subject, 'as_of': cutoff, 'source': '실험실 확정 일봉 DB / ' + VERSION}
             if value['name'] in ('supertrend_direction', 'supertrend_flip'):
-                meaning = {-1: '하락', 0: '전환 없음', 1: '상승'}[value['value']]
+                meaning = metric_spec(value['name'])['states'][str(int(value['value']))]
             else:
                 meaning = f"{value['value']:.4f}{value['unit']}"
             item['excerpt'] = f"{subject['name']}({subject['code']}), 확정 일봉 {cutoff}, {value['label']} = {meaning}"
@@ -133,17 +134,21 @@ class ScreenEngine:
         normalized = query.model_dump()
         normalized['snapshot_id'] = data['data_version']
         query_definition = {k: v for k, v in normalized.items() if k not in ('page', 'page_size', 'snapshot_id')}
-        query_id = digest([query_definition, data['data_version'], VERSION])
+        query_id = digest([query_definition, data['data_version'], VERSION, CONDITION_VERSION])
         matches = []
         for row in data['items']:
             checks = []
             for c in query.conditions:
                 left, pl = row['values'][key(c.left)], row['previous'][key(c.left)]
-                right = c.right.value if c.right.kind == 'constant' else row['values'][key(c.right.metric)] * c.right.factor
-                pr = c.right.value if c.right.kind == 'constant' else row['previous'][key(c.right.metric)]
+                base = None if c.right.kind == 'constant' else row['values'][key(c.right.metric)]
+                previous_base = None if c.right.kind == 'constant' else row['previous'][key(c.right.metric)]
+                right = c.right.value if c.right.kind == 'constant' else base * c.right.factor
+                pr = c.right.value if c.right.kind == 'constant' else previous_base
                 if pr is not None and c.right.kind == 'metric': pr *= c.right.factor
                 checks.append({'label': condition_label(c), 'left': left, 'right': right, 'previous_left': pl,
-                               'previous_right': pr, 'matched': compare(c.operator, left, right, pl, pr)})
+                               'previous_right': pr, 'right_base': base, 'previous_right_base': previous_base,
+                               'factor': c.right.factor, 'ratio_percent': percent(c.right.factor) if c.right.kind == 'metric' and ratio_comparison(c.left.name,c.right.metric.name) else None,
+                               'unit':metric_unit(c.left.name), 'matched': compare(c.operator, left, right, pl, pr)})
             accepted = all(c['matched'] for c in checks) if query.match == 'all' else any(c['matched'] for c in checks)
             if accepted:
                 item = {k: row[k] for k in ('code', 'name', 'market', 'bars', 'values')}
@@ -167,11 +172,11 @@ class ScreenEngine:
         coverage.update(kind='screen', market=query.market, not_scanned=data['universe']-data['scanned'],
                         matches=len(matches), returned=len(page), page=query.page, page_size=query.page_size,
                         as_of=context['latest_completed'], sort=query.sort, calculation_version=VERSION,
-                        calendar_source=context['calendar_source'], match=query.match)
+                        calendar_source=context['calendar_source'], match=query.match, condition_version=CONDITION_VERSION)
         return {'status': 'partial' if coverage['not_scanned'] or data['excluded'] else 'success' if matches else 'empty',
                 'items': page, 'coverage': coverage, 'query': normalized, 'query_id': query_id,
                 'result_id': 's_' + digest([query_id, coverage, [r['id'] for r in page]]),
-                'snapshot_id': data['data_version'], 'columns': [{'key': k, 'label': label(m), 'unit': metric_unit(m.name)} for k, m in metrics_for(query).items()],
+                'snapshot_id': data['data_version'], 'columns': [{'key': k, 'name': m.name, 'label': label(m), 'unit': metric_unit(m.name)} for k, m in metrics_for(query).items()],
                 'as_of': context['latest_completed'], 'source': '실험실 일봉 DB',
                 'warnings': ['수집된 종목의 확정 일봉 기준입니다. 장중 실시간 조건검색이 아닙니다.',
                              '표시 수치는 반올림되며 조건 판정은 반올림 전 수치로 수행합니다.', context['warning']]}

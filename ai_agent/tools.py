@@ -11,6 +11,8 @@ import sqlite3
 import time
 from urllib.parse import urlsplit, urlunsplit
 import httpx
+from pydantic import ValidationError
+from .screen_semantics import validation_code
 from .market import KST, market_context
 from .schemas import TOOL_MODELS
 from .screener import SCREENER, ScanBusy, ScanChanged, FingerprintUnavailable
@@ -162,6 +164,9 @@ class ResearchTools:
             return self.error('forbidden_tool')
         try:
             args = TOOL_MODELS[name].model_validate_json(arguments)
+        except ValidationError as exc:
+            code = validation_code(exc.errors()) if name == 'screen_stocks' else 'invalid_arguments'
+            return self.error(code if code != 'invalid_screen_query' else 'invalid_arguments')
         except ValueError:
             return self.error('invalid_arguments')
         try:

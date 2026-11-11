@@ -6,6 +6,9 @@ import sqlite3
 import time
 from urllib.parse import urlsplit
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from starlette.responses import JSONResponse
 import httpx
 from .config import Settings
 from .market import KST, calendar
@@ -16,6 +19,7 @@ from .roles import SPECIALISTS
 from .data_source import NodeResearchData
 from .schemas import RunInput
 from .runtime import runtime_metadata
+from .screen_semantics import validation_code, VERSION as CONDITION_VERSION
 from .tools import NewsSource, ResearchTools
 from .screen_models import StockScreen
 from .screen_engine import SCREEN_ENGINE, ScreenSnapshotChanged
@@ -40,6 +44,12 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
     recent = {'state': 'configured' if s.api_key else 'api_key_missing', 'last_success_at': None, 'error_code': None}
     runs, active = {}, set()
     screens = screen_engine or SCREEN_ENGINE
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_screen(request, exc):
+        if request.url.path == '/screen':
+            return JSONResponse(status_code=422, content={'detail': validation_code(exc.errors())})
+        return await request_validation_exception_handler(request, exc)
 
     async def authorize(x_atlas_internal: str = Header(default='')):
         if not configured or not hmac.compare_digest(x_atlas_internal, s.internal_secret):
@@ -120,7 +130,8 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
             from .market import market_context
             context = market_context(clock() if clock else datetime.now(KST), s.calendar_through)
             return {'available': True, 'universe': total, 'latest_bar': latest, 'cutoff': context['latest_completed'],
-                    'sources': sources, 'quality_ready': quality, 'timeframe': '1d', 'max_conditions': 8}
+                    'sources': sources, 'quality_ready': quality, 'timeframe': '1d', 'max_conditions': 8,
+                    'condition_version': CONDITION_VERSION}
         try:
             return await asyncio.to_thread(read_meta)
         except Exception:
