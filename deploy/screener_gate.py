@@ -17,6 +17,64 @@ from ai_agent.screen_models import StockScreen
 from ai_agent.screener import RsiScreener
 from ai_agent.snapshot_fingerprint import fingerprint, FORMAT
 
+CASE_MAX_CALLS = 64
+CASE_MAX_SECONDS = 180
+
+
+def snapshots_released(engine):
+    return all(not e['reader'].in_transaction for s in engine.scanners.values() for e in s.entries.values())
+
+
+def run_case(engine, settings, query, now, label, *, clock=time.monotonic,
+             emit=lambda record: print(json.dumps(record, ensure_ascii=False), flush=True),
+             max_calls=CASE_MAX_CALLS, max_seconds=CASE_MAX_SECONDS):
+    """Bounded deployment check, independent of the UI's four-call auto batch.
+
+    Completion is still mandatory. Same snapshot, increasing progress, released
+    transactions, per-call and overall deadlines are checked on every response.
+    No throughput claim is inferred from a fixed universe or fixture machine.
+    """
+    started = clock()
+    first = None
+    previous = 0
+    for attempt in range(max_calls):
+        assert clock() - started + settings.tool_seconds <= max_seconds, 'gate_total_time_limit'
+        call_start = clock()
+        result = engine.execute(settings, query, now)
+        elapsed = clock() - call_start
+        coverage = result['coverage']
+        released = snapshots_released(engine)
+        emit(dict(case=label, phase='cold' if attempt == 0 else 'resume', call=attempt+1,
+                  seconds=round(elapsed,4), total_seconds=round(clock()-started,4),
+                  snapshot_released=released, **coverage))
+        assert released and elapsed <= settings.tool_seconds, 'gate_call_time_or_snapshot_limit'
+        assert clock()-started <= max_seconds, 'gate_total_time_limit'
+        identity = (result['snapshot_id'], coverage['data_version'], coverage['data_read_at'])
+        if first is None: first = identity
+        assert identity == first, 'gate_snapshot_or_progress_expired'
+        assert 0 <= coverage['scanned'] <= coverage['universe'], 'gate_invalid_coverage'
+        assert coverage['not_scanned'] == coverage['universe']-coverage['scanned'], 'gate_invalid_coverage'
+        assert coverage['valid'] + sum(coverage['excluded'].values()) == coverage['scanned'], 'gate_invalid_coverage'
+        query = query.model_copy(update={'snapshot_id': result['snapshot_id']})
+        if not coverage['not_scanned']:
+            assert coverage['valid'] > 0, 'No usable current daily data: inspect cutoff/quality, do not bypass'
+            break
+        assert coverage['scanned'] > previous, 'gate_no_progress'
+        assert not coverage['cache_hit'], 'gate_partial_cache_hit'
+        previous = coverage['scanned']
+    else:
+        raise AssertionError('gate_call_limit_incomplete')
+    assert clock()-started + settings.tool_seconds <= max_seconds, 'gate_total_time_limit'
+    call_start = clock()
+    cached = engine.execute(settings, query, now)
+    released = snapshots_released(engine)
+    emit(dict(case=label, phase='cache', seconds=round(clock()-call_start,4), snapshot_released=released, **cached['coverage']))
+    assert released and clock()-call_start <= settings.tool_seconds, 'gate_call_time_or_snapshot_limit'
+    assert clock()-started <= max_seconds, 'gate_total_time_limit'
+    assert (cached['snapshot_id'],cached['coverage']['data_version'],cached['coverage']['data_read_at']) == first, 'gate_cache_snapshot_changed'
+    assert cached['coverage']['cache_hit'] and not cached['coverage']['not_scanned'] and cached['items'] == result['items'], 'gate_cache_mismatch'
+    return result
+
 
 def metric(name, period=1, multiplier=1.0):
     return dict(name=name, period=period, slow=1, signal=1, multiplier=multiplier)
@@ -67,22 +125,7 @@ def main():
         }
         for label, conditions in groups.items():
             q = StockScreen(market='ALL', match='all', conditions=conditions, sort='code_asc', page=1, page_size=20, snapshot_id=None)
-            result = None
-            for attempt in range(4):
-                start = time.monotonic()
-                result = engine.execute(settings, q, now)
-                elapsed = time.monotonic()-start
-                released = all(not e['reader'].in_transaction for s in engine.scanners.values() for e in s.entries.values())
-                print(json.dumps(dict(case=label, phase='cold' if attempt == 0 else 'resume', seconds=round(elapsed, 4),
-                                      snapshot_released=released, **result['coverage']), ensure_ascii=False), flush=True)
-                assert released and elapsed <= 12, 'Snapshot retained or default tool time limit exceeded'
-                q = q.model_copy(update={'snapshot_id': result['snapshot_id']})
-                if not result['coverage']['not_scanned']: break
-            assert result['coverage']['not_scanned'] == 0, 'Four bounded calls did not complete the universe'
-            assert result['coverage']['valid'] > 0, 'No usable current daily data: inspect cutoff/quality, do not bypass'
-            start = time.monotonic(); cached = engine.execute(settings, q, now)
-            print(json.dumps(dict(case=label, phase='cache', seconds=round(time.monotonic()-start, 4), **cached['coverage']), ensure_ascii=False), flush=True)
-            assert cached['coverage']['cache_hit'] and cached['items'] == result['items']
+            run_case(engine, settings, q, now, label)
         print('SCREENER_READONLY_GATE_PASS', flush=True)
     finally:
         reader.rollback(); reader.close(); scanner.close(); engine.close()

@@ -23,7 +23,7 @@ from .screen_semantics import validation_code, VERSION as CONDITION_VERSION
 from .tools import NewsSource, ResearchTools
 from .screen_models import StockScreen
 from .screen_engine import SCREEN_ENGINE, ScreenSnapshotChanged
-from .screener import ScanBusy, ScanChanged, FingerprintUnavailable
+from .screener import ScanBusy, ScanChanged, FingerprintUnavailable, PROGRESS_CACHE_TTL
 
 
 def create_app(settings=None, provider=None, tools_factory=None, callback=None, screen_engine=None, clock=None):
@@ -131,7 +131,8 @@ def create_app(settings=None, provider=None, tools_factory=None, callback=None, 
             context = market_context(clock() if clock else datetime.now(KST), s.calendar_through)
             return {'available': True, 'universe': total, 'latest_bar': latest, 'cutoff': context['latest_completed'],
                     'sources': sources, 'quality_ready': quality, 'timeframe': '1d', 'max_conditions': 8,
-                    'condition_version': CONDITION_VERSION}
+                    'condition_version': CONDITION_VERSION,
+                    'continuation_version': 'bounded-resume-v1', 'progress_ttl_seconds': PROGRESS_CACHE_TTL}
         try:
             return await asyncio.to_thread(read_meta)
         except Exception:

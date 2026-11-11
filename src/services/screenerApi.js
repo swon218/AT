@@ -1,4 +1,5 @@
-import {screenIssues} from '../../shared/screenerSemantics.js'
+import {screenIssues,screenCatalog} from '../../shared/screenerSemantics.js'
+export const screenServerReady=meta=>meta?.available===true&&meta.condition_version===screenCatalog.version
 const messages = {
   ...screenIssues,
   screen_unavailable: '조건검색 서버에 연결할 수 없습니다. 서버 배포 또는 연결 상태를 확인해 주세요.',
@@ -11,6 +12,26 @@ const messages = {
   screen_rate_limited: '조회가 많습니다. 잠시 후 다시 시도해 주세요.',
   calendar_unverified: '거래일 달력을 확인할 수 없어 검색을 중지했습니다.',
   screen_origin_forbidden: '검색 요청의 웹 주소 설정을 확인해 주세요.',
+  screen_progress_expired:'이어서 검색할 수 있는 시간이 만료됐습니다. 검색 조건의 ‘조건 검색’을 눌러 처음부터 다시 검색해 주세요.',
+  screen_no_progress:'검색이 더 진행되지 않았습니다. 잠시 후 이어서 검색하거나 처음부터 다시 검색해 주세요.',
+}
+export const SCREEN_AUTO_CALLS=4
+
+export async function readScreenBatch(query,{signal,previous=null,isCurrent=()=>true,onResult,read=screenerApi}={}){
+  let current=query,last=previous
+  for(let attempt=0;attempt<SCREEN_AUTO_CALLS;attempt++){
+    const data=await read(current,signal)
+    if(signal?.aborted||!isCurrent())return
+    if(last){
+      if(data.snapshot_id!==last.snapshot_id||data.coverage.data_version!==last.coverage.data_version)throw new Error(messages.snapshot_changed)
+      if(data.coverage.data_read_at!==last.coverage.data_read_at||data.coverage.scanned<last.coverage.scanned)throw new Error(messages.screen_progress_expired)
+    }
+    onResult(data)
+    if(!data.coverage.not_scanned)return
+    if(data.coverage.scanned<=(last?.coverage.scanned??0))throw new Error(messages.screen_no_progress)
+    last=data
+    current={...current,snapshot_id:data.snapshot_id}
+  }
 }
 export async function screenerApi(query, signal) {
   let response

@@ -1,6 +1,27 @@
 # 조건 검색 단위 수정 — 검토와 배포
 
-대상은 이 문서를 포함하는 **`조건 검색 단위 수정` 커밋 전체 SHA**이다. 전달문에 기재한 SHA를 고정한다. main의 더 최신 커밋을 함께 배포하지 않는다. SQL·의존성·환경변수·systemd unit 변경은 없다.
+대상은 전달문에 기재한 **후속 수정 커밋 전체 SHA**이다. main의 더 최신 커밋을 함께 배포하지 않는다. SQL·의존성·환경변수·systemd unit 변경은 없다.
+
+## 2026-11-12 운영 gate 실패 후속 수정 (이 절차 우선)
+
+`6d342854...`의 단위/API 검증은 운영에서 통과했지만 gate의 ‘4회 내 전체 완료’ 가정으로 VPS가 `7719a007...`로 복구됐다. 후속 **`조건 검색 이어서 조회 수정` 커밋 전체 SHA**를 새 TARGET으로 사용한다. 기존 대상 대신 전달받은 새 SHA를 고정하고 아래 내용을 우선한다.
+
+- UI의 4회 자동 호출은 한 번의 사용자 동작에 대한 한도다. 전체 universe 완료 보장이 아니다. 추가 클릭으로 같은 snapshot을 계속 검색한다. UI는 부분 결과를 전체로 표시하지 않는다.
+- gate는 여전히 **모든 종목 처리와 완료 캐시 일치**를 요구한다. 요청당 기존 12초, 지표군마다 총 180초, 최대 64회 scan + 완료 캐시 1회로 제한한다. 매회 진행 증가, coverage 무결성, 동일 snapshot/data_version/data_read_at, read transaction 해제를 확인한다. 정체·만료·버전 변경·시간 초과·미완료는 계속 실패다. 기준일·품질·수집 정책은 변경하지 않는다.
+- 미완료 진행분은 최초 읽기부터 최대 300초간 보존하며 이어받기로 만료를 연장하지 않는다. 매 요청의 시작·종료 DB/WAL fingerprint 검증은 유지한다. 완료 결과는 완료 시점부터 기존 60초 캐시를 적용한다. `data_read_at`은 최초 읽기 시각을 유지한다. 만료로 다시 시작되거나 버전이 달라지면 UI가 기존 결과를 조용히 덮지 않고 처음부터 검색하도록 안내한다.
+- 구 서버(`condition_version` 누락)와 새 UI가 연결돼 있으면 검색/AI 전달을 잠시 막고 ‘업데이트 적용 중’과 데이터 상태 새로고침을 안내한다. 새 서버 단위 계약을 확인하면 사용할 수 있다. `GET /api/screener`의 새 표식은 `continuation_version=bounded-resume-v1`, `progress_ttl_seconds=300`이다.
+- 유료 AI 호출 예산, 모델·프롬프트·계산 공식·DB·수집·알림·주문은 변경하지 않는다. Supabase SQL 작업 없음.
+
+### 반영 순서
+
+1. 실제 운영 SHA/clean/서비스 상태를 기록하고 새 TARGET을 fetch한다. 이번에도 `7719a007...`라고 가정하지 말고 실측한다. 예상 밖 변경은 덮지 않는다.
+2. 새 TARGET의 격리 worktree에서 전체 Python, 조건검색 Node/HTTP 테스트와 빌드를 실행한다. 추가 검사는 `ai_agent/tests/test_screen_resume.py`, `tests/screenerResume.test.js`이다. 2,719종목 fixture의 6회/8회·60초 초과 재개는 가상 시간/통제 chunk 검증이며 운영 성능 측정은 아니다.
+3. **운영 checkout 전**, 조용한 시점에 새 worktree에서 실제 `atlas-ai` 사용자·기존 venv로 운영 DB의 fingerprint와 `python -m deploy.screener_gate --db /var/lib/atlas/lab.sqlite`를 실행한다. module_path가 새 worktree인지 확인한다. RSI/BB/RSI+SMA 세 지표군 모두 `not_scanned=0`, 완료 cache 일치, `SCREENER_READONLY_GATE_PASS`까지 통과해야 한다. 매 호출 및 전체 제한은 위와 같다. 4회 뒤 미완료여도 정상 증가 중이면 정해진 총 한도 안에서 계속한다. 실패하면 **checkout/운영 서비스는 건드리지 않고** 구체적 실패 코드·호출 수·진행률·시간만 보고한다. 운영 DB 행·키는 출력하지 않는다.
+4. preflight 통과 후 진행 중 분석·평가·조건검색이 없는 시점에 기존 활성 평가 worker를 정상 정리한다. API → AI 정상 중지, reader 자식 종료 확인 후 정확한 TARGET으로 fast-forward한다. AI → API 기동, 원래 활성 평가 worker만 안전 확인 후 복원한다. 이미 같은 TARGET 프로세스가 실행 중이면 중복 반영/재시작하지 않는다.
+5. 환경/의존성/unit/DB/WAL/SHM/수집/DART/알림 worker/WAL guard는 유지한다. 단위/API 검증과 새 continuation 표식을 확인하고 운영 checkout에서도 같은 gate를 재확인한다. 실제 웹에서 부분 조회 → 이어서 검색 → 전체 완료, 진행률·스냅샷·원값/최종 기준, 라이트·다크·모바일을 확인한다. 실제 모델·발송·주문은 하지 않는다.
+6. 코드 반영 후 새 장애가 생기면 API/AI/평가를 정상 정리하고 실측 이전 SHA로 복구한 뒤 원래 활성 상태를 복원한다. Vercel도 같은 기준의 정상 배포로 맞출 수 있으면 맞추고, 인증이 없으면 미복구 사실을 명확히 보고한다. 새 UI는 구 서버 계약을 감지해 업데이트 안내로 멈춘다. DB나 조건·대화·알림 이력은 삭제하지 않는다.
+
+최종 보고는 preflight와 반영 후 gate 각각의 지표군별 호출 수/시간/not_scanned/cache/transaction 해제, 코드 SHA/서비스, Vercel SHA/상태와 실제 UI 검증을 구분한다. 고정 4회 완료 기준으로 재검사하지 않는다. 운영 데이터 문제는 별도 원인으로 보고하고 우회하지 않는다.
 
 ## 29개 지표 전수 검토
 

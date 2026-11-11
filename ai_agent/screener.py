@@ -15,6 +15,8 @@ from .snapshot_fingerprint import fingerprint, FingerprintUnavailable
 
 MAX_BARS = 2000
 BATCH_SIZE = 64
+COMPLETE_CACHE_TTL = 60
+PROGRESS_CACHE_TTL = 300
 MAX_FLOAT = '1.7976931348623157e308'
 # Keep finite/tradable checks in SQLite before indicator calculations.
 VALID_OHLCV = ' AND '.join(
@@ -33,8 +35,10 @@ class ScanChanged(Exception):
 
 
 class RsiScreener:
-    def __init__(self, ttl=60, clock=time.monotonic, evaluator=None, required_bars=15, allow_zero_volume=False):
+    def __init__(self, ttl=COMPLETE_CACHE_TTL, clock=time.monotonic, evaluator=None, required_bars=15, allow_zero_volume=False,
+                 progress_ttl=PROGRESS_CACHE_TTL):
         self.ttl, self.clock = ttl, clock
+        self.progress_ttl = progress_ttl
         self.evaluator, self.required_bars = evaluator, required_bars
         self.valid_bar = ('(c.tradable != 0 OR c.volume = 0)' if allow_zero_volume else 'c.tradable != 0') + ' AND ' + VALID_OHLCV
         self.lock, self.entries = Lock(), OrderedDict()
@@ -97,8 +101,9 @@ class RsiScreener:
                     entry['results'].clear()
                     raise ScanChanged()
                 cache_key = (version, market, cutoff, settings.screen_symbols, VERSION, symbol)
-                for k, (at, _) in list(entry['results'].items()):
-                    if now - at >= self.ttl or k[0] != version:
+                for k, (at, data) in list(entry['results'].items()):
+                    lifetime = self.ttl if data['scanned'] == data['universe'] else self.progress_ttl
+                    if now - at >= lifetime or k[0] != version:
                         del entry['results'][k]
                 existing = entry['results'].get(cache_key)
                 hit = bool(existing and existing[1]['scanned'] == existing[1]['universe'])
@@ -128,11 +133,14 @@ class RsiScreener:
             result['resumed'] = previous['scanned'] if previous else 0
             # Retain bounded partial progress, never label it complete/cache_hit. Resume
             # only against an unchanged, independently verified commit fingerprint.
-            # Keep the first read's TTL so repeated calls cannot prolong stale progress.
+            # Partial work has its own absolute lifetime, never renewed by retries.
+            # Every call still attests the current DB/WAL fingerprint. A completed
+            # result starts the normal short cache lifetime at completion instead.
             if result['scanned']:
                 if len(entry['results']) >= 8:
                     entry['results'].popitem(last=False)
-                entry['results'][cache_key] = (existing[0] if existing else now, result)
+                completed = result['scanned'] == result['universe']
+                entry['results'][cache_key] = (self.clock() if completed else existing[0] if existing else now, result)
             return result
         finally:
             self.lock.release()
