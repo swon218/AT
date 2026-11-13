@@ -46,10 +46,10 @@ function ManagementDialog({order,action,broker,data,api,onClose,onFinished}){
       <dl><dt>현재 주문</dt><dd>{price(order)} · 주문 {number(order.quantity)}주 / 체결 {number(order.filledQuantity)}주 / 잔여 {number(order.remainingQuantity)}주</dd></dl>
       {!review?<>
         {action==='amend'&&<label>변경 후 지정가 (원)<input type="text" inputMode="numeric" value={newPrice} onChange={e=>setNewPrice(e.target.value.replace(/[^0-9]/g,''))}/></label>}
-        <label>{action==='amend'?'정정할 잔여수량':'취소할 잔여수량'} (주)<input type="text" inputMode="numeric" value={quantity} disabled={action==='cancel'&&!partialCancel} onChange={e=>setQuantity(e.target.value.replace(/[^0-9]/g,''))}/></label>
-        <p>체결된 수량은 변경할 수 없습니다. {broker==='toss'&&action==='cancel'?'토스는 남은 수량 전체 취소만 지원합니다.':'입력한 수량에만 변경을 요청하며, 나머지 잔여수량은 유지됩니다.'}</p>
+        <label>{action==='amend'?(broker==='toss'?'변경 후 주문수량':'정정할 잔여수량'):'취소할 잔여수량'} (주)<input type="text" inputMode="numeric" value={quantity} disabled={action==='cancel'&&!partialCancel} onChange={e=>setQuantity(e.target.value.replace(/[^0-9]/g,''))}/></label>
+        <p>체결된 수량은 변경할 수 없습니다. {broker==='toss'?(action==='cancel'?'토스는 남은 수량 전체 취소만 지원합니다.':'토스는 미체결 주문의 변경 후 주문수량을 입력합니다. 부분체결 주문의 정정은 지원하지 않습니다.'):'입력한 수량에만 변경을 요청하며, 나머지 잔여수량은 유지됩니다.'}</p>
         {action==='amend'&&<p>지정가·정규장 유형을 유지합니다. 호가단위, 거래소·주문 가능 여부는 증권사가 최종 검증합니다.</p>}
-      </>:<><p className="open-order-review">{action==='amend'?`${price(order)} → ${number(newPrice)}원 · ${number(quantity)}주 정정`:`남은 ${number(order.remainingQuantity)}주 중 ${number(quantity)}주 취소`}</p><p>전송 직전 다시 조회합니다. 상태가 달라지면 전송하지 않으며 입력값을 임의로 바꾸지 않습니다. 접수와 처리 완료는 다릅니다.</p></>}
+      </>:<><p className="open-order-review">{action==='amend'?`${price(order)} → ${number(newPrice)}원 · ${broker==='toss'?`수량 ${number(order.remainingQuantity)} → ${number(quantity)}주`:`잔여 중 ${number(quantity)}주 정정`}`:`남은 ${number(order.remainingQuantity)}주 중 ${number(quantity)}주 취소`}</p><p>전송 직전 다시 조회합니다. 상태가 달라지면 전송하지 않으며 입력값을 임의로 바꾸지 않습니다. 접수와 처리 완료는 다릅니다.</p></>}
       {pending&&<p role="status">증권사에 요청 전송 중…</p>}
       {error&&<p role="alert" className="open-order-error">{error}</p>}
       <div className="open-order-actions"><button type="button" disabled={pending} onClick={onClose}>확인 창 닫기</button>
