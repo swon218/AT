@@ -1,55 +1,150 @@
 import { nhClient } from './nhClient.js'
 import { kbClient } from './kbClient.js'
 import { fingerprint, httpError, numeric, stockCode, validSymbol } from './brokerHttp.js'
+import { dateOnly, seoulTimestamp } from '../src/utils/chartTime.js'
 
 const intervals = new Set(['1분', '5분', '10분', '15분', '30분', '60분', '일', '주', '월'])
-const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replaceAll('-', '')
+const chartLimit = 500
+const maxChartPages = 10
+const today = now => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now)).replaceAll('-', '')
 function time(date, clock, minute) {
-  const d = String(date || '').trim(), t = String(clock || '').trim().padStart(6, '0')
-  if (!/^\d{8}$/.test(d) || (minute && !/^\d{6}$/.test(t))) return ''
-  const day = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
-  return minute ? `${day}T${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}+09:00` : day
+  const day = dateOnly(date)
+  if (!day) return ''
+  if (!minute) return day
+  const rawClock = String(clock ?? '').trim()
+  if (!/^\d{4}(?:\d{2})?$/.test(rawClock) || seoulTimestamp(day, rawClock) === null) return ''
+  return seoulTimestamp(day, rawClock)
+}
+function validChartRow(row) {
+  return Boolean(row.time) && [row.open, row.high, row.low, row.close].every(value => Number.isFinite(value) && value > 0)
+    && row.high >= Math.max(row.open, row.close, row.low) && row.low <= Math.min(row.open, row.close)
+    && (row.volume === null || row.volume >= 0)
+}
+function chartItems(rows) {
+  return [...new Map(rows.filter(validChartRow).map(row => [row.time, row])).values()].sort((a, b) => typeof a.time === 'number' ? a.time - b.time : a.time.localeCompare(b.time))
+}
+function abortable(read, signal) {
+  signal.throwIfAborted()
+  // The transport may still be awaiting token issuance or its throttle. Bound
+  // that wait too, rather than starting a fresh timeout after each HTTP call.
+  return new Promise((resolve, reject) => {
+    const aborted = () => { signal.removeEventListener('abort', aborted); reject(signal.reason) }
+    signal.addEventListener('abort', aborted, { once: true })
+    Promise.resolve().then(() => { signal.throwIfAborted(); return read() }).then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted))
+  })
 }
 const object = value => value && !Array.isArray(value) && typeof value === 'object' ? value : null
 const cashHolding = label => !/신용|융자|대주|대출/.test(String(label || ''))
 
-export function createAddedBrokerData({ nh = nhClient, kb = kbClient } = {}) {
-  const cache = new Map()
-  async function candles(broker, symbol, interval, limit, auth) {
-    if (!validSymbol(symbol) || !intervals.has(interval)) throw httpError('종목코드 또는 차트 주기를 확인해 주세요.', 400)
-    const key = `${broker}:${fingerprint(auth)}:${symbol}:${interval}:${limit}`
+export function createAddedBrokerData({ nh = nhClient, kb = kbClient, now = Date.now, chartTimeoutMs = 20_000 } = {}) {
+  const cache = new Map(), inFlight = new Map()
+  async function candleResponse(broker, symbol, interval, limit, auth, options = {}) {
+    if (!['nh', 'kb'].includes(broker) || !validSymbol(symbol) || !intervals.has(interval)) throw httpError('종목코드 또는 차트 주기를 확인해 주세요.', 400)
+    const requestedLimit = Number(limit ?? 200)
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) throw httpError('차트 조회 건수를 확인해 주세요.', 400)
+    if (options.market !== undefined && !['KRX', 'NXT', 'INTEGRATED'].includes(options.market)) throw httpError('차트 거래소를 확인해 주세요.', 400)
+    if (options.includeExtended !== undefined && typeof options.includeExtended !== 'boolean') throw httpError('차트 장외 시세 포함 여부를 확인해 주세요.', 400)
+    // IVS11560 has no documented exchange or session selector. IVU10140's
+    // excg_clsf is quote-only and must not be presented as a chart guarantee.
+    if (broker === 'kb' && (options.market !== undefined || options.includeExtended !== undefined)) throw httpError('KB 공식 차트 API는 별도 거래소 또는 세션 선택을 확인할 수 없습니다.', 400)
+    const effectiveLimit = Math.min(chartLimit, requestedLimit)
+    const market = broker === 'nh' ? options.market || 'KRX' : 'PROVIDER'
+    const includeExtended = options.includeExtended === true
+    const key = JSON.stringify([broker, options.cacheScope ?? 'legacy', fingerprint(auth), symbol, interval, requestedLimit, market, options.market ?? 'DEFAULT', includeExtended])
+    options.signal?.throwIfAborted()
     const cached = cache.get(key)
-    if (cached?.until > Date.now()) return cached.items
-    const minute = interval.endsWith('분')
-    let items
-    if (broker === 'nh') {
-      const quote = await nh.request(auth, '/krstock/quote/v1/currentPrice', { market_cd: 'KRX', iem_cd: symbol })
-      const market = String(quote.Output_0?.mrkt_div_isnm || '')
-      if (!/코스피|코스닥|KOSPI|KOSDAQ/i.test(market)) throw httpError('NH 종목 시장을 확인할 수 없습니다.')
-      const result = await nh.request(auth, '/krstock/quote/v1/period', {
-        market_cd: 'KRX', iem_cd: symbol, mrkt_div_cls_code: /코스닥|KOSDAQ/i.test(market) ? '4' : '1',
-        edate: today(), array_cnt: String(limit), maxavg: '0', gubun: minute ? '5' : ({ 일: '1', 주: '2', 월: '3' })[interval],
-        xtick: minute ? interval.replace('분', '') : '1', today_cls_code: '0', fake_tick: '0', sur_flag: '0',
-        out1_scale_change: '0', out2_scale_change: '0', view_main_yn: 'Y',
-      })
-      if (!Array.isArray(result.Output_1)) throw httpError('NH 차트 데이터가 없습니다.')
-      items = result.Output_1.map(row => ({ time: time(row.bsop_date, row.bsop_time, minute), open: numeric(row.stck_oprc), high: numeric(row.stck_hgpr), low: numeric(row.stck_lwpr), close: numeric(row.stck_prpr), volume: numeric(row.vol) }))
-    } else {
-      const quote = await kb.request(auth, 'ivu10140', { excg_clsf: '0', shrt_cd: symbol })
-      const market = String(quote.mkt_clsf_nm || '')
-      if (!/코스피|거래소|유가증권|코스닥|KOSPI|KOSDAQ/i.test(market)) throw httpError('KB 종목 시장을 확인할 수 없습니다.')
-      const result = await kb.request(auth, 'ivs11560', {
-        info_ccd: '2', mkt_clsf: /코스닥|KOSDAQ/i.test(market) ? '1' : '0', chrt_clsf: minute ? 'B' : ({ 일: 'D', 주: 'W', 월: 'M' })[interval],
-        minute_tck_indx: minute ? interval.replace('분', '') : '1', is_cd: symbol, inq_clsf: '2', strt_dy: today(), inq_cnt: String(limit),
-      })
-      if (!Array.isArray(result.out2)) throw httpError('KB 차트 데이터가 없습니다.')
-      items = result.out2.map(row => ({ time: time(row.dt, row.tm, minute), open: numeric(row.opn_prc_p2), high: numeric(row.hgh_prc_p2), low: numeric(row.lw_prc_p2), close: numeric(row.cls_prc_p2), volume: numeric(row.vlm) }))
+    if (cached?.until > now()) return cached.response
+    if (!options.signal && inFlight.has(key)) return inFlight.get(key)
+    const load = async () => {
+      const deadline = new AbortController()
+      const timer = setTimeout(() => deadline.abort(httpError('차트 조회 시간이 초과되었습니다.', 504)), Math.min(20_000, Math.max(1, Number(chartTimeoutMs) || 20_000)))
+      const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal
+      try {
+        const minute = interval.endsWith('분')
+        let items = [], pagesFetched = 0, providerHasMore = null, continuationReason = null, receivedCount = 0, invalidRowCount = 0
+        if (broker === 'nh') {
+          const marketCode = ({ KRX: 'KRX', NXT: 'NXT', INTEGRATED: 'UNT' })[market]
+          const quote = await abortable(() => nh.request(auth, '/krstock/quote/v1/currentPrice', { market_cd: marketCode, iem_cd: symbol }, { signal }), signal)
+          const stockMarket = String(quote.Output_0?.mrkt_div_isnm || '')
+          if (!/코스피|코스닥|KOSPI|KOSDAQ/i.test(stockMarket)) throw httpError('NH 종목 시장을 확인할 수 없습니다.')
+          const input = {
+            market_cd: marketCode, iem_cd: symbol, mrkt_div_cls_code: /코스닥|KOSDAQ/i.test(stockMarket) ? '4' : '1',
+            edate: today(now()), array_cnt: String(effectiveLimit), maxavg: '0', gubun: minute ? '5' : ({ 일: '1', 주: '2', 월: '3' })[interval],
+            xtick: minute ? interval.replace('분', '') : '1', today_cls_code: '0', fake_tick: '0', sur_flag: '0',
+            out1_scale_change: '0', out2_scale_change: '0', view_main_yn: includeExtended ? 'N' : 'Y',
+          }
+          const rows = [], seen = new Set()
+          let cts = ''
+          for (let page = 0; page < maxChartPages; page++) {
+            let result
+            try {
+              result = await abortable(() => nh.request(auth, '/krstock/quote/v1/period', input, { cts, signal }), signal)
+              if (!Array.isArray(result.Output_1)) throw httpError('NH 차트 응답 형식을 확인할 수 없습니다.')
+              pagesFetched++
+            } catch (error) {
+              options.signal?.throwIfAborted()
+              if (page === 0) throw error
+              continuationReason = deadline.signal.aborted ? 'deadline-exceeded' : 'continuation-page-failed'
+              break
+            }
+            receivedCount += result.Output_1.length
+            const mapped = result.Output_1.map(row => ({ time: time(row?.bsop_date, row?.bsop_time, minute), open: numeric(row?.stck_oprc), high: numeric(row?.stck_hgpr), low: numeric(row?.stck_lwpr), close: numeric(row?.stck_prpr), volume: numeric(row?.vol) }))
+            invalidRowCount += mapped.filter(row => !validChartRow(row)).length
+            rows.push(...mapped)
+            items = chartItems(rows)
+            providerHasMore = result.hasMore === true ? true : null
+            if (items.length >= effectiveLimit || !result.hasMore) break
+            const next = String(result.continuation || '').trim()
+            if (!next || seen.has(next) || !result.Output_1.length) { continuationReason = !next ? 'continuation-missing' : seen.has(next) ? 'continuation-repeated' : 'continuation-empty-page'; break }
+            seen.add(next)
+            cts = next
+            if (page === maxChartPages - 1) continuationReason = 'page-limit'
+          }
+        } else {
+          const quote = await abortable(() => kb.request(auth, 'ivu10140', { excg_clsf: '0', shrt_cd: symbol }, { signal }), signal)
+          const stockMarket = String(quote.mkt_clsf_nm || '')
+          if (!/코스피|거래소|유가증권|코스닥|KOSPI|KOSDAQ/i.test(stockMarket)) throw httpError('KB 종목 시장을 확인할 수 없습니다.')
+          const result = await abortable(() => kb.request(auth, 'ivs11560', {
+            info_ccd: '2', mkt_clsf: /코스닥|KOSDAQ/i.test(stockMarket) ? '1' : '0', chrt_clsf: minute ? 'B' : ({ 일: 'D', 주: 'W', 월: 'M' })[interval],
+            minute_tck_indx: minute ? interval.replace('분', '') : '1', is_cd: symbol, inq_clsf: '2', inq_cnt: String(effectiveLimit),
+          }, { signal }), signal)
+          pagesFetched = 1
+          if (!Array.isArray(result.out2)) throw httpError('KB 차트 데이터가 없습니다.')
+          receivedCount = result.out2.length
+          const mapped = result.out2.map(row => ({ time: time(row?.dt, row?.tm, minute), open: numeric(row?.opn_prc_p2), high: numeric(row?.hgh_prc_p2), low: numeric(row?.lw_prc_p2), close: numeric(row?.cls_prc_p2), volume: numeric(row?.vlm) }))
+          invalidRowCount = mapped.filter(row => !validChartRow(row)).length
+          items = chartItems(mapped)
+        }
+        items = items.slice(-effectiveLimit)
+        options.signal?.throwIfAborted()
+        const partialReasons = [continuationReason, invalidRowCount ? 'invalid-rows' : null, requestedLimit > effectiveLimit ? 'count-limit' : null, items.length < Math.min(effectiveLimit, requestedLimit) ? 'requested-count-unavailable' : null].filter(Boolean)
+        const partialReason = partialReasons[0] || null
+        const response = { items, meta: {
+          timeZone: 'Asia/Seoul', rangeMode: 'recent', requestedLimit, effectiveLimit, returnedCount: items.length, receivedCount, invalidRowCount,
+          requestedInterval: interval, intervalSource: 'provider', aggregated: false, market, requestedMarket: options.market || null,
+          supportedMarkets: broker === 'nh' ? ['KRX', 'NXT', 'INTEGRATED'] : [],
+          sessionCoverage: broker === 'nh' ? includeExtended ? 'all-requested' : 'regular-requested' : 'provider-defined-unverified',
+          timestampMeaning: minute ? 'provider' : 'date', partial: Boolean(partialReason), partialReason, partialReasons,
+          pagesFetched, maxPages: broker === 'nh' ? maxChartPages : 1, hasMore: providerHasMore, fullDay: false,
+          earliestTime: items[0]?.time ?? null, latestTime: items.at(-1)?.time ?? null,
+        } }
+        if (!['deadline-exceeded', 'continuation-page-failed'].includes(continuationReason)) {
+          if (cache.size >= 300) cache.delete(cache.keys().next().value)
+          cache.set(key, { response, until: now() + 30_000 })
+        }
+        return response
+      } finally { clearTimeout(timer) }
     }
-    items = [...new Map(items.filter(row => row.time && [row.open, row.high, row.low, row.close].every(value => value > 0)).map(row => [row.time, row])).values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-limit)
-    if (!items.length) throw httpError('표시할 차트 데이터가 없습니다.')
-    if (cache.size >= 300) cache.delete(cache.keys().next().value)
-    cache.set(key, { items, until: Date.now() + 30_000 })
-    return items
+    const pending = load()
+    if (options.signal) return pending
+    inFlight.set(key, pending)
+    try { return await pending }
+    finally { if (inFlight.get(key) === pending) inFlight.delete(key) }
+  }
+  async function candles(broker, symbol, interval, limit, auth, options = {}) {
+    const { items } = await candleResponse(broker, symbol, interval, limit, auth, options)
+    // Preserve the original array API while HTTP responses use UTC seconds.
+    return items.map(row => typeof row.time === 'number' ? { ...row, time: `${new Date((row.time + 9 * 60 * 60) * 1_000).toISOString().slice(0, 19)}+09:00` } : row)
   }
 
   async function nhAccounts(auth, signal) {
@@ -116,6 +211,6 @@ export function createAddedBrokerData({ nh = nhClient, kb = kbClient } = {}) {
     })
     return { broker, holdings, accountRequired: false, orderableAmount: numeric(power.pcnt100_ordr_psbl_amt), cash: numeric(total.dy_tfnd), withdrawableAmount: numeric(power.do_psbl_csh), totalPurchaseAmount: numeric(total.byng_amt_sum), totalEvaluationAmount: numeric(total.val_amt_sum), totalEvaluationProfit: numeric(total.val_pl_sum), totalProfitRate: numeric(total.val_yld_sum), estimatedAssets: numeric(total.nt_asts_val_amt), updatedAt: new Date().toISOString() }
   }
-  return { candles, summary, nhAccounts, selectAccount }
+  return { candles, candleResponse, summary, nhAccounts, selectAccount }
 }
 export const addedBrokerData = createAddedBrokerData()

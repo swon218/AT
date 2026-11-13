@@ -9,6 +9,8 @@ import { kbClient } from './kbClient.js'
 import { httpError, validSymbol } from './brokerHttp.js'
 import { storeBrokerOrder } from './brokerOrderStore.js'
 import { accountRef } from './personalBroker.js'
+import {chartQuery} from './chartRoutes.js'
+import {getCandleResponse} from './charts.js'
 
 const names = { nh: 'NH투자증권', kb: 'KB증권' }
 function authFrom(account, broker) {
@@ -48,14 +50,19 @@ export function createAddedBrokerHandlers({ settings = config, authenticate = ge
   }
   return {
     async candles(request, broker) {
-      const { symbol = '', interval = '일' } = request.query || {}, limit = Math.min(500, Math.max(1, Number(request.query?.limit) || 200))
+      const {symbol,interval,limit,options}=chartQuery(request.query)
+      const signal=request.chartSignal
       const account = await accountFor(request), auth = authFrom(account, broker)
-      if (auth) return { items: await data.candles(broker, symbol, interval, limit, auth), sourceBroker: broker, credentialScope: 'personal' }
+      const response=async(credentials,scope)=>data.candleResponse?data.candleResponse(broker,symbol,interval,limit,credentials,{...options,signal,cacheScope:scope}):{items:await data.candles(broker,symbol,interval,limit,credentials)}
+      if (auth) return { ...await response(auth,`user:${account.user.id}`), sourceBroker: broker, credentialScope: 'personal' }
       if (broker === 'kb' && !(settings.kbAppKey && settings.kbSecretKey)) {
         // Explicit operator context: never use another personal broker key here.
-        return { items: await kiwoomCandles(symbol, interval, limit, { requester: requestKiwoom, cacheScope: 'operator' }), sourceBroker: 'kiwoom', credentialScope: 'operator', fallback: true }
+        if(options.includeExtended!==undefined)throw httpError('키움 대체 차트는 시간외 선택 인자를 지원하지 않습니다.',400)
+        const fallbackOptions={requester:requestKiwoom,cacheScope:'operator',market:options.market||(interval.endsWith('분')?'INTEGRATED':'KRX'),signal}
+        const fallback=kiwoomCandles===getCandles?await getCandleResponse(symbol,interval,limit,fallbackOptions):{items:await kiwoomCandles(symbol,interval,limit,fallbackOptions)}
+        return { ...fallback, sourceBroker: 'kiwoom', credentialScope: 'operator', fallback: true }
       }
-      return { items: await data.candles(broker, symbol, interval, limit, { appKey: settings[`${broker}AppKey`], secretKey: settings[`${broker}SecretKey`] }), sourceBroker: broker, credentialScope: 'operator' }
+      return { ...await response({appKey:settings[`${broker}AppKey`],secretKey:settings[`${broker}SecretKey`]},'operator'), sourceBroker: broker, credentialScope: 'operator' }
     },
     async summary(request, broker) {
       const { account, auth } = await personal(request, broker)
@@ -101,8 +108,11 @@ export function registerAddedBrokerRoutes(app, handlers = createAddedBrokerHandl
       ['post', `/api/orders/${broker}`, 'order'],
     ]) app[method](path, async (request, reply) => {
       reply.header('Cache-Control', 'private, no-store')
+      const controller=action==='candles'?new AbortController():null,abort=()=>controller?.abort()
+      if(controller){request.chartSignal=controller.signal;request.raw.once('aborted',abort);reply.raw.once('close',abort)}
       try { return await handlers[action](request, broker) }
-      catch (error) { return reply.code(error.statusCode || 502).send({ error: error.message }) }
+      catch (error) { return reply.code(error.statusCode || 502).send({ error: action==='candles'?(error.statusCode===400?'지원되는 차트 주기·거래소·시간외 조회 옵션을 확인해 주세요.':error.statusCode===429?'차트 조회 한도에 도달했습니다. 잠시 후 다시 조회해 주세요.':'증권사 차트 응답을 확인하지 못했습니다. 빈 결과로 처리하지 않습니다.'):error.message }) }
+      finally{if(controller){request.raw.removeListener('aborted',abort);reply.raw.removeListener('close',abort)}}
     })
   }
 }

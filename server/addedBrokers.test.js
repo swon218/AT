@@ -54,6 +54,39 @@ test('a future KB operator key is used, but personal authentication failure neve
   assert.equal(calls, 2)
 })
 
+test('KB fallback preserves explicit exchange and operator scope, rejects unsupported session intent and never replaces a personal failure', async () => {
+  const fallback = [], personal = []
+  const handlers = createAddedBrokerHandlers({ settings, authenticate,
+    data: { candleResponse: async (...args) => { personal.push(args); throw httpError('personal KB failed', 401) } },
+    kiwoomCandles: async (...args) => { fallback.push(args); return [{ time: 1, close: 100 }] },
+  })
+  const signal = new AbortController().signal
+  for (const market of ['KRX', 'NXT', 'INTEGRATED']) {
+    const req = { ...request('no-key'), chartSignal: signal, query: { symbol: '005930', interval: '15분', market, limit: '20' } }
+    const result = await handlers.candles(req, 'kb')
+    assert.equal(result.sourceBroker, 'kiwoom')
+    assert.equal(result.fallback, true)
+    assert.equal(result.credentialScope, 'operator')
+    assert.equal(fallback.at(-1)[1], '15분')
+    assert.equal(fallback.at(-1)[2], 20)
+    assert.equal(fallback.at(-1)[3].market, market)
+    assert.equal(fallback.at(-1)[3].cacheScope, 'operator')
+    assert.equal(fallback.at(-1)[3].signal, signal)
+  }
+  for (const [interval, expectedMarket] of [['1분', 'INTEGRATED'], ['일', 'KRX']]) {
+    await handlers.candles({ ...request(), query: { symbol: '005930', interval } }, 'kb')
+    assert.equal(fallback.at(-1)[3].market, expectedMarket)
+  }
+  const fallbackCount = fallback.length
+  for (const includeExtended of ['true', 'false']) await assert.rejects(handlers.candles({ ...request(), query: { symbol: '005930', interval: '1분', includeExtended } }, 'kb'), { statusCode: 400 })
+  const personalRequest = { ...request('kb-user'), query: { symbol: '005930', interval: '1분' } }
+  await assert.rejects(handlers.candles(personalRequest, 'kb'), { statusCode: 401 })
+  assert.equal(personal.length, 1)
+  assert.equal(personal[0][4].appKey, 'kb-user-key')
+  assert.equal(personal[0][5].cacheScope, 'user:kb-user')
+  assert.equal(fallback.length, fallbackCount)
+})
+
 test('account and order routes require personal keys; caller cannot supply operator credentials', async t => {
   const app = Fastify(); t.after(() => app.close())
   registerAddedBrokerRoutes(app, createAddedBrokerHandlers({ settings, authenticate, data: { summary: () => assert.fail('unauthorized account call') } }))

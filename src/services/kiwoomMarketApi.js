@@ -58,6 +58,8 @@ export function getBrokerCandles(broker, symbol, interval = '일', limit = 200) 
   return getPublicMarketData(`/api/public/market/${selectedBroker}/candles`, { symbol, interval, limit: String(limit) })
 }
 
-export function getBrokerCandleResponse(broker, symbol, interval = '일', limit = 200) {
-  return readMarketData(`/api/public/market/${getBroker(broker).id}/candles`, { symbol, interval, limit: String(limit) })
+export function getBrokerCandleResponse(broker, symbol, interval = '일', limit = 200, {signal}={}) {
+  const selected=getBroker(broker).id
+  const extended=interval.endsWith('분')&&['kiwoom','nh'].includes(selected)
+  return readMarketData(`/api/public/market/${selected}/candles`, { symbol, interval, limit: String(limit),...(extended?{market:'INTEGRATED',...(selected==='nh'?{includeExtended:'true'}:{})}:{}) },signal)
 }

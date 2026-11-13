@@ -9,6 +9,8 @@ import { ADVANCED_BY_ID, validAdvancedConfig } from '../utils/advancedIndicatorC
 import { advancedPlot, alignedPlot } from '../utils/indicatorPlots'
 import { gapSafeSeries, isQuarantined } from '../utils/dataQuality'
 import { bindChartTheme, chartPalette, chartThemeOptions } from '../utils/chartTheme'
+import { normalizeChartCandles } from '../utils/chartCandles'
+import { formatChartTime, formatChartTick } from '../utils/chartTime'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(Math.round(value))
 const volumeFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
@@ -16,28 +18,7 @@ const formatVolume = value => Number.isFinite(value) ? volumeFormatter.format(va
 const EMPTY = []
 const advancedValid = config => Object.hasOwn(ADVANCED_BY_ID, config.id) && validAdvancedConfig(config)
 
-function normalizeCandles(rows) {
-  return rows
-    .map((row) => {
-      const rawTime = row.time ?? row.timestamp ?? row.date
-      const time = typeof rawTime === 'number'
-        ? rawTime
-        : /^\d{4}-\d{2}-\d{2}$/.test(rawTime ?? '')
-          ? rawTime
-          : Math.floor(new Date(rawTime).getTime() / 1000)
-      if (isQuarantined(row) || ['open', 'high', 'low', 'close'].some(field => row[field] == null || row[field] === '' || !Number.isFinite(Number(row[field])))) return { time, quality: 'quarantined' }
-      const volume = row.volume == null || row.volume === '' ? null : Number(row.volume)
-      return {
-        quality: row.quality,
-        time, open: Math.abs(Number(row.open)), high: Math.abs(Number(row.high)), low: Math.abs(Number(row.low)),
-        close: Math.abs(Number(row.close)), volume: Number.isFinite(volume) && volume >= 0 ? volume : null,
-      }
-    })
-    .filter((row) => row.time && (isQuarantined(row) || [row.open, row.high, row.low, row.close].every(Number.isFinite)))
-    .sort((a, b) => String(a.time).localeCompare(String(b.time), undefined, { numeric: true }))
-}
-
-export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange }) {
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
@@ -87,12 +68,13 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
 
   useEffect(() => {
     let active = true
+    const controller=new AbortController()
     const setData = candles => setLoaded({ key: sourceKey, supplied: suppliedCandles, candles })
     setData(EMPTY)
     setLegend(null)
     setError('')
     if (suppliedCandles !== undefined) {
-      const candles = normalizeCandles(suppliedCandles)
+      const candles = normalizeChartCandles(suppliedCandles,period)
       setData(candles)
       setLegend(candles.at(-1) ?? null)
       setLoading(false)
@@ -101,20 +83,21 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     if (!stock?.code) return () => { active = false }
 
     setLoading(true)
-    getBrokerCandleResponse(broker, stock.code, period, 200)
+    getBrokerCandleResponse(broker, stock.code, period, 200, {signal:controller.signal})
       .then((payload) => {
         if (!active) return
         const rows = Array.isArray(payload) ? payload : payload.items || []
         onSourceChange?.(payload.sourceBroker || broker)
-        const candles = normalizeCandles(rows)
+        onMetadataChange?.({key:sourceKey,sourceBroker:payload.sourceBroker||broker,meta:payload.meta||null,returnedCount:rows.length})
+        const candles = normalizeChartCandles(rows,period)
         setData(candles)
         setLegend(candles.at(-1) ?? null)
       })
-      .catch(error => { if (active) { setData([]); setError(error.message) } })
+      .catch(error => { if (active) { setData([]); setError(error.message); onMetadataChange?.({key:sourceKey,sourceBroker:broker,error:true}) } })
       .finally(() => active && setLoading(false))
 
-    return () => { active = false }
-  }, [sourceKey, suppliedCandles, onSourceChange])
+    return () => { active = false;controller.abort() }
+  }, [sourceKey, suppliedCandles, onSourceChange, onMetadataChange])
 
   useEffect(() => {
     const container = containerRef.current
@@ -133,7 +116,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
           ...colors.layout.panes,
         },
       },
-      localization: { locale: 'ko-KR', priceFormatter: (price) => won(price) },
+      localization: { locale: 'ko-KR', priceFormatter: (price) => won(price),timeFormatter:time=>formatChartTime(time,period.endsWith('분')) },
       grid: colors.grid,
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -143,6 +126,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       timeScale: {
         ...colors.timeScale, timeVisible: period.endsWith('분'),
         secondsVisible: false, rightOffset: 5, barSpacing: period === '월' ? 8 : 6,
+        tickMarkFormatter:(time,type)=>formatChartTick(time,type,period.endsWith('분')),
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
@@ -411,7 +395,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
   if (!stock) return <div className="chart-empty"/>
   if (loading) return <div className="chart-empty"><span className="loading-ring"/></div>
   if (error) return <div className="chart-empty data-message error" role="alert">{error}</div>
-  if (data.length === 0) return <div className="chart-empty"/>
+  if (data.length === 0) return <div className="chart-empty data-message" role="status">제공된 캔들이 없습니다.</div>
 
   return (
     <div className="tv-chart-root" onWheelCapture={(event) => {
@@ -423,7 +407,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       event.stopPropagation()
       root.scrollTop += event.deltaY
     }}>
-      {legend && <div className="tv-legend">{isQuarantined(legend) ? <span>{legend.time} · 가격 오류 격리</span> : <><span>시 <b>{won(legend.open)}</b></span><span>고 <b className="up">{won(legend.high)}</b></span><span>저 <b className="down">{won(legend.low)}</b></span><span>종 <b>{won(legend.close)}</b></span>{legend.quality === 'corrected' && <span>1원 보정</span>}</>}</div>}
+      {legend && <div className="tv-legend">{isQuarantined(legend) ? <span>{formatChartTime(legend.time,period.endsWith('분'))} · 가격 오류 격리</span> : <><span>시 <b>{won(legend.open)}</b></span><span>고 <b className="up">{won(legend.high)}</b></span><span>저 <b className="down">{won(legend.low)}</b></span><span>종 <b>{won(legend.close)}</b></span>{legend.quality === 'corrected' && <span>1원 보정</span>}</>}</div>}
       {indicators.length > 0 && <div className="tv-indicator-badges">{indicators.map((config) => <span key={config.id}>{indicatorDisplayName(config)}</span>)}</div>}
       <div ref={scrollContentRef} className="tv-chart-scroll-content" style={scrollContentStyle}>
         <div ref={containerRef} className="tv-chart-canvas" aria-label={`${stock.name} TradingView 캔들 차트`}/>

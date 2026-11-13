@@ -37,6 +37,7 @@ import AlertAgentPanel, { AgentModeTabs, TradingAgentPanel } from './components/
 import useAgentAlertDrafts from './hooks/useAgentAlertDrafts'
 import SidebarFooter from './components/SidebarFooter'
 import ThemeSwitch from './components/ThemeSwitch'
+import {describeChartScope} from './utils/chartScope'
 import WatchlistStar, { WatchlistFeedback } from './components/WatchlistStar'
 import useBrokerConnections from './hooks/useBrokerConnections'
 import useWatchlist from './hooks/useWatchlist'
@@ -69,6 +70,9 @@ const rankingCategories = [
 function StockChartPanel({ stock, period, onPeriodChange, indicators = [], credentialScope = 'guest', broker = 'kiwoom', watchlist }) {
   const [minuteMenuOpen, setMinuteMenuOpen] = useState(false)
   const [sourceBroker, setSourceBroker] = useState(broker)
+  const [provenance,setProvenance]=useState(null)
+  const currentScope=JSON.stringify([stock?.code,period,credentialScope,broker])
+  const chartInfo=provenance?.key===currentScope?provenance:null
   useEffect(() => setSourceBroker(broker), [broker, credentialScope])
   const minutePeriods = ['1분', '5분', '10분', '15분', '30분', '60분']
   const selectedMinute = minutePeriods.includes(period) ? period : '15분'
@@ -90,7 +94,8 @@ function StockChartPanel({ stock, period, onPeriodChange, indicators = [], crede
         </div>
         {['일','주','월'].map((item) => <button type="button" className={period === item ? 'active' : ''} onClick={() => { onPeriodChange(item); setMinuteMenuOpen(false) }} key={item}>{item}</button>)}
       </></div><span>{getBroker(sourceBroker).shortName} 캔들 데이터{sourceBroker !== broker ? ' · 대체 시세' : ''}</span></div>
-      <div className="main-chart tradingview-host"><TradingViewChart stock={stock} period={period} indicators={indicators} credentialScope={credentialScope} broker={broker} onSourceChange={setSourceBroker}/></div>
+      <p className="chart-data-scope" role="status">{describeChartScope(chartInfo,period)}</p>
+      <div className="main-chart tradingview-host"><TradingViewChart stock={stock} period={period} indicators={indicators} credentialScope={credentialScope} broker={broker} onSourceChange={setSourceBroker} onMetadataChange={setProvenance}/></div>
     </article>
   )
 }

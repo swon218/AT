@@ -2,7 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { config, publicConfigurationStatus } from './config.js'
 import { getRankings } from './rankings.js'
-import { getCandles } from './charts.js'
+import { registerChartRoutes } from './chartRoutes.js'
 import { registerNewsRoutes } from './news.js'
 import { registerAccountConnectionRoutes } from './accountConnections.js'
 import { registerRecentOrderRoutes } from './recentOrders.js'
@@ -12,7 +12,6 @@ import { placeKiwoomOrder } from './orders.js'
 import { getKiwoomAccountSummary } from './kiwoomAccount.js'
 import { marketRequestContext } from './marketContext.js'
 import { registerStockSearchRoutes, warmStockSearchCatalog } from './stockSearch.js'
-import { getTossCandles } from './tossCharts.js'
 import { getTossAccountSummary } from './tossAccount.js'
 import { placeTossOrder } from './tossOrders.js'
 import { registerLabRoutes } from './lab.js'
@@ -77,29 +76,7 @@ app.get('/api/public/market/kiwoom/rankings', async (request, reply) => {
   }
 })
 
-app.get('/api/public/market/kiwoom/candles', async (request, reply) => {
-  try {
-    const symbol = String(request.query.symbol || '')
-    const interval = String(request.query.interval || '일')
-    const limit = Math.min(500, Math.max(1, Number(request.query.limit) || 200))
-    return { items: await getCandles(symbol, interval, limit, await marketRequestContext(request)) }
-  } catch (error) {
-    request.log.error({ error: error.message }, 'Kiwoom candles failed')
-    return reply.code(502).send({ error: error.message })
-  }
-})
-
-app.get('/api/public/market/toss/candles', async (request, reply) => {
-  try {
-    const symbol = String(request.query.symbol || '')
-    const interval = String(request.query.interval || '일')
-    const limit = Math.min(500, Math.max(1, Number(request.query.limit) || 200))
-    return { items: await getTossCandles(symbol, interval, limit, await tossMarketCredentials(request)) }
-  } catch (error) {
-    request.log.error({ error: error.message }, 'Toss candles failed')
-    return reply.code(error.statusCode || 502).send({ error: error.message })
-  }
-})
+registerChartRoutes(app,{tossContext:tossMarketCredentials})
 
 app.get('/api/account/settings', async (request, reply) => {
   try {
