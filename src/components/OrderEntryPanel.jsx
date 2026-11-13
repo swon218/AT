@@ -150,14 +150,17 @@ function GeneralOrder({ stock, userId, credentialVersion, accountRef, onAccountC
   if (side === 'open') return (
     <>
       <div className="side-tabs"><button onClick={() => setSide('buy')}>매수</button><button onClick={() => setSide('sell')}>매도</button><button className="active open" onClick={() => setSide('open')}>미체결</button></div>
+      <div className="order-body-scroll order-body-scroll--open" tabIndex={0} role="region" aria-label="미체결 주문 본문">
       <UnfilledOrdersPanel key={`${userId}:${broker}:${credentialVersion}:${accountRef}`} broker={broker} userId={userId} credentialVersion={credentialVersion} accountRef={accountRef} authenticated={authenticated} brokerConfigured={brokerConfigured} onAccountChange={onAccountChange} onAccountRefresh={onAccountRefresh}/>
       <OrderAccessNotice authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured}/>
+      </div>
     </>
   )
 
   return (
     <>
       <div className="side-tabs"><button className={side === 'buy' ? 'active buy' : ''} onClick={() => setSide('buy')}>매수</button><button className={side === 'sell' ? 'active sell' : ''} onClick={() => setSide('sell')}>매도</button><button onClick={() => setSide('open')}>미체결</button></div>
+      <div className="order-body-scroll" tabIndex={0} role="region" aria-label="일반 주문 본문">
       <div className="trade-form">
         <FieldRow label="주문 유형"><select className="trade-input" value={orderSession} onChange={(event) => { const next = event.target.value; setOrderSession(next); if (next !== 'regular') { setPriceType('market'); setPrice('') } }}><option value="regular">정규장 주문</option>{getBroker(broker).afterHours && <><option value="pre">장전 시간외</option><option value="post">장후 시간외</option></>}</select></FieldRow>
         <FieldRow label="주문 가격">
@@ -177,6 +180,7 @@ function GeneralOrder({ stock, userId, credentialVersion, accountRef, onAccountC
       {submitMessage && <p className="order-submit-message success" role="status">{submitMessage}</p>}
       {authenticated && brokerConfigured && accountError && <p className="order-submit-message error" role="alert">계좌 조회 실패: {accountError}</p>}
       <OrderAccessNotice authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured}/>
+      </div>
       <OrderConfirmDialog draft={draft} stock={stock} broker={broker} pending={pending} error={submitError} onCancel={() => { if (!pending) { setDraft(null); setSubmitError('') } }} onConfirm={submitOrder}/>
     </>
   )
@@ -374,7 +378,7 @@ export default function OrderEntryPanel({ stock, userId, credentialVersion, auth
       {!indicatorsOnly && broker === 'nh' && authenticated && brokerConfigured && accountOptions.length > 0 && <label className="broker-account-select">주문 계좌<select value={accountId || (accountOptions.length === 1 ? accountOptions[0].id : '')} onChange={event => onAccountChange?.(event.target.value)} disabled={accountLoading}><option value="" disabled>계좌 선택</option>{accountOptions.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}</select></label>}
       {indicatorsOnly || mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/> : <>
         <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
-        {mode === 'general' ? <GeneralOrder key={broker} userId={userId} credentialVersion={credentialVersion} accountRef={accountId} onAccountChange={onAccountChange} stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/>}
+        {mode === 'general' ? <GeneralOrder key={broker} userId={userId} credentialVersion={credentialVersion} accountRef={accountId} onAccountChange={onAccountChange} stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <div className="order-body-scroll" tabIndex={0} role="region" aria-label="자동매매 본문"><AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/></div>}
       </>}
     </section>
   )
