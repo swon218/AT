@@ -7,7 +7,7 @@ import { registerNewsRoutes } from './news.js'
 import { registerAccountConnectionRoutes } from './accountConnections.js'
 import { registerRecentOrderRoutes } from './recentOrders.js'
 import { registerOpenOrderRoutes } from './openOrders.js'
-import { getAccountSettings, getAuthenticatedCredentials, updateAccountSettings } from './accountSettings.js'
+import { getAuthenticatedCredentials, registerAccountSettingsRoutes } from './accountSettings.js'
 import { placeKiwoomOrder } from './orders.js'
 import { getKiwoomAccountSummary } from './kiwoomAccount.js'
 import { marketRequestContext } from './marketContext.js'
@@ -78,23 +78,7 @@ app.get('/api/public/market/kiwoom/rankings', async (request, reply) => {
 
 registerChartRoutes(app,{tossContext:tossMarketCredentials})
 
-app.get('/api/account/settings', async (request, reply) => {
-  try {
-    return await getAccountSettings(request)
-  } catch (error) {
-    request.log.error({ error: error.message }, 'Account settings lookup failed')
-    return reply.code(error.statusCode || 500).send({ error: error.message })
-  }
-})
-
-app.put('/api/account/settings', async (request, reply) => {
-  try {
-    return await updateAccountSettings(request)
-  } catch (error) {
-    request.log.error({ error: error.message }, 'Account settings update failed')
-    return reply.code(error.statusCode || 500).send({ error: error.message })
-  }
-})
+registerAccountSettingsRoutes(app)
 
 app.get('/api/account/kiwoom/summary', async (request, reply) => {
   try {

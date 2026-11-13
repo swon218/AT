@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { createMarketSessions, readSessionEvent, sessionSnapshot } from './marketSession.js'
+import { invalidateCredentials } from './credentialInvalidation.js'
+import { createMarketRequestContext } from './marketContext.js'
 
 const at = text => Date.parse(`2026-10-12T${text}+09:00`)
 const packet = (code, time = '090000', remaining = '000000') => ({ trnm: 'REAL', data: [{ type: '0s', values: { '215': code, '20': time, '214': remaining } }] })
@@ -76,4 +78,76 @@ test('사용자 및 키 변경 연결을 분리하고 비활성 연결과 종료
   const late = createMarketSessions({ makeSocket: () => { throw new Error('must not create after close') } })
   late.get({ cacheScope: 'late', getRealtimeAuth: () => new Promise(r => { resolve = r }) })
   late.close(); resolve({ token: 'late' }); await flush()
+})
+
+test('키움 키 삭제는 해당 회원의 장 상태 연결과 재연결 자격증명만 제거한다', async t => {
+  const sockets = []
+  const hub = createMarketSessions({ now: () => at('09:00:00'), makeSocket: () => { const socket = new Socket(); sockets.push(socket); return socket } })
+  t.after(() => hub.close())
+  const auth = scope => ({ cacheScope: scope, getRealtimeAuth: async () => ({ token: `fixture-${scope}` }) })
+  hub.get(auth('user:one:old')); hub.get(auth('user:two:old')); hub.get(auth('operator'))
+  await flush(); sockets.forEach(socket => socket.ready())
+  invalidateCredentials('one', ['toss'])
+  assert.ok(sockets.every(socket => !socket.terminated))
+  invalidateCredentials('one', ['kiwoom'])
+  assert.equal(sockets[0].terminated, true)
+  assert.equal(sockets[1].terminated, false)
+  assert.equal(sockets[2].terminated, false)
+  let freshAuthCalls = 0
+  hub.get({ cacheScope: 'user:one:old', getRealtimeAuth: async () => { freshAuthCalls++; return { token: 'fixture-new-registration' } } })
+  await flush(); sockets[3].ready()
+  assert.equal(freshAuthCalls, 1, 'the removed entry cannot reuse its old getRealtimeAuth closure')
+  assert.equal(sockets[3].sent[0].token, 'fixture-new-registration')
+})
+
+test('삭제 직전 시작한 토큰 발급이 늦게 끝나도 장 상태 연결을 되살리지 않는다', async t => {
+  let finish, sockets = 0
+  const hub = createMarketSessions({ makeSocket: () => { sockets++; return new Socket() } })
+  t.after(() => hub.close())
+  hub.get({ cacheScope: 'user:late-owner:old', getRealtimeAuth: () => new Promise(resolve => { finish = resolve }) })
+  invalidateCredentials('late-owner', ['kiwoom'])
+  finish({ token: 'fixture-late-token' })
+  await flush()
+  assert.equal(sockets, 0)
+})
+
+test('동일 키의 새 인증 요청은 재연결에 만료된 이전 회원 세션을 사용하지 않는다', async t => {
+  let clock = at('09:00:00'), oldCalls = 0, newCalls = 0
+  const sockets = [], scope = 'user:refresh-owner:same-key'
+  const hub = createMarketSessions({ now: () => clock, makeSocket: () => { const socket = new Socket(); sockets.push(socket); return socket } })
+  t.after(() => hub.close())
+  hub.get({ cacheScope: scope, getRealtimeAuth: async () => { oldCalls++; return { token: 'fixture-old-session' } } })
+  await flush(); sockets[0].ready()
+  hub.get({ cacheScope: scope, getRealtimeAuth: async () => { newCalls++; return { token: 'fixture-refreshed-session' } } })
+  sockets[0].emit('close'); clock += 5001
+  hub.get({ cacheScope: scope, getRealtimeAuth: async () => { newCalls++; return { token: 'fixture-refreshed-session' } } })
+  await flush(); sockets[1].ready()
+  assert.equal(oldCalls, 1)
+  assert.equal(newCalls, 1)
+  assert.equal(sockets[1].sent[0].token, 'fixture-refreshed-session')
+})
+
+test('삭제 이벤트보다 늦게 도착한 과거 HTTP 문맥도 삭제된 키로 소켓을 만들 수 없다', async t => {
+  let current = { user: { id: 'late-context-owner' }, status: { kiwoomConfigured: true }, credentials: { kiwoomAppKey: 'fixture-key', kiwoomSecretKey: 'fixture-secret' } }
+  let tokenCalls = 0, sockets = 0, clock = at('09:00:00')
+  const context = createMarketRequestContext({ authenticate: async () => current, realtime: async () => { tokenCalls++; return { token: 'fixture-token' } } })
+  const oldContext = await context({ headers: { authorization: 'Bearer fixture-session' } })
+  const hub = createMarketSessions({ now: () => clock, makeSocket: () => { sockets++; return new Socket() } })
+  t.after(() => hub.close())
+  current = { ...current, status: { kiwoomConfigured: false }, credentials: {} }
+  invalidateCredentials('late-context-owner', ['kiwoom'])
+  hub.get(oldContext)
+  await flush()
+  assert.equal(sockets, 0)
+  assert.equal(tokenCalls, 0)
+  current = { ...current, status: { kiwoomConfigured: true }, credentials: { kiwoomAppKey: 'fixture-rotated-key', kiwoomSecretKey: 'fixture-rotated-secret' } }
+  clock += 5001
+  hub.get(oldContext)
+  await flush()
+  assert.equal(sockets, 0)
+  assert.equal(tokenCalls, 0)
+  hub.get(await context({ headers: { authorization: 'Bearer fixture-refreshed-session' } }))
+  await flush()
+  assert.equal(sockets, 1)
+  assert.equal(tokenCalls, 1)
 })

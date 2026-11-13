@@ -27,7 +27,7 @@ import AssetsPage from './components/AssetsPage'
 import ConfirmDialog from './components/ConfirmDialog'
 import { initialRecoveryRequest, supabase } from './services/supabaseClient'
 import { clearRecoveryUrl, initializePasswordRecovery, RECOVERY_LINK_ERROR } from './services/passwordRecovery'
-import { getIntegrationSettings } from './services/accountSettingsApi'
+import { getIntegrationSettings, subscribeIntegrationChanges } from './services/accountSettingsApi'
 import { getBrokerAccountSummary } from './services/kiwoomAccountApi'
 import useIndicatorDraft from './hooks/useIndicatorDraft'
 import useStrategies from './hooks/useStrategies'
@@ -167,6 +167,7 @@ function App() {
   const screen = useScreener(currentUser?.id)
   const [nickname, setNickname] = useState('')
   const [integrationStatus, setIntegrationStatus] = useState({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false })
+  const integrationSync = useRef(null)
   const [orderBroker, setOrderBroker] = useState('kiwoom')
   const [orderAccountId, setOrderAccountId] = useState('')
   const [orderAccountSummary, setOrderAccountSummary] = useState(null)
@@ -186,9 +187,43 @@ function App() {
   const watchlistQuotes = useWatchlistQuotes(watchlist.rows, searchCredentialScope, activePage === 'dashboard' && rankingType === 'favorites')
 
   const onIntegrationStatusChange = (status) => {
+    integrationSync.current?.accept(status)
     setIntegrationStatus(status)
     setIntegrationVersion(version => version + 1)
   }
+
+  useEffect(() => {
+    const userId=currentUser?.id
+    setIntegrationStatus({kiwoomConfigured:false,tossConfigured:false,nhConfigured:false,kbConfigured:false,telegramConfigured:false})
+    if(!userId)return undefined
+    let active=true,controller=null,sequence=0,knownVersion
+    const pending=new Set()
+    const resume=()=>{if(pending.size){const done=[...pending];pending.clear();brokerConnections.mutation(done,false)}}
+    const sync={accept(status){sequence++;controller?.abort();knownVersion=status.settingsVersion;resume()}}
+    integrationSync.current=sync
+    const refresh=async(changed,announced=false)=>{
+      controller?.abort();controller=new AbortController()
+      const signal=controller.signal,requestSequence=++sequence
+      const affected=changed?.filter(b=>BROKERS.some(v=>v.id===b))||[]
+      affected.forEach(b=>pending.add(b))
+      if(pending.size)brokerConnections.mutation([...pending],true)
+      try{
+        const next=await getIntegrationSettings(userId,signal)
+        if(!active||signal.aborted||sequence!==requestSequence)return
+        const different=knownVersion!==undefined&&knownVersion!==next.settingsVersion
+        if(different&&!pending.size){BROKERS.forEach(b=>pending.add(b.id));brokerConnections.mutation([...pending],true)}
+        setIntegrationStatus(next)
+        if(announced||different)setIntegrationVersion(v=>v+1)
+        knownVersion=next.settingsVersion
+      }catch{/* Keep prior saved metadata; private requests still revalidate on the server. */}
+      finally{if(active&&!signal.aborted&&sequence===requestSequence)resume()}
+    }
+    const unsubscribe=subscribeIntegrationChanges(event=>{if(event.userId===userId)void refresh(event.brokers,true)})
+    const focus=()=>void refresh()
+    window.addEventListener('focus',focus)
+    void refresh()
+    return()=>{active=false;controller?.abort();resume();if(integrationSync.current===sync)integrationSync.current=null;unsubscribe();window.removeEventListener('focus',focus)}
+  },[currentUser?.id,brokerConnections.mutation])
 
   const openPage = (page, historyTarget = null) => {
     setOrderHistoryTarget(historyTarget)
@@ -310,18 +345,6 @@ function App() {
       })
     return () => controller.abort()
   }, [activePage, selected?.code, searchCredentialScope, selectionRevision])
-
-  useEffect(() => {
-    let active = true
-    if (!currentUser) {
-      setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false })
-      return () => { active = false }
-    }
-    getIntegrationSettings()
-      .then((status) => active && setIntegrationStatus(status))
-      .catch(() => active && setIntegrationStatus({ kiwoomConfigured: false, tossConfigured: false, nhConfigured: false, kbConfigured: false, telegramConfigured: false }))
-    return () => { active = false }
-  }, [currentUser])
 
   useEffect(() => {
     let active = true

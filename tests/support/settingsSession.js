@@ -1,7 +1,9 @@
 let owner='fixture-a'
+let authDelay=0
 export const fixtureOwner=value=>{owner=value}
+export const fixtureAuthDelay=value=>{authDelay=value}
 export const supabase={
-  auth:{getSession:async()=>({data:{session:{user:{id:owner},access_token:owner}}})},
+  auth:{getSession:async()=>{if(authDelay)await new Promise(resolve=>setTimeout(resolve,authDelay));return {data:{session:{user:{id:owner},access_token:owner}}}}},
   from:table=>{
     if(table!=='profiles')throw Error('Fixture profiles only')
     let data,who

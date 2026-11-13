@@ -5,27 +5,16 @@ import { PGlite } from '@electric-sql/pglite'
 import { config } from './config.js'
 import { updateAccountSettings, getAccountSettings, getAuthenticatedCredentials } from './accountSettings.js'
 import { decryptCredentials } from './credentialCrypto.js'
+import { createCredentialStore } from '../tests/support/credentialStore.js'
 
 test('NH/KB key updates are encrypted per user, preserve existing keys and only return status', async () => {
   const previous = config.credentialEncryptionKey
   config.credentialEncryptionKey = 'a'.repeat(64)
   try {
-    const rows = new Map(), calls = []
-    const client = { from: table => {
-      assert.equal(table, 'user_integrations')
-      let id, row
-      const chain = {
-        select: fields => { calls.push(fields); return chain },
-        eq: (field, value) => { assert.equal(field, 'user_id'); id = value; return chain },
-        maybeSingle: async () => ({ data: rows.get(id) || null }),
-        upsert: value => { row = value; rows.set(value.user_id, value); return chain },
-        single: async () => ({ data: row }),
-      }
-      return chain
-    } }
+    const store = createCredentialStore(), {rows,client} = store
     const dependencies = id => ({ client, authenticate: async () => ({ id }) })
-    await updateAccountSettings({ body: { kiwoomAppKey: 'old-key', kiwoomSecretKey: 'old-secret' } }, dependencies('user-a'))
-    const status = await updateAccountSettings({ body: { nhAppKey: 'nh-key', nhSecretKey: 'nh-secret', kbAppKey: 'kb-key', kbSecretKey: 'kb-secret', user_id: 'user-b' } }, dependencies('user-a'))
+    await updateAccountSettings({ body: { kiwoomAppKey: 'old-key', kiwoomSecretKey: 'old-secret', expectedVersion:null } }, dependencies('user-a'))
+    const status = await updateAccountSettings({ body: { nhAppKey: 'nh-key', nhSecretKey: 'nh-secret', kbAppKey: 'kb-key', kbSecretKey: 'kb-secret', user_id: 'user-b', expectedVersion:store.version('user-a') } }, dependencies('user-a'))
     assert.equal(status.nhConfigured, true); assert.equal(status.kbConfigured, true); assert.equal(status.kiwoomConfigured, true)
     assert(!JSON.stringify(status).includes('secret'))
     const stored = rows.get('user-a')
@@ -36,10 +25,9 @@ test('NH/KB key updates are encrypted per user, preserve existing keys and only 
     assert.equal(credentials.nhSecretKey, 'nh-secret')
     assert.equal(credentials.kbSecretKey, 'kb-secret')
     assert.throws(() => decryptCredentials('user-b', { ciphertext: stored.credentials_ciphertext, iv: stored.credentials_iv, authTag: stored.credentials_auth_tag }))
-    await updateAccountSettings({ body: { nhSecretKey: 'new-nh-secret', kbAppKey: '' } }, dependencies('user-a'))
-    assert.equal((await getAuthenticatedCredentials({}, dependencies('user-a'))).credentials.nhSecretKey, 'new-nh-secret')
+    await assert.rejects(updateAccountSettings({ body: { nhSecretKey: 'new-nh-secret', kbAppKey: '', expectedVersion:store.version('user-a') } }, dependencies('user-a')), {code:'credentials_already_saved'})
+    assert.equal((await getAuthenticatedCredentials({}, dependencies('user-a'))).credentials.nhSecretKey, 'nh-secret')
     assert.equal((await getAccountSettings({}, dependencies('user-b'))).nhConfigured, false)
-    assert(calls.some(value => value.includes('nh_configured,kb_configured')))
     await assert.rejects(updateAccountSettings({ body: { nhAppKey: 'blocked' } }, { client, authenticate: async () => { throw new Error('unauthenticated') } }), /unauthenticated/)
   } finally { config.credentialEncryptionKey = previous }
 })

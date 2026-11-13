@@ -5,7 +5,8 @@ import { createAccountProbe, createAccountConnectionHandler, registerAccountConn
 import { createAccountConnectionCache } from './accountConnectionCache.js'
 import { createKbClient } from './kbClient.js'
 import { createNhClient } from './nhClient.js'
-import { updateAccountSettings, getAuthenticatedCredentials } from './accountSettings.js'
+import { updateAccountSettings, deleteAccountBroker, getAuthenticatedCredentials } from './accountSettings.js'
+import { createCredentialStore } from '../tests/support/credentialStore.js'
 import { config } from './config.js'
 import { requestKiwoomWithCredentials } from './kiwoomClient.js'
 import { requestTossWithCredentials } from './tossClient.js'
@@ -143,28 +144,22 @@ test('replacement/deletion during a read rejects late success and cannot resurre
   }
 })
 
-test('settings delete only the authenticated broker keys and invalidate even identical-key saves', async () => {
+test('confirmed settings deletion invalidates pending evidence and preserves other broker keys', async () => {
   const previous = config.credentialEncryptionKey
   config.credentialEncryptionKey = 'a'.repeat(64)
   try {
-    const rows = new Map()
-    const client = { from() {
-      let id, row
-      const q = { select: () => q, eq: (_, value) => { id = value; return q }, maybeSingle: async () => ({ data: rows.get(id) }),
-        upsert: value => { row = value; rows.set(value.user_id, value); return q }, single: async () => ({ data: row }) }
-      return q
-    } }
+    const store=createCredentialStore(),{rows,client}=store
     const deps = { client, authenticate: async () => ({ id: 'alice' }) }
-    await updateAccountSettings({ body: owner().credentials }, deps)
+    await updateAccountSettings({ body: {...owner().credentials,expectedVersion:null} }, deps)
     const handler = createAccountConnectionHandler({ authenticate: request => getAuthenticatedCredentials(request, deps), probe: async () => true })
     assert.equal((await handler({}, 'kiwoom')).connected, true)
     const gate = deferred()
     const { accountConnectionCache } = await import('./accountConnectionCache.js')
     const pending = accountConnectionCache.check('alice', 'kiwoom', 'old-digest', () => gate.promise)
-    await updateAccountSettings({ body: { kiwoomAppKey: 'alice-kiwoom' } }, deps)
+    await assert.rejects(updateAccountSettings({ body: { kiwoomAppKey: 'alice-kiwoom',expectedVersion:store.version('alice') } }, deps),{code:'credentials_already_saved'})
+    const status = await deleteAccountBroker({params:{broker:'kiwoom'}, body:{expectedVersion:store.version('alice'),user_id:'bob'}},deps)
     gate.resolve(true)
     assert.equal((await pending).current(), false)
-    const status = await updateAccountSettings({ body: { clearBrokers: ['kiwoom'], user_id: 'bob' } }, deps)
     assert.equal(status.kiwoomConfigured, false); assert.equal(status.kbConfigured, true)
     const account = await getAuthenticatedCredentials({}, deps)
     assert.equal(account.credentials.kiwoomAppKey, undefined); assert.equal(account.credentials.kiwoomSecretKey, undefined)

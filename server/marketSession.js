@@ -1,5 +1,6 @@
 import WebSocket from 'ws'
 import { config } from './config.js'
+import { subscribeCredentialInvalidation } from './credentialInvalidation.js'
 
 const states = {
   '0': ['장 시작 전', 'waiting'], '3': ['정규장 거래 중', 'open'], '2': ['마감 동시호가', 'auction'],
@@ -52,6 +53,16 @@ export function createMarketSessions({ now = Date.now, makeSocket = url => new W
     entry.socket = null
     entry.starting = false
   }
+  const unsubscribe = subscribeCredentialInvalidation(({ userId, brokers }) => {
+    if (!brokers.includes('kiwoom')) return
+    const prefix = `user:${userId}:`
+    for (const [scope, entry] of entries) if (scope.startsWith(prefix)) {
+      // Removing the entry also removes it from the automatic reconnect loop.
+      // The version guard rejects a token issuance that finishes after deletion.
+      disconnect(entry)
+      entries.delete(scope)
+    }
+  })
   const prune = () => {
     for (const [key, entry] of entries) if (now() - entry.touched > idleMs) { disconnect(entry); entries.delete(key) }
   }
@@ -124,10 +135,13 @@ export function createMarketSessions({ now = Date.now, makeSocket = url => new W
         entry = { touched: now(), lastMessage: now(), connection: 'connecting', socket: null, event: null, version: 0, failures: 0, retryAt: 0, getAuth: auth.getRealtimeAuth }
         entries.set(auth.cacheScope, entry)
       }
+      // Keep the newest authenticated HTTP context for future reconnects. A
+      // prior bearer session may expire even when the credential hash is equal.
+      entry.getAuth = auth.getRealtimeAuth
       entry.touched = now()
       void connect(entry)
       return sessionSnapshot(entry, now())
     },
-    close() { closed = true; clearInterval(timer); for (const entry of entries.values()) disconnect(entry); entries.clear() },
+    close() { closed = true; unsubscribe(); clearInterval(timer); for (const entry of entries.values()) disconnect(entry); entries.clear() },
   }
 }
