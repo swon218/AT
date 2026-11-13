@@ -6,6 +6,7 @@ import { getCandles } from './charts.js'
 import { registerNewsRoutes } from './news.js'
 import { registerAccountConnectionRoutes } from './accountConnections.js'
 import { registerRecentOrderRoutes } from './recentOrders.js'
+import { registerOpenOrderRoutes } from './openOrders.js'
 import { getAccountSettings, getAuthenticatedCredentials, updateAccountSettings } from './accountSettings.js'
 import { placeKiwoomOrder } from './orders.js'
 import { getKiwoomAccountSummary } from './kiwoomAccount.js'
@@ -43,6 +44,7 @@ registerMarketCalendarRoutes(app)
 registerExchangeRateRoutes(app)
 registerAddedBrokerRoutes(app)
 registerRecentOrderRoutes(app)
+registerOpenOrderRoutes(app)
 registerAgentRoutes(app)
 registerAdminEval(app)
 registerScreenRoutes(app)
@@ -151,6 +153,13 @@ app.post('/api/orders/toss', async (request, reply) => {
     request.log.error({ error: error.message }, 'Toss order failed')
     return reply.code(error.statusCode || 502).send({ error: error.message })
   }
+})
+
+let closing=false
+for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
+  if(closing)return
+  closing=true
+  void app.close().then(()=>process.exit(0),()=>process.exit(1))
 })
 
 try {

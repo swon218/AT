@@ -62,6 +62,7 @@ async function getAccessToken({ apiKey, secretKey, forceRefresh = false }) {
 }
 
 export async function requestTossWithCredentials({ apiKey, secretKey, path, method = 'GET', query, body, accountSeq, retry = true, signal }) {
+  signal=signal||AbortSignal.timeout(20000)
   const { token, key } = await getAccessToken({ apiKey, secretKey }).catch(error => {
     error.tossStage = 'token'
     throw error
@@ -83,7 +84,7 @@ export async function requestTossWithCredentials({ apiKey, secretKey, path, meth
   })
   if (response.status === 401) {
     if (tokenCache.get(key)?.token === token) tokenCache.delete(key)
-    if (retry) return requestTossWithCredentials({ apiKey, secretKey, path, method, query, body, accountSeq, retry: false, signal })
+    if (retry&&method==='GET') return requestTossWithCredentials({ apiKey, secretKey, path, method, query, body, accountSeq, retry: false, signal })
   }
   return readJson(response, `토스 ${method} ${path}`)
 }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": { "api/screener.js": { "maxDuration": 30 }, "api/agent-proxy.js": { "maxDuration": 45 } },
+  "functions": { "api/screener.js": { "maxDuration": 30 }, "api/agent-proxy.js": { "maxDuration": 45 }, "api/order-management.js": { "maxDuration": 45 } },
   "rewrites": [
     {
       "source": "/api/agent/:atlas_route*",

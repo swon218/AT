@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { INDICATOR_CATALOG, INDICATOR_LIMIT } from '../utils/indicators'
 import { validAdvancedConfig } from '../utils/advancedIndicatorCatalog'
 import { placeBrokerOrder } from '../services/orderApi'
+import UnfilledOrdersPanel from './UnfilledOrdersPanel'
 import { BROKERS, getBroker, isBrokerConfigured } from '../utils/brokers'
 
 const onlyNumber = (value) => value.replace(/[^0-9]/g, '')
@@ -59,7 +60,7 @@ function OrderConfirmDialog({ draft, stock, broker, pending, error, onCancel, on
   )
 }
 
-function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountSummary, accountLoading, accountError, onAccountRefresh }) {
+function GeneralOrder({ stock, userId, credentialVersion, accountRef, onAccountChange, authenticated, broker, brokerConfigured, accountSummary, accountLoading, accountError, onAccountRefresh }) {
   const [side, setSide] = useState('buy')
   const [orderSession, setOrderSession] = useState('regular')
   const [priceType, setPriceType] = useState('limit')
@@ -104,7 +105,7 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
     setSubmitError('')
     setSubmitMessage('')
     setValidationMessage('')
-  }, [broker, stock?.code])
+  }, [broker, stock?.code, accountRef])
 
   const openConfirmation = () => {
     if (!canSubmit) {
@@ -149,7 +150,7 @@ function GeneralOrder({ stock, authenticated, broker, brokerConfigured, accountS
   if (side === 'open') return (
     <>
       <div className="side-tabs"><button onClick={() => setSide('buy')}>매수</button><button onClick={() => setSide('sell')}>매도</button><button className="active open" onClick={() => setSide('open')}>미체결</button></div>
-      <div className="unfilled-empty"><Info/><span>{getBroker(broker).name} 미체결 주문 조회는 다음 단계에서 연결됩니다.</span></div>
+      <UnfilledOrdersPanel key={`${userId}:${broker}:${credentialVersion}:${accountRef}`} broker={broker} userId={userId} credentialVersion={credentialVersion} accountRef={accountRef} authenticated={authenticated} brokerConfigured={brokerConfigured} onAccountChange={onAccountChange} onAccountRefresh={onAccountRefresh}/>
       <OrderAccessNotice authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured}/>
     </>
   )
@@ -362,7 +363,7 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
   )
 }
 
-export default function OrderEntryPanel({ stock, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, onAccountChange, accountId = '', accountOptions = [], accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, strategyStorage }) {
+export default function OrderEntryPanel({ stock, userId, credentialVersion, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, onAccountChange, accountId = '', accountOptions = [], accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, strategyStorage }) {
   const [mainTab, setMainTab] = useState('order')
   const [mode, setMode] = useState('general')
   const brokerConfigured = isBrokerConfigured(integrationStatus, broker)
@@ -373,7 +374,7 @@ export default function OrderEntryPanel({ stock, authenticated = false, integrat
       {!indicatorsOnly && broker === 'nh' && authenticated && brokerConfigured && accountOptions.length > 0 && <label className="broker-account-select">주문 계좌<select value={accountId || (accountOptions.length === 1 ? accountOptions[0].id : '')} onChange={event => onAccountChange?.(event.target.value)} disabled={accountLoading}><option value="" disabled>계좌 선택</option>{accountOptions.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}</select></label>}
       {indicatorsOnly || mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/> : <>
         <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
-        {mode === 'general' ? <GeneralOrder key={`${broker}:${accountId}`} stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/>}
+        {mode === 'general' ? <GeneralOrder key={broker} userId={userId} credentialVersion={credentialVersion} accountRef={accountId} onAccountChange={onAccountChange} stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/>}
       </>}
     </section>
   )

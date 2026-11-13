@@ -4,7 +4,7 @@ import { createThrottle, createTokenCache, fetchJson, httpError } from './broker
 export function validateKbResponse(body) {
   const h = body.dataHeader
   if (!h || String(h.resultCode) !== '200' || h.processFlag !== 'A') {
-    throw Object.assign(httpError(`KB API: ${h?.processMessage || h?.resultMessage || '응답의 처리 결과를 확인할 수 없습니다.'}`), { brokerCode: h?.resultCode })
+    throw Object.assign(httpError(`KB API: ${h?.processMessage || h?.resultMessage || '응답의 처리 결과를 확인할 수 없습니다.'}`), { brokerCode: h?.resultCode,definitiveRejection:Boolean(h&&h.resultCode!=null&&h.processFlag) })
   }
   if (!body.dataBody || typeof body.dataBody !== 'object') throw httpError('KB API 응답에 데이터가 없습니다.')
   return body.dataBody
@@ -25,7 +25,7 @@ export function createKbClient({ fetcher = fetch, ip = config.kbClientIp, mac = 
     return { token: data.access_token, expiresIn: data.expires_in }
   })
   async function request(auth, code, input, { write = false, retry = true, signal } = {}) {
-    if (!['ssam1801', 'ssam1802', 'ssqm1801', 'ssqm1802', 'ssqm2952', 'ssqm2341', 'ivs11560', 'ivu10140'].includes(code)) throw httpError('지원하지 않는 KB API 경로입니다.', 400)
+    if (!['ssam1801', 'ssam1802', 'ssam1805','ssam1806','ssqm1801', 'ssqm1802', 'ssqm2952', 'ssqm2341', 'siqm4900', 'ivs11560', 'ivu10140'].includes(code)) throw httpError('지원하지 않는 KB API 경로입니다.', 400)
     const dataHeader = header(), token = await tokens.get(auth).catch(error => { error.orderStage = 'token'; throw error })
     await throttle(auth)
     signal?.throwIfAborted()

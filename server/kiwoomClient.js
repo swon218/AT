@@ -1,5 +1,6 @@
 import { config } from './config.js'
 import { createHash } from 'node:crypto'
+import {kiwoomFlow} from './kiwoomFlow.js'
 
 const tokenCache = new Map()
 const INVALID_TOKEN_CODES = new Set([8003, 8005, 8006, 8009, 8015, 8016])
@@ -26,7 +27,9 @@ async function readJson(response, label) {
     const error = new Error(body.return_msg || body.message || `${label} 요청에 실패했습니다. (${response.status})`)
     error.statusCode = response.status
     error.returnCode = normalizeReturnCode(body.return_code)
+    error.definitiveRejection=Boolean(response.ok&&/^\d+$/.test(String(body.return_code))&&String(body.return_code)!=='0')
     error.invalidToken = isInvalidTokenResponse(response, body)
+    if(response.status===429||/유량|요청.*(?:개수|횟수).*(?:초과|제한)|허용.*요청|too many|rate.?limit/i.test(String(body.return_msg||''))){error.statusCode=429;error.invalidToken=false;error.retryAfter=2}
     throw error
   }
   return body
@@ -85,9 +88,18 @@ export async function getKiwoomRealtimeAuth({ appKey = config.kiwoomAppKey, secr
   return { token, invalidate: () => { if (tokenCache.get(cacheKey)?.token === token) tokenCache.delete(cacheKey) } }
 }
 
-export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false, timeoutMs, signal }) {
-  const { token, cacheKey } = await getAccessToken({ appKey, secretKey }).catch(error => { error.orderStage = 'token'; throw error })
+export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false, timeoutMs, signal, rateRetry = true }) {
+  signal=signal&&timeoutMs?AbortSignal.any([signal,AbortSignal.timeout(timeoutMs)]):signal||AbortSignal.timeout(timeoutMs||20000)
+  const write=endpoint==='/api/dostk/ordr'||endpoint==='/api/dostk/crdordr'
+  const pendingToken=getAccessToken({appKey,secretKey})
+  const {token,cacheKey}=await new Promise((resolve,reject)=>{
+    const abort=()=>reject(signal.reason)
+    signal.addEventListener('abort',abort,{once:true})
+    pendingToken.then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort))
+    if(signal.aborted)abort()
+  }).catch(error=>{error.orderStage='token';throw error})
   signal?.throwIfAborted()
+  await kiwoomFlow.wait({appKey,secretKey},apiId,signal)
   try {
     const response = await fetch(`${config.kiwoomHost}${endpoint}`, {
       method: 'POST',
@@ -104,11 +116,15 @@ export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, e
     const payload = await readJson(response, `키움 ${apiId}`)
     return returnPage ? { body: payload, contYn: response.headers.get('cont-yn'), nextKey: response.headers.get('next-key') } : payload
   } catch (error) {
-    if (!retry || !error.invalidToken) throw error
+    if(error.statusCode===429){
+      kiwoomFlow.limited({appKey,secretKey},error.retryAfter)
+      if(!write&&retry&&rateRetry)return requestKiwoomWithCredentials({appKey,secretKey,apiId,endpoint,body,retry,contYn,nextKey,returnPage,signal,rateRetry:false})
+    }
+    if (write || !retry || !error.invalidToken) throw error
 
     const cached = tokenCache.get(cacheKey)
     if (cached?.token === token) tokenCache.delete(cacheKey)
-    return requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry: false, contYn, nextKey, returnPage, timeoutMs, signal })
+    return requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry: false, contYn, nextKey, returnPage, signal, rateRetry })
   }
 }
 

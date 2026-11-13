@@ -8,6 +8,7 @@ import { nhClient } from './nhClient.js'
 import { kbClient } from './kbClient.js'
 import { httpError, validSymbol } from './brokerHttp.js'
 import { storeBrokerOrder } from './brokerOrderStore.js'
+import { accountRef } from './personalBroker.js'
 
 const names = { nh: 'NH투자증권', kb: 'KB증권' }
 function authFrom(account, broker) {
@@ -57,15 +58,22 @@ export function createAddedBrokerHandlers({ settings = config, authenticate = ge
       return { items: await data.candles(broker, symbol, interval, limit, { appKey: settings[`${broker}AppKey`], secretKey: settings[`${broker}SecretKey`] }), sourceBroker: broker, credentialScope: 'operator' }
     },
     async summary(request, broker) {
-      const { auth } = await personal(request, broker)
-      return data.summary(broker, auth, String(request.query?.symbol || ''), String(request.query?.accountId || ''))
+      const { account, auth } = await personal(request, broker)
+      let selected=String(request.query?.accountId || '')
+      if(broker!=='nh')return data.summary(broker,auth,String(request.query?.symbol||''),selected)
+      const accounts=await data.nhAccounts(auth)
+      if(selected){const own=accounts.find(v=>accountRef(account,broker,auth,v.id)===selected||v.id===selected);if(!own)throw httpError('본인 계좌를 다시 선택해 주세요.',400);selected=own.id}
+      const result=await data.summary(broker,auth,String(request.query?.symbol||''),selected)
+      return {...result,accounts:(result.accounts||[]).map((v,i)=>({...v,id:accountRef(account,broker,auth,v.id),label:`NH 계좌 ${i+1}`})),selectedAccountId:result.selectedAccountId?accountRef(account,broker,auth,result.selectedAccountId):''}
     },
     async order(request, broker) {
       const { account, auth } = await personal(request, broker)
       if (!settings[`${broker}OrdersEnabled`]) throw httpError(`VPS에서 ${names[broker]} 주문 기능이 활성화되지 않았습니다.`, 503)
       const order = normalizeAddedOrder(request.body || {})
       if (broker === 'nh') {
-        order.accountId = data.selectAccount(await data.nhAccounts(auth), order.accountId)
+        const own=await data.nhAccounts(auth)
+        const matched=own.find(v=>accountRef(account,broker,auth,v.id)===order.accountId)
+        order.accountId = data.selectAccount(own,matched?.id||order.accountId)
         if (!order.accountId) throw httpError('주문할 NH 계좌를 선택해 주세요.', 400)
       }
       const digest = createHash('sha256').update(JSON.stringify(order)).digest('hex')
