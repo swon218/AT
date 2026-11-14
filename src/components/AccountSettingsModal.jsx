@@ -222,10 +222,11 @@ export default function AccountSettingsModal({ open, user, onClose, onNicknameSa
               const state = brokerSettingsState(broker.id,status,credentials), fields = brokerCredentialFields(broker.id)
               return <section key={broker.id} className="credential-broker-card" aria-label={`${broker.shortName} API 정보`}>
                 <h3>{broker.name}</h3><div className="account-field-grid">{fields.map((field,index) => <SecretField key={field} inputRef={index === 0 ? element => { inputRefs.current[broker.id] = element } : undefined} label={fieldLabels[broker.id][index]} value={credentials[field]} stored={state.stored} disabled={!ready || pending} placeholder={!ready ? '저장 상태 확인 필요' : fieldLabels[broker.id][index]} onChange={value => updateCredential(broker.id,field,value)}/>)}</div>
-                {state.stored && <div className="credential-locked-actions"><p>API 키를 변경하려면 저장된 키를 삭제한 후 다시 등록해 주세요.</p><button type="button" className="credential-delete-button" disabled={!ready || pending} onClick={() => { setMessage(''); setBrokerNotice(null); setDeleteTarget({broker,version:status.settingsVersion}) }}><Trash2 aria-hidden="true"/>{broker.shortName} API 키 삭제</button></div>}
+                {state.stored && <p className="credential-locked-note">API 키를 변경하려면 저장된 키를 삭제한 후 다시 등록해 주세요.</p>}
                 {brokerNotice?.broker === broker.id && <p className={`credential-broker-notice ${brokerNotice.type}`} role="status">{brokerNotice.text}</p>}
               </section>
             })}</div>
+            <div className="credential-delete-actions" role="group" aria-label="증권사별 API 키 삭제">{BROKERS.map(broker => <button key={broker.id} type="button" className="credential-delete-button" disabled={!ready || pending || !brokerIsStored(broker.id,status)} onClick={() => { setMessage(''); setBrokerNotice(null); setDeleteTarget({broker,version:status.settingsVersion}) }}><Trash2 aria-hidden="true"/><span>{broker.shortName} API 키 삭제</span></button>)}</div>
             <p className="credential-delete-note">삭제는 ATLAS의 저장 정보만 제거합니다. 증권사 키 발급 취소나 미체결 주문 취소는 실행하지 않습니다.</p>
           </section>
           <KakaoConnectionSection key={userId} userId={userId}/>
