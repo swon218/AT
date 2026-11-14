@@ -37,7 +37,7 @@ export function evalStore(client) {
     if (!db) throw fail('database_not_configured',503)
     const {data,error} = await db.rpc('atlas_eval_rpc',{action,actor,payload}).abortSignal(AbortSignal.timeout(8000))
     if (error) {
-      const code = ['admin_forbidden','eval_not_found','eval_note_conflict','eval_conflict','eval_busy','eval_invalid','eval_case_not_ready','eval_limit','concurrency_limit','minute_limit'].find(x=>error.message?.includes(x))
+      const code = ['admin_forbidden','eval_not_found','eval_delete_conflict','eval_delete_busy','eval_note_conflict','eval_conflict','eval_busy','eval_invalid','eval_case_not_ready','eval_limit','concurrency_limit','minute_limit'].find(x=>error.message?.includes(x))
       throw fail(code || 'eval_database_unavailable', code==='admin_forbidden'?403:code==='eval_not_found'?404:code?409:503)
     }
     return data
@@ -61,7 +61,7 @@ export function registerAdminEval(app,{store=evalStore(),authenticate=createAgen
     let schema=null
     try {schema=await store('ui_status',owner)}catch{/* Old SQL stays readable; no execution is advertised. */}
     return {seeds,scenarios,datasets:[{id:'atlas-fixed-v1',now:'2026-10-28T08:00:00+09:00',description:'합성 일봉·뉴스·시세·DART 공시·재무 / KST 고정 시각'}],maxBudget:25,maxRepeats:3,perItemBudget:0.25,worker:Date.now()-workerAt<30000?workerInfo:null,
-      features:{questionRows:schema?.version===2,productionExecution:schema?.version===2&&app.hasDecorator('agentProductionRunner')},
+      features:{questionRows:schema?.version===2,questionDeletion:schema?.version===2&&schema?.questionDeletionVersion===1,productionExecution:schema?.version===2&&app.hasDecorator('agentProductionRunner')},
       runtime:app.hasDecorator('agentResearchRuntime')?await app.agentResearchRuntime():null}
   }))
   registerProductionEvaluation(app,{store,guarded,id})

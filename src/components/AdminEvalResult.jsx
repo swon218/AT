@@ -7,17 +7,17 @@ export function EvalJson({title,value}){return <details><summary>{title}</summar
 export function EvalStatus({state}){return <span className={`eval-badge ${state}`}>{evaluationLabels[state]||state||'미실행'}</span>}
 const roleName=id=>architecture.agents.find(row=>row.id===id)?.name||id
 
-function ImprovementNote({item,notes,setNotes,api,onSaved}) {
+function ImprovementNote({item,questionId,notes,setNotes,api,onSaved}) {
   const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('')
   const lock=useRef(false),live=useRef(true)
   useEffect(()=>{live.current=true;return()=>{live.current=false}},[])
   const saved=item.review?.improvement||{text:'',version:0}
-  const draft=notes[item.id]||{text:saved.text,base:saved.text,version:saved.version}
+  const draft=notes[item.id]||{text:saved.text,base:saved.text,version:saved.version,questionId}
   useEffect(()=>{
     setNotes(previous=>{
       const existing=previous[item.id]
       if(existing&&(existing.text!==existing.base||existing.version>=saved.version))return previous
-      return {...previous,[item.id]:{text:saved.text,base:saved.text,version:saved.version}}
+      return {...previous,[item.id]:{text:saved.text,base:saved.text,version:saved.version,questionId}}
     })
   },[item.id,saved.version])
   async function save() {
@@ -27,7 +27,7 @@ function ImprovementNote({item,notes,setNotes,api,onSaved}) {
     try {
       const result=await api(`/items/${item.id}/note`,{method:'POST',body:{version:draft.version,text}})
       if(!live.current)return
-      setNotes(previous=>({...previous,[item.id]:{text:previous[item.id]?.text??text,base:text,version:result.review.improvement.version}}))
+      setNotes(previous=>({...previous,[item.id]:{text:previous[item.id]?.text??text,base:text,version:result.review.improvement.version,questionId}}))
       onSaved(result);setMessage('메모 저장 완료')
     }catch(e){if(live.current)setError(evaluationMessage(e))}
     finally{lock.current=false;if(live.current)setBusy(false)}
@@ -95,5 +95,5 @@ export default function AdminEvalResult({row,api,improvement=false,notes,setNote
       </details>
     </>}
   </div>
-  return improvement?<><td className="eval-executed-question">{question}</td><td>{toolList}</td><td>{body}</td><td>{item?<ImprovementNote key={item.id} item={item} notes={notes} setNotes={setNotes} api={api} onSaved={setItem}/>:<span>상세 조회 후 입력할 수 있습니다.</span>}</td></>:body
+  return improvement?<><td className="eval-executed-question">{question}</td><td>{toolList}</td><td>{body}</td><td>{item?<ImprovementNote key={item.id} item={item} questionId={row.id} notes={notes} setNotes={setNotes} api={api} onSaved={setItem}/>:<span>상세 조회 후 입력할 수 있습니다.</span>}</td></>:body
 }

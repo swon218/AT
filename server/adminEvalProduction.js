@@ -19,6 +19,18 @@ export function registerProductionEvaluation(app,{store,guarded,id}) {
     if(!only(req.query,['view','page'])||!['all','executed'].includes(req.query.view||'all')||!/^\d{1,2}$/.test(String(req.query.page||1))||Number(req.query.page||1)<1||Number(req.query.page||1)>30)throw fail('eval_invalid')
     return store('workspace',owner,{view:req.query.view||'all',page:Number(req.query.page||1)})
   }))
+  app.get('/api/agent/admin/questions/selection',guarded((req,owner)=>{
+    if(!only(req.query,[]))throw fail('eval_invalid')
+    return store('question_selection',owner)
+  }))
+  app.post('/api/agent/admin/questions/delete',{bodyLimit:26000},guarded((req,owner)=>{
+    const b=req.body
+    if(!only(req.query,[])||!only(b,['questions'])||!Array.isArray(b.questions)||b.questions.length<1||b.questions.length>300
+      ||b.questions.some(question=>!only(question,['id','revision'])||typeof question.id!=='string'||!uuid.test(question.id)
+        ||!Number.isInteger(question.revision)||question.revision<1||question.revision>2147483647)
+      ||new Set(b.questions.map(question=>question.id.toLowerCase())).size!==b.questions.length)throw fail('eval_invalid')
+    return store('delete_questions',owner,{questions:b.questions.map(({id,revision})=>({id:id.toLowerCase(),revision}))})
+  }))
   app.put('/api/agent/admin/questions/:id',{bodyLimit:26000},guarded((req,owner)=>{
     const b=req.body
     if(!only(b,['revision','question'])||!Number.isInteger(b.revision)||b.revision<0||typeof b.question!=='string'||b.question.length>6000)throw fail('eval_invalid')
