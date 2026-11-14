@@ -1,7 +1,7 @@
 .kakao-status,
 .kakao-note {
   margin: 0;
-  color: var(--text-primary);
+  color: var(--text-primary, #dbe7fb);
   font-size: 13px;
   line-height: 1.55;
   overflow-wrap: anywhere;
@@ -10,13 +10,13 @@
 .kakao-status span,
 .kakao-note {
   display: block;
-  color: var(--text-secondary);
+  color: var(--text-secondary, #9fb0c5);
   font-size: 12px;
 }
 
 .kakao-status:focus-visible,
 .kakao-actions button:focus-visible {
-  outline: 2px solid var(--tone-accent);
+  outline: 2px solid var(--focus-ring, var(--tone-accent, #4b86ff));
   outline-offset: 2px;
 }
 
@@ -34,18 +34,18 @@
   min-height: 40px;
   max-width: 100%;
   padding: 6px 12px;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-default, #293f5b);
   border-radius: 8px;
-  background: var(--surface-raised);
-  color: var(--text-primary);
+  background: var(--surface-raised, #101f33);
+  color: var(--text-primary, #dbe7fb);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 
 .kakao-actions button:not(:disabled):hover {
-  background: var(--surface-hover);
-  border-color: var(--tone-accent);
+  background: var(--surface-hover, #172b45);
+  border-color: var(--tone-accent, #4b86ff);
 }
 
 .kakao-actions button:disabled {
