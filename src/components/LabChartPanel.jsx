@@ -8,7 +8,7 @@ import '../lab.css'
 
 const EMPTY = []
 export default function LabChartPanel({ workspace, indicators, strategyName, settings, onSettingsChange }) {
-  const { selection, catalog, catalogError, catalogMessage, initialError, refreshVersion, refreshData } = workspace
+  const { selection, catalogError, catalogMessage, initialError, refreshVersion, refreshData } = workspace
   const symbol = selection?.code || ''
   const [result, setResult] = useState(null)
   const current = result?.selection === selection && result?.refreshVersion === refreshVersion ? result : null
@@ -45,7 +45,6 @@ export default function LabChartPanel({ workspace, indicators, strategyName, set
     {initialError && <p className="lab-warning" role="status">{initialError}</p>}
     {catalogError && <p className="lab-error" role="alert">{catalogError}</p>}
     {!catalogError && catalogMessage && <p className="lab-warning">{catalogMessage}</p>}
-    {catalog?.run?.failed > 0 && <p className="lab-warning">최근 수집: 성공 {catalog.run.succeeded}개 · 실패/미완료 {catalog.run.failed}개. 기존에 저장된 일봉을 표시합니다.{catalog.run.message && ` ${catalog.run.message}`}</p>}
     {activeSymbol && <div className="lab-data-meta"><span>{activeSymbol.source === 'FDR:NAVER' ? 'FinanceDataReader · 네이버 일봉' : 'FinanceDataReader · KRX 일봉'}</span><span>{candles[0]?.time} ~ {last?.time} · 사용 가능 {candles.filter(c => c.quality !== 'quarantined').length.toLocaleString()}개</span><span>수집 {activeSymbol.updated_at?.replace('T', ' ').slice(0, 19)} KST</span></div>}
     {activeSymbol?.error && !activeSymbol.error.startsWith('OHLC quarantine:') && <p className="lab-warning">최근 갱신 실패: {activeSymbol.error}</p>}
     {!!(quality?.corrected || quality?.quarantined) && <div className="lab-quality">
