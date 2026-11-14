@@ -1,0 +1,42 @@
+.strategy-builder-tools { flex:0 0 auto; margin-top:12px; }
+.strategy-builder-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.strategy-builder-actions button,.strategy-entry-button { min-height:32px; padding:5px 8px; border:1px solid var(--border-default,#344962); border-radius:6px; background:var(--surface-raised,#15253a); color:var(--text-primary,#dce8fa); font-size:11px; font-weight:500; cursor:pointer; }
+.strategy-builder-actions button { display:flex; justify-content:center; align-items:center; gap:5px; }
+.strategy-builder-actions svg { width:13px; height:13px; }
+.indicator-config-title { flex-wrap:wrap; }
+.indicator-config-title .strategy-entry-button { margin-left:0; min-height:26px; padding:3px 6px; font-size:10px; }
+.strategy-entry-summary { margin:7px 0 0; color:var(--text-secondary,#9fb1c9); font-size:10px; line-height:1.6; overflow-wrap:anywhere; }
+.strategy-entry-summary.enabled { color:var(--tone-success,#31c297); }
+.strategy-definition-summary { flex:0 0 auto; padding:9px; border:1px solid var(--border-default,#344962); border-radius:7px; font-size:11px; line-height:1.6; color:var(--text-secondary,#9fb1c9); }
+.strategy-definition-summary label { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.strategy-definition-summary select { min-width:0; max-width:180px; padding:5px; border:1px solid var(--border-default,#344962); border-radius:5px; background:var(--surface-field,#0b192a); color:var(--text-primary,#dce8fa); font-size:11px; }
+.strategy-definition-summary p { margin:6px 0 0; }
+.strategy-definition-summary strong { font-weight:600; color:var(--text-primary,#dce8fa); }
+.strategy-readiness-list { margin:6px 0 0; padding-left:18px; }
+.strategy-readiness-list li { overflow-wrap:anywhere; }
+.strategy-definition-summary.ready { border-color:var(--tone-success,#31c297); }
+.strategy-editor-dialog button:focus-visible,.strategy-editor-dialog input:focus-visible,.strategy-editor-dialog select:focus-visible,.strategy-builder-actions button:focus-visible,.strategy-entry-button:focus-visible,.strategy-definition-summary select:focus-visible { outline:2px solid var(--tone-accent,#4b86ff); outline-offset:2px; }
+.strategy-dialog-backdrop { position:fixed; inset:0; z-index:450; display:flex; align-items:center; justify-content:center; padding:16px; background:var(--overlay,rgba(0,8,20,.7)); }
+.strategy-editor-dialog { min-width:0; width:min(520px,100%); max-height:calc(100dvh - 32px); overflow-y:auto; overscroll-behavior:contain; padding:18px; border:1px solid var(--border-default,#344962); border-radius:12px; background:var(--surface-panel,#0b192a); color:var(--text-primary,#dce8fa); box-shadow:0 20px 65px var(--shadow-color,#0008); }
+.strategy-dialog-heading { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+.strategy-dialog-heading h2 { min-width:0; margin:0; font-size:15px; font-weight:600; line-height:1.5; }
+.strategy-dialog-heading button { display:grid; place-items:center; flex:0 0 30px; height:30px; margin-left:auto; padding:0; border:1px solid var(--border-default,#344962); border-radius:6px; background:transparent; color:var(--text-secondary,#9fb1c9); cursor:pointer; }
+.strategy-dialog-heading svg { width:16px; height:16px; }
+.strategy-dialog-note { margin:8px 0 12px; color:var(--text-secondary,#9fb1c9); font-size:11px; line-height:1.65; overflow-wrap:anywhere; }
+.strategy-picker-search { display:flex; align-items:center; gap:8px; min-width:0; padding:0 10px; border:1px solid var(--border-default,#344962); border-radius:7px; background:var(--surface-field,#071426); }
+.strategy-picker-search>svg { width:15px; flex:0 0 auto; color:var(--text-muted,#8298b4); }
+.strategy-picker-search .sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; white-space:nowrap; clip-path:inset(50%); }
+.strategy-picker-search input { min-width:0; width:100%; min-height:38px; padding:8px 0; border:0; background:transparent; color:var(--text-primary,#dce8fa); font-size:12px; }
+.strategy-picker-results { max-height:min(440px,55dvh); overflow-y:auto; margin-top:12px; }
+.strategy-condition-toggle { display:flex; align-items:center; gap:8px; color:var(--text-primary,#dce8fa); font-size:12px; }
+.strategy-condition-toggle input { width:17px; height:17px; accent-color:var(--tone-accent,#4b86ff); }
+.strategy-condition-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:12px 0; padding:12px; border:1px solid var(--border-default,#344962); border-radius:7px; }
+.strategy-condition-fields legend { padding:0 5px; color:var(--text-secondary,#9fb1c9); font-size:11px; }
+.strategy-condition-fields label { display:flex; min-width:0; flex-direction:column; gap:6px; color:var(--text-secondary,#9fb1c9); font-size:11px; }
+.strategy-condition-fields input,.strategy-condition-fields select { min-width:0; width:100%; min-height:36px; padding:7px 8px; border:1px solid var(--border-default,#344962); border-radius:6px; background:var(--surface-field,#071426); color:var(--text-primary,#dce8fa); font-size:12px; }
+.strategy-condition-fields:disabled { opacity:.6; }
+.strategy-condition-preview { padding:9px 11px; border-radius:6px; background:var(--surface-raised,#15253a); color:var(--text-primary,#dce8fa); font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
+.strategy-dialog-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+.strategy-dialog-actions button { min-height:36px; min-width:78px; padding:7px 12px; border:1px solid var(--border-default,#344962); border-radius:7px; background:var(--surface-raised,#15253a); color:var(--text-primary,#dce8fa); font-size:12px; font-weight:500; cursor:pointer; }
+.strategy-dialog-actions button.primary { border-color:var(--fill-success,#079f78); background:var(--fill-success,#079f78); color:var(--text-on-accent,#fff); }
+@media(max-width:420px) { .strategy-dialog-backdrop { padding:10px; }.strategy-editor-dialog { max-height:calc(100dvh - 20px); padding:14px; }.strategy-condition-fields { grid-template-columns:1fr; padding:10px; }.strategy-definition-summary label { align-items:flex-start; flex-direction:column; }.strategy-definition-summary select { max-width:100%; width:100%; } }

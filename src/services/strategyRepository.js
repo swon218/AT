@@ -1,14 +1,41 @@
 import { INDICATOR_DEFAULTS, INDICATOR_LIMIT } from '../utils/indicators.js'
 import { DEFAULT_BACKTEST, RULES, validateIndicators } from '../utils/backtest.js'
+import { normalizeRiskSettings, validateEntryConditions } from '../utils/entryConditions.js'
 
 const fields = 'id,user_id,name,indicators,backtest_settings,schema_version,revision,created_at,updated_at'
 export const STRATEGY_CONFLICT = '다른 탭에서 변경되었거나 삭제된 전략입니다. 목록을 새로고침하고 다시 불러오거나, 이름을 바꿔 복사 저장하세요.'
 
-// A strategy is reusable across stocks. The selected stock and test date window
-// belong to the workspace, not the saved strategy.
-export function strategyPayload({ name, indicators, backtest_settings = DEFAULT_BACKTEST }) {
+// Execution inputs belong to each workspace, never to the reusable definition.
+export const EXECUTION_SETTING_KEYS = ['symbol', 'start', 'end', 'initialQuantity', 'quantityMode']
+export const STRATEGY_SETTING_KEYS = ['entryMode', 'entryConditions', 'takeProfitPct', 'stopLossPct', 'legacy']
+export const strategyDraftDefinition = settings => Object.fromEntries(STRATEGY_SETTING_KEYS.filter(key => Object.hasOwn(settings, key)).map(key => [key, settings[key]]))
+
+function normalizeLegacy(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const result = { schemaVersion: 1 }
+  for (const side of ['entry','exit']) if (Array.isArray(value[side])) result[side] = value[side].filter(id => typeof id === 'string' && id.length <= 80).slice(0, RULES.length)
+  for (const key of ['entryMode','exitMode']) if (['all','any'].includes(value[key])) result[key] = value[key]
+  for (const key of ['initialCapital','feePct','taxPct','slippagePct']) if (value[key] !== '' && value[key] != null && ['number','string'].includes(typeof value[key]) && Number.isFinite(Number(value[key]))) result[key] = Number(value[key])
+  return result
+}
+
+export function migrateLegacySettings(indicators, settings = {}) {
+  const configs = Object.fromEntries(indicators.map(config => [config.id,config]))
+  const entryConditions = []
+  const add = (indicatorId,left,operator,right) => { if (configs[indicatorId]) entryConditions.push({indicatorId,enabled:true,left,operator,right}) }
+  for (const id of [...new Set(settings.entry || [])]) {
+    if (id.startsWith('ma-') && RULES.some(rule => rule.id === id)) add('ma','short',id.includes('cross') ? id.endsWith('up') ? 'crossUp' : 'crossDown' : id.endsWith('up') ? 'gt' : 'lt',{type:'series',field:'long'})
+    else if (id === 'bb-low' || id === 'bb-high') add('bollinger','close',id === 'bb-low' ? 'lte' : 'gte',{type:'series',field:id === 'bb-low' ? 'lower' : 'upper'})
+    else if (id === 'volume-high' || id === 'volume-low') add('volume-ma','volume',id === 'volume-high' ? 'gt' : 'lt',{type:'series',field:'average'})
+    else if (id === 'rsi-low' || id === 'rsi-high') add('rsi','rsi',id === 'rsi-low' ? 'lte' : 'gte',{type:'constant',value:configs.rsi?.[id === 'rsi-low' ? 'lower' : 'upper']})
+    else if (id.startsWith('macd-') && RULES.some(rule => rule.id === id)) add('macd','macd',id.includes('cross') ? id.endsWith('up') ? 'crossUp' : 'crossDown' : id.endsWith('up') ? 'gt' : 'lt',{type:'series',field:'signal'})
+  }
+  return {entryMode:settings.entryMode === 'any' ? 'any' : 'all',entryConditions,takeProfitPct:'',stopLossPct:'',legacy:normalizeLegacy(settings)}
+}
+
+export function strategyPayload({ name, indicators = [], backtest_settings = DEFAULT_BACKTEST, schema_version }) {
   if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) throw new Error('전략 이름을 1~100자로 입력하세요.')
-  if (!Array.isArray(indicators) || !indicators.length || indicators.length > INDICATOR_LIMIT) throw new Error(`보조지표를 1~${INDICATOR_LIMIT}개 추가하세요.`)
+  if (!Array.isArray(indicators) || indicators.length > INDICATOR_LIMIT) throw new Error(`보조지표는 최대 ${INDICATOR_LIMIT}개까지 추가할 수 있습니다.`)
   const configs = indicators.map(item => {
     const defaults = item && Object.hasOwn(INDICATOR_DEFAULTS, item.id) && INDICATOR_DEFAULTS[item.id]
     if (!defaults) throw new Error('지원하지 않는 지표입니다.')
@@ -25,25 +52,27 @@ export function strategyPayload({ name, indicators, backtest_settings = DEFAULT_
   })
   validateIndicators(configs)
   if (!backtest_settings || typeof backtest_settings !== 'object' || Array.isArray(backtest_settings)) throw new Error('백테스트 설정을 확인하세요.')
-  const settings = {}
-  for (const [key, min, max] of [['initialCapital', 1000, 10_000_000_000], ['feePct', 0, 5], ['taxPct', 0, 5], ['slippagePct', 0, 5]]) {
-    const value = backtest_settings[key] ?? DEFAULT_BACKTEST[key]
-    if (value === '' || !['number', 'string'].includes(typeof value) || !Number.isFinite(Number(value)) || Number(value) < min || Number(value) > max) throw new Error('초기 자금·수수료·세금·슬리피지 설정을 확인하세요.')
-    settings[key] = Number(value)
-  }
-  for (const side of ['entry', 'exit']) {
-    const mode = backtest_settings[`${side}Mode`] ?? DEFAULT_BACKTEST[`${side}Mode`]
-    const rules = backtest_settings[side] ?? []
-    if (!['all', 'any'].includes(mode) || !Array.isArray(rules) || rules.length > RULES.length || rules.some(id => !RULES.some(rule => rule.id === id && configs.some(c => c.id === rule.indicator)))) throw new Error('매매 조건에 필요한 지표와 조건 조합을 확인하세요.')
-    settings[`${side}Mode`] = mode
-    settings[side] = [...new Set(rules)]
-  }
-  return { name: name.trim(), indicators: configs, backtest_settings: settings, schema_version: 1 }
+  if (schema_version != null && ![1,2].includes(schema_version)) throw new Error('지원하지 않는 전략 버전입니다.')
+  const source = schema_version === 1 ? migrateLegacySettings(configs,backtest_settings) : backtest_settings
+  const entryMode = source.entryMode ?? 'all'
+  if (!['all','any'].includes(entryMode)) throw new Error('진입 조건의 모두/하나 이상 방식을 확인하세요.')
+  const entryConditions = validateEntryConditions(configs,{...source,entryConditions:source.entryConditions ?? []},{requireEntry:false})
+  const risk = normalizeRiskSettings(source,{allowIncomplete:true})
+  const settings = {entryMode,entryConditions,...risk}
+  const legacy = normalizeLegacy(source.legacy)
+  if (legacy) settings.legacy = legacy
+  if (!configs.length && !entryConditions.length && risk.takeProfitPct === '' && risk.stopLossPct === '') throw new Error('보조지표, 진입 조건 또는 익절·손절 중 하나 이상을 설정하세요.')
+  return { name: name.trim(), indicators: configs, backtest_settings: settings, schema_version: 2 }
+}
+
+export function loadStrategy(row) {
+  if (!row || ![1,2].includes(row.schema_version)) throw new Error('전략을 불러올 수 없습니다. 목록을 새로고침해 주세요.')
+  return strategyPayload(row)
 }
 
 export function strategyError(error) {
   if (error?.code === '23505') return '같은 이름의 전략이 있습니다. 다른 이름을 입력하세요.'
-  if (error?.code === '23514') return '전략 저장 제약에 맞지 않습니다. 6개 이상 저장하려면 보조지표 DB 업데이트가 필요합니다.'
+  if (error?.code === '23514') return '전략 설정 또는 저장 형식을 확인해 주세요. 새 전략 저장 SQL이 적용되지 않았다면 관리자에게 문의하세요.'
   if (['42P01', 'PGRST205', '42703'].includes(error?.code)) return '전략 저장 테이블이 준비되지 않았습니다. 관리자가 Supabase 전략 SQL을 실행해야 합니다.'
   if (['42501', 'PGRST301', 'PGRST302'].includes(error?.code)) return '전략 접근 권한을 확인할 수 없습니다. 다시 로그인하거나 관리자에게 문의하세요.'
   return '전략 요청에 실패했습니다. 연결 상태를 확인하고 다시 시도하세요.'

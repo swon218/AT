@@ -7,7 +7,8 @@ import { calculateSma, calculateRsi, calculateMacd } from '../src/utils/indicato
 const bars = () => Array.from({ length: 25 }, (_, i) => ({ time: `2025-01-${String(i + 1).padStart(2, '0')}`, open: 100 + i, high: 101 + i, low: 99 + i, close: 100 + i, volume: 100, tradable: 1 }))
 const gap = row => ({ time: row.time, quality: 'quarantined', open: null, high: null, low: null, close: null, volume: null, tradable: 0 })
 const ma = [{ id: 'ma', type: 'SMA', shortPeriod: 1, longPeriod: 3 }]
-const options = { ...DEFAULT_BACKTEST, entry: ['ma-up'], exit: ['ma-down'] }
+const entryCondition = { indicatorId: 'ma', enabled: true, left: 'short', operator: 'gt', right: { type: 'series', field: 'long' } }
+const options = { ...DEFAULT_BACKTEST, initialQuantity: 1, takeProfitPct: 5, stopLossPct: 2, entryConditions: [entryCondition] }
 
 test('unresolved dates in selection block even if tradable is zero', () => {
   const data = bars(); data[10] = gap(data[10])
@@ -20,13 +21,14 @@ test('finite warmup checks exact lookback, plus previous bar for a crossover', (
   const data = bars(); data[6] = gap(data[6])
   assert.throws(() => backtestWindow(data, ma, { ...options, start: data[8].time }), /지표 준비 구간/)
   assert.doesNotThrow(() => runBacktest(data, ma, { ...options, start: data[9].time }))
-  assert.throws(() => runBacktest(data, ma, { ...options, start: data[9].time, entry: ['ma-cross-up'] }), /지표 준비 구간/)
+  assert.throws(() => runBacktest(data, ma, { ...options, start: data[9].time, entryConditions: [{ ...entryCondition, operator: 'crossUp' }] }), /지표 준비 구간/)
 })
 
 test('recursive indicators reject an older unresolved seed even beyond nominal periods', () => {
   const data = bars(); data[0] = gap(data[0])
   for (const indicator of [{ ...ma[0], type: 'EMA' }, { id: 'rsi', period: 2 }, { id: 'macd', fast: 1, slow: 2, signal: 2 }]) {
-    assert.throws(() => backtestWindow(data, [indicator], { ...options, start: data[20].time }), /이전 이력 전체/)
+    const field = indicator.id === 'ma' ? 'short' : indicator.id === 'rsi' ? 'rsi' : 'macd'
+    assert.throws(() => backtestWindow(data, [indicator], { ...options, start: data[20].time, entryConditions: [{ indicatorId: indicator.id, enabled: true, left: field, operator: 'gt', right: { type: 'constant', value: 0 } }] }), /이전 이력 전체/)
   }
 })
 
@@ -65,9 +67,33 @@ test('chart retains gap and warmup dates, resets indicators and hides connecting
   assert.equal(histogram[9].color, undefined)
 })
 
-test('calendar end between trading days is accepted and null unmarked prices are rejected', () => {
+test('an unverified end-date gap is explicitly not claimed as a holiday or completed valuation', () => {
   const data = bars().filter(row => row.time !== '2025-01-20')
-  assert.equal(runBacktest(data, ma, { ...options, end: '2025-01-20' }).end, '2025-01-19')
+  const result = runBacktest(data, ma, { ...options, end: '2025-01-20' })
+  assert.equal(result.end, '2025-01-19')
+  assert.equal(result.coverage.endStatus, 'unverified-gap')
+  assert.match(result.coverage.warning, /휴장일인지 데이터 누락인지 확인되지 않아/)
   data[5].close = null
   assert.throws(() => runBacktest(data, ma, options), /가격/)
+})
+
+test('confirmed holiday calendar permits last-close marking and blocks known missing trade days', () => {
+  const candle = time => ({ time, open: 100, high: 101, low: 99, close: 100, volume: 100 })
+  const data = ['2025-01-02', '2025-01-03'].map(candle)
+  const calendar = { tradingDays: ['2025-01-02', '2025-01-03'], calendarThrough: '2025-01-05' }
+  const r = runBacktest(data, [{ ...ma[0], longPeriod: 2 }], { ...options, end: '2025-01-05', ...calendar })
+  assert.equal(r.valuationDate, '2025-01-03')
+  assert.equal(r.coverage.endStatus, 'non-trading-confirmed')
+  assert.equal(r.coverage.calendarVerified, true)
+  assert.throws(() => backtestWindow(['2025-01-02', '2025-01-06', '2025-01-07'].map(candle), ma,
+    { ...options, end: '2025-01-06', tradingDays: ['2025-01-02', '2025-01-03', '2025-01-06'], calendarThrough: '2025-01-07' }), /2025-01-03.*누락/)
+})
+
+test('stale weekdays are not silently priced as a closed market; bounded weekends remain unverified', () => {
+  const data = bars().slice(0, 3) // 2025-01-03 Friday
+  assert.throws(() => backtestWindow(data, ma, { ...options, end: '2025-01-06' }), /종료일까지 수집/)
+  const r = backtestWindow(data, ma, { ...options, end: '2025-01-05' })
+  assert.equal(r.coverage.endStatus, 'unverified-gap')
+  assert.throws(() => backtestWindow(data, ma, { ...options, end: '2025-02-30' }), /기간/)
+  assert.throws(() => backtestWindow([{ ...data[0], time: '2019-01-01' }, ...data], ma, { ...options, end: '2025-01-03' }), /최대 5년/)
 })

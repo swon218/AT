@@ -11,6 +11,7 @@ import { gapSafeSeries, isQuarantined } from '../utils/dataQuality'
 import { bindChartTheme, chartPalette, chartThemeOptions } from '../utils/chartTheme'
 import { normalizeChartCandles } from '../utils/chartCandles'
 import { formatChartTime, formatChartTick } from '../utils/chartTime'
+import { backtestChartMarkers, backtestEventLabel } from '../utils/backtestPresentation'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(Math.round(value))
 const volumeFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
@@ -18,13 +19,18 @@ const formatVolume = value => Number.isFinite(value) ? volumeFormatter.format(va
 const EMPTY = []
 const advancedValid = config => Object.hasOwn(ADVANCED_BY_ID, config.id) && validAdvancedConfig(config)
 
-export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange, backtestEvents = EMPTY }) {
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
   const stopResizeRef = useRef(null)
   const paneLayoutsRef = useRef({})
   const rightScaleWidthRef = useRef(72)
+  const backtestEventsRef = useRef(backtestEvents)
+  const backtestRuntimeRef = useRef(null)
+  const [eventInspection, setEventInspection] = useState(null)
+  backtestEventsRef.current = backtestEvents
+  const inspectedEvents = eventInspection?.source === backtestEvents ? eventInspection.events : EMPTY
   const [loaded, setLoaded] = useState(null)
   const sourceKey = JSON.stringify([stock?.code, period, credentialScope, broker])
   const data = loaded?.key === sourceKey && loaded.supplied === suppliedCandles ? loaded.candles : EMPTY
@@ -146,6 +152,9 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     // Keep reported suspension closes in indicator calculations, matching the
     // backtest, but draw whitespace for candles without a valid OHLC range.
     candleSeries.setData(data.map(({ volume, ...candle }) => candle.open > 0 && candle.high > 0 && candle.low > 0 ? candle : { time: candle.time }))
+    const eventMarkers = createSeriesMarkers(candleSeries, backtestChartMarkers(backtestEventsRef.current, palette))
+    const backtestRuntime = { markers: eventMarkers }
+    backtestRuntimeRef.current = backtestRuntime
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'custom', formatter: formatVolume, minMove: 1 }, priceScaleId: 'right',
@@ -314,6 +323,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       candleSeries.applyOptions({ upColor: palette.up, downColor: palette.down, wickUpColor: palette.wickUp, wickDownColor: palette.wickDown,
         borderUpColor: palette.up, borderDownColor: palette.down, priceLineColor: palette.price })
       themedPriceLines.forEach(line => line.applyOptions({ axisLabelColor: palette.background }))
+      eventMarkers.setMarkers(backtestChartMarkers(backtestEventsRef.current, palette))
     })
     const volumeLegendElement = document.createElement('div')
     const volumeLegendValue = document.createElement('b')
@@ -332,8 +342,14 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       setLegend(nextLegend)
       volumeLegendValue.textContent = isQuarantined(nextLegend) ? '—' : formatVolume(nextLegend.volume)
       paneLegends.forEach(({ update }) => update(index < 0 ? data.length - 1 : index))
+      if (backtestEventsRef.current.length) {
+        const events = backtestEventsRef.current
+        const exact = events.find(event => `backtest-${event.id}` === String(param.hoveredObjectId))
+        setEventInspection({ source: events, events: exact ? [exact] : events.filter(event => event.date === time) })
+      }
     }
     chart.subscribeCrosshairMove(moveCrosshair)
+    chart.subscribeClick(moveCrosshair)
 
     let previousContainerWidth = container.clientWidth
     let previousContainerHeight = container.clientHeight
@@ -387,10 +403,17 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       volumeLegendElement.remove()
       paneLegends.forEach(({ badge }) => badge.remove())
       chart.unsubscribeCrosshairMove(moveCrosshair)
+      chart.unsubscribeClick(moveCrosshair)
+      eventMarkers.detach()
+      if (backtestRuntimeRef.current === backtestRuntime) backtestRuntimeRef.current = null
       trendMarkers?.detach()
       chart.remove()
     }
   }, [data, period, indicatorKey])
+
+  useEffect(() => {
+    backtestRuntimeRef.current?.markers.setMarkers(backtestChartMarkers(backtestEvents, chartPalette()))
+  }, [backtestEvents, data, indicatorKey])
 
   if (!stock) return <div className="chart-empty"/>
   if (loading) return <div className="chart-empty"><span className="loading-ring"/></div>
@@ -398,7 +421,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
   if (data.length === 0) return <div className="chart-empty data-message" role="status">제공된 캔들이 없습니다.</div>
 
   return (
-    <div className="tv-chart-root" onWheelCapture={(event) => {
+    <div className="tv-chart-root" onKeyDown={event => { if (event.key === 'Escape') setEventInspection(null) }} onWheelCapture={(event) => {
       const root = event.currentTarget
       const bounds = root.getBoundingClientRect()
       const isRightScale = event.clientX >= bounds.right - rightScaleWidthRef.current
@@ -409,6 +432,8 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     }}>
       {legend && <div className="tv-legend">{isQuarantined(legend) ? <span>{formatChartTime(legend.time,period.endsWith('분'))} · 가격 오류 격리</span> : <><span>시 <b>{won(legend.open)}</b></span><span>고 <b className="up">{won(legend.high)}</b></span><span>저 <b className="down">{won(legend.low)}</b></span><span>종 <b>{won(legend.close)}</b></span>{legend.quality === 'corrected' && <span>1원 보정</span>}</>}</div>}
       {indicators.length > 0 && <div className="tv-indicator-badges">{indicators.map((config) => <span key={config.id}>{indicatorDisplayName(config)}</span>)}</div>}
+      {!!backtestEvents.length && <label className="tv-backtest-picker">거래 마커<select aria-label="백테스트 마커 상세" value={inspectedEvents.length === 1 ? inspectedEvents[0].id : ''} onChange={event => setEventInspection({ source: backtestEvents, events: backtestEvents.filter(item => item.id === event.target.value) })}><option value="">날짜·가격·수량 확인</option>{backtestEvents.map(event => <option key={event.id} value={event.id}>#{event.tradeId} {event.date} {backtestEventLabel(event)}</option>)}</select></label>}
+      {!!inspectedEvents.length && <div className="tv-backtest-detail" role="status" aria-label="거래 마커 상세">{inspectedEvents.map(event => <div key={event.id}><strong>{backtestEventLabel(event)} · 거래 #{event.tradeId}</strong><span>{event.date} · {new Intl.NumberFormat('ko-KR', {maximumFractionDigits:6}).format(event.price)}원 · {event.quantity}주</span><span>{event.reason}</span>{event.ambiguous && !event.reason?.includes('순서 불명확') && <b>일봉 내 순서 불명확 · 손절 우선 가정</b>}</div>)}</div>}
       <div ref={scrollContentRef} className="tv-chart-scroll-content" style={scrollContentStyle}>
         <div ref={containerRef} className="tv-chart-canvas" aria-label={`${stock.name} TradingView 캔들 차트`}/>
         {lowerIndicatorCount > 0 && <div className="tv-bottom-pane-resizer" role="separator" aria-orientation="horizontal" aria-label="마지막 보조지표 높이 조절" title="드래그하여 마지막 보조지표 높이 조절" onPointerDown={startBottomResize} onKeyDown={(event) => {

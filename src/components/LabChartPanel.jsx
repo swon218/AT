@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FlaskConical, RefreshCw } from 'lucide-react'
+import { FlaskConical, RefreshCw, RotateCcw } from 'lucide-react'
 import TradingViewChart from './TradingViewChart'
 import LabBacktestPanel from './LabBacktestPanel'
 import { getLabCandles } from '../services/labApi'
 import { validateIndicators } from '../utils/backtest'
 import '../lab.css'
+import './BacktestResults.css'
 
 const EMPTY = []
-export default function LabChartPanel({ workspace, indicators, strategyName, settings, onSettingsChange }) {
+export default function LabChartPanel({ workspace, indicators, strategyName, settings, onSettingsChange, onResetBacktest, resetVersion = 0 }) {
   const { selection, catalogError, catalogMessage, initialError, refreshVersion, refreshData } = workspace
   const symbol = selection?.code || ''
   const [result, setResult] = useState(null)
+  const [backtestRun, setBacktestRun] = useState(null)
   const current = result?.selection === selection && result?.refreshVersion === refreshVersion ? result : null
   const loading = symbol ? !current : !initialError
   const payload = current?.payload
   const error = current?.error
+
+  useEffect(() => { setBacktestRun(null) }, [symbol, resetVersion])
 
   useEffect(() => {
     if (symbol && settings.symbol !== symbol) onSettingsChange(previous => previous.symbol === symbol ? previous : { ...previous, symbol, start: '', end: '' })
@@ -34,11 +38,14 @@ export default function LabChartPanel({ workspace, indicators, strategyName, set
   const activeSymbol = payload?.symbol
   const indicatorError = useMemo(() => { try { validateIndicators(indicators); return '' } catch (err) { return err.message } }, [indicators])
   const last = candles.at(-1)
+  const fingerprint = useMemo(() => JSON.stringify([symbol, candles, quality, indicators, settings, strategyName, resetVersion]), [symbol, candles, quality, indicators, settings, strategyName, resetVersion])
+  const backtestResult = backtestRun?.fingerprint === fingerprint ? backtestRun.result : null
   return <article className="panel chart-panel lab-chart-panel" aria-label="백테스팅 차트">
     <div className="lab-heading">
       <div><span className="lab-eyebrow"><FlaskConical/> STRATEGY LAB</span><h2>{selection?.name || '전략 실험실'} <small>{symbol}</small></h2></div>
       <div className="lab-heading-actions">
         <span className="lab-daily-badge">일봉 · 최대 5년</span>
+        <button type="button" className="lab-refresh lab-reset" aria-label="실험실 설정 초기화" onClick={onResetBacktest}><RotateCcw size={14}/>리셋</button>
         <button type="button" className="lab-refresh" title="데이터 다시 확인 (최대 1분 캐시)" aria-label="실험실 데이터 새로고침" onClick={refreshData}><RefreshCw size={16}/></button>
       </div>
     </div>
@@ -55,9 +62,9 @@ export default function LabChartPanel({ workspace, indicators, strategyName, set
     <div className="main-chart lab-history-chart">
       {loading ? <div className="lab-chart-placeholder" role="status">{symbol ? '일봉 데이터를 불러오는 중…' : '실시간조회 1위 종목을 확인하는 중…'}</div>
         : error || indicatorError ? <div className="lab-chart-placeholder" role="alert">{error || indicatorError}</div>
-          : candles.length ? <TradingViewChart stock={{ code: symbol, name: activeSymbol?.name || symbol }} period="일" indicators={indicators} candles={candles}/>
+          : candles.length ? <TradingViewChart stock={{ code: symbol, name: activeSymbol?.name || symbol }} period="일" indicators={indicators} candles={candles} backtestEvents={backtestResult?.events || EMPTY}/>
             : <div className="lab-chart-placeholder"><FlaskConical/><strong>{symbol ? '이 종목의 수집된 일봉이 없습니다.' : '종목을 검색해 선택해 주세요'}</strong><p>야간에 수집한 일봉 데이터를 표시합니다.</p></div>}
     </div>
-    <LabBacktestPanel key={symbol} candles={candles} quality={quality} symbol={activeSymbol} indicators={indicators} strategyName={strategyName} settings={settings} onSettingsChange={onSettingsChange} disabled={loading || !!indicatorError}/>
+    <LabBacktestPanel key={symbol} candles={candles} quality={quality} symbol={activeSymbol} indicators={indicators} strategyName={strategyName} settings={settings} onSettingsChange={onSettingsChange} disabled={loading || !!indicatorError} run={backtestRun} fingerprint={fingerprint} onRun={setBacktestRun}/>
   </article>
 }

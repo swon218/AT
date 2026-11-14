@@ -35,18 +35,18 @@ test('zero volume, missing volume and quarantined data have distinct behavior', 
   assert.deepEqual(line.slice(1, 3), [{ time: bars[1].time, value: 2, color: 'transparent' }, { time: bars[2].time }])
 })
 
-test('12 settings round-trip and display-only indicators cannot change legacy backtest signals', () => {
+test('12 settings round-trip and reference-only indicators cannot change selected entry signals', () => {
   const indicators = INDICATOR_CATALOG.map(({ id }) => createIndicatorConfig(id))
   assert.equal(indicators.length, 12)
   Object.assign(indicators.find(c => c.id === 'dmi'), { showAdx: false, adxPeriod: 17, plusColor: '#123456' })
   Object.assign(indicators.find(c => c.id === 'obv'), { showAverage: true, maType: 'EMA' })
   const payload = strategyPayload({ name: '전략', indicators })
-  assert.equal(payload.schema_version, 1)
+  assert.equal(payload.schema_version, 2)
   assert.deepEqual(payload.indicators, indicators)
   assert.deepEqual(strategyPayload(JSON.parse(JSON.stringify(payload))), payload)
   assert.throws(() => strategyPayload({ ...payload, indicators: [...indicators, indicators[0]] }))
   const ma = { ...createIndicatorConfig('ma'), shortPeriod: 1, longPeriod: 2 }
-  const settings = { ...DEFAULT_BACKTEST, entry: ['ma-up'], exit: ['ma-down'] }
+  const settings = { ...DEFAULT_BACKTEST, initialQuantity: 1, takeProfitPct: 5, stopLossPct: 2, entryConditions: [{ indicatorId: 'ma', enabled: true, left: 'short', operator: 'gt', right: { type: 'series', field: 'long' } }] }
   assert.deepEqual(runBacktest(bars, [ma, ...indicators.slice(5)], settings), runBacktest(bars, [ma], settings))
-  assert.throws(() => runBacktest(bars, [ma, ...indicators.slice(5)], { ...settings, entry: ['adx'] }), /조건/)
+  assert.throws(() => runBacktest(bars, [ma, ...indicators.slice(5)], { ...settings, entryConditions: [{ ...settings.entryConditions[0], indicatorId: 'unknown' }] }), /조건/)
 })

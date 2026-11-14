@@ -1,8 +1,12 @@
-import { AlertTriangle, CheckCircle2, Info, KeyRound, LogIn, Minus, Plus, Search, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Info, KeyRound, LogIn, Minus, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { INDICATOR_CATALOG, INDICATOR_LIMIT } from '../utils/indicators'
+import { INDICATOR_CATALOG } from '../utils/indicators'
 import { validAdvancedConfig } from '../utils/advancedIndicatorCatalog'
+import { describeEntryCondition, strategyReadiness } from '../utils/entryConditions'
+import { strategyPayload } from '../services/strategyRepository'
+import { EntryConditionDialog, IndicatorPickerDialog, RiskSettingsDialog } from './StrategyDialogs'
+import './StrategyEditor.css'
 import { placeBrokerOrder } from '../services/orderApi'
 import UnfilledOrdersPanel from './UnfilledOrdersPanel'
 import { BROKERS, getBroker, isBrokerConfigured } from '../utils/brokers'
@@ -277,12 +281,13 @@ function AdvancedSetting({ field, value, onChange }) {
   return <NumberSetting {...{ label, min, max, step, value, onChange }}/>
 }
 
-function IndicatorConfigCard({ config, onOpenHelp, onChange, onRemove }) {
+function IndicatorConfigCard({ config, conditions, onOpenHelp, onOpenCondition, onChange, onRemove }) {
   const item = INDICATOR_CATALOG.find((indicator) => indicator.id === config.id)
   const update = (key, value) => onChange(config.id, { [key]: value })
   return (
     <article className="indicator-config-card">
-      <div className="indicator-config-title"><strong>{item?.name}</strong><button className="indicator-help" onClick={() => onOpenHelp(config.id)} aria-label={`${item?.name} 상세 설명 열기`}>!</button><button className="indicator-remove" onClick={() => onRemove(config.id)} aria-label={`${item?.name} 삭제`}><X/></button></div>
+      <div className="indicator-config-title"><strong>{item?.name}</strong><button type="button" className="indicator-help" onClick={() => onOpenHelp(config.id)} aria-label={`${item?.name} 상세 설명 열기`}>!</button><button type="button" className="strategy-entry-button" onClick={() => onOpenCondition(config.id)} aria-label={`${item?.name} 진입 조건 설정`}>진입 조건</button><button type="button" className="indicator-remove" onClick={() => onRemove(config.id)} aria-label={`${item?.name} 삭제`}><X/></button></div>
+      <p className={`strategy-entry-summary${conditions?.length ? ' enabled' : ''}`}>{conditions?.length ? conditions.join(' / ') : '참고용 · 진입 판단에 사용하지 않음'}</p>
       <div className="indicator-config-grid">
         {item?.fields?.map(field => <AdvancedSetting key={field.key} field={field} value={config[field.key]} onChange={value => update(field.key, value)}/>)}
         {config.id === 'ma' && <><SelectSetting label="종류" value={config.type || 'SMA'} options={['SMA', 'EMA']} onChange={(value) => update('type', value)}/><span className="indicator-grid-spacer"/><NumberSetting label="단기 기간" value={config.shortPeriod ?? config.period ?? 5} max={Math.max(1, Number(config.longPeriod || 20) - 1)} onChange={(value) => update('shortPeriod', Math.min(value, Number(config.longPeriod || 20) - 1))}/><ColorSetting label="단기선 색상" value={config.shortColor || config.color || '#f4c542'} onChange={(value) => update('shortColor', value)}/><NumberSetting label="장기 기간" value={config.longPeriod ?? 20} min={Number(config.shortPeriod ?? config.period ?? 5) + 1} onChange={(value) => update('longPeriod', Math.max(value, Number(config.shortPeriod ?? config.period ?? 5) + 1))}/><ColorSetting label="장기선 색상" value={config.longColor || '#4b86ff'} onChange={(value) => update('longColor', value)}/></>}
@@ -296,34 +301,17 @@ function IndicatorConfigCard({ config, onOpenHelp, onChange, onRemove }) {
   )
 }
 
-function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, strategyStorage }) {
-  const [query, setQuery] = useState('')
-  const [searchOpen, setSearchOpen] = useState(false)
+function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings = {}, onBacktestSettingsChange, onNewStrategy, strategyStorage }) {
   const [helpIndicatorId, setHelpIndicatorId] = useState(null)
-  const atLimit = indicatorConfigs.length >= INDICATOR_LIMIT
-  const searchRef = useRef(null)
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase()
-    return INDICATOR_CATALOG.filter((item) => !keyword || `${item.name} ${item.shortName}`.toLowerCase().includes(keyword))
-  }, [query])
-  const addFirstResult = () => {
-    if (atLimit) return
-    const candidate = filtered.find((item) => !indicatorConfigs.some((config) => config.id === item.id))
-    if (candidate) {
-      onAddIndicator(candidate.id)
-      setQuery('')
-      setSearchOpen(false)
-    }
-  }
-
-  useEffect(() => {
-    const closeOnOutsideClick = (event) => {
-      if (!searchRef.current?.contains(event.target)) setSearchOpen(false)
-    }
-    document.addEventListener('mousedown', closeOnOutsideClick)
-    return () => document.removeEventListener('mousedown', closeOnOutsideClick)
-  }, [])
-
+  const [conditionId,setConditionId] = useState(null), [pickerOpen,setPickerOpen] = useState(false), [riskOpen,setRiskOpen] = useState(false)
+  const update = patch => onBacktestSettingsChange(previous => ({...previous,...patch}))
+  const conditions = backtestSettings.entryConditions || []
+  const issues = strategyReadiness(indicatorConfigs,backtestSettings)
+  let saveError = ''
+  try { strategyPayload({name:strategyName,indicators:indicatorConfigs,backtest_settings:backtestSettings}) } catch (error) { saveError = error.message }
+  const newStrategy = onNewStrategy || strategyStorage.onNewStrategy || strategyStorage.onNew || (() => strategyStorage.onSelect(''))
+  const hasDefinition = indicatorConfigs.length || conditions.length || backtestSettings.takeProfitPct !== '' && backtestSettings.takeProfitPct != null || backtestSettings.stopLossPct !== '' && backtestSettings.stopLossPct != null
+  useEffect(() => { setConditionId(null); setRiskOpen(false); setPickerOpen(false); setHelpIndicatorId(null) },[strategyStorage.selectedId,indicatorConfigs])
   return (
     <div className="indicator-settings">
       <FieldRow label="저장 전략"><select className="trade-input accent" aria-label="저장한 전략 불러오기" value={strategyStorage.selectedId} onChange={event => strategyStorage.onSelect(event.target.value)} disabled={!strategyStorage.authenticated || strategyStorage.busy || strategyStorage.loading}>
@@ -332,42 +320,39 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
         {strategyStorage.rows.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
       </select></FieldRow>
       <div className="strategy-library-tools">
-        <button onClick={() => strategyStorage.onSelect('')} disabled={strategyStorage.busy}>새 전략</button>
-        <button onClick={strategyStorage.refresh} disabled={!strategyStorage.authenticated || strategyStorage.loading || strategyStorage.busy}>목록 새로고침</button>
-        <button onClick={() => strategyStorage.onSelect(strategyStorage.selectedId)} disabled={!strategyStorage.selectedId || strategyStorage.busy || strategyStorage.loading || !strategyStorage.rows.some(row => row.id === strategyStorage.selectedId)}>다시 불러오기</button>
+        <button type="button" onClick={newStrategy} disabled={strategyStorage.busy}>새 전략</button>
+        <button type="button" onClick={strategyStorage.refresh} disabled={!strategyStorage.authenticated || strategyStorage.loading || strategyStorage.busy}>목록 새로고침</button>
       </div>
       <hr/>
-      <label className="strategy-name"><span>전략 이름</span><input className="trade-input" value={strategyName} onChange={(event) => onStrategyNameChange(event.target.value)} placeholder="전략 이름을 입력하세요" maxLength={100}/><small>저장한 전략은 주식 주문·실험실에서 함께 사용합니다. 저장하지 않은 변경은 새로고침 시 사라집니다.</small></label>
-      <div className="indicator-search-wrap" ref={searchRef}>
-        <div className="indicator-search"><div className="trade-input"><Search/><input role="combobox" aria-expanded={searchOpen} value={query} onFocus={() => setSearchOpen(true)} onClick={() => setSearchOpen(true)} onChange={(event) => { setQuery(event.target.value); setSearchOpen(true) }} onKeyDown={(event) => { if (event.key === 'Enter') addFirstResult(); if (event.key === 'Escape') setSearchOpen(false) }} placeholder="보조지표 검색"/></div><button onClick={addFirstResult} disabled={!filtered.some((item) => !indicatorConfigs.some((config) => config.id === item.id))}>추가</button></div>
-        {searchOpen && <div className="indicator-catalog-popover">
-          <div className="indicator-catalog-list">
-            {filtered.map((item) => {
-              const added = indicatorConfigs.some((config) => config.id === item.id)
-              return <button className={added ? 'added' : ''} disabled={!added && atLimit} onClick={() => { added ? onRemoveIndicator(item.id) : onAddIndicator(item.id); setQuery(''); setSearchOpen(false) }} key={item.id}><span><strong>{item.name}</strong><small>{item.shortName}</small></span><b>{added ? '추가됨' : '추가'}</b></button>
-            })}
-            {filtered.length === 0 && <div className="indicator-no-result">검색 결과가 없습니다.</div>}
-          </div>
-        </div>}
-      </div>
+      <label className="strategy-name"><span>전략 이름</span><input className="trade-input" value={strategyName} onChange={event => onStrategyNameChange(event.target.value)} placeholder="전략 이름을 입력하세요" maxLength={100}/><small>저장한 전략은 두 탭에서 함께 불러옵니다. 각 탭의 미저장 편집 내용은 별도로 유지됩니다.</small></label>
+      <div className="strategy-builder-tools"><div className="strategy-builder-actions"><button type="button" onClick={() => setPickerOpen(true)}><Plus aria-hidden="true"/>지표 추가</button><button type="button" onClick={() => setRiskOpen(true)}>익절·손절 설정</button></div></div>
       <div className="indicator-config-list">
-        {indicatorConfigs.map((config) => <IndicatorConfigCard key={config.id} config={config} onOpenHelp={setHelpIndicatorId} onChange={onUpdateIndicator} onRemove={onRemoveIndicator}/>) }
-        {indicatorConfigs.length === 0 && <div className="indicator-empty">보조지표를 검색해서 추가하세요.</div>}
+        <div className={`strategy-definition-summary${!issues.length ? ' ready' : ''}`}>
+          <label>진입 조건 조합<select aria-label="진입 조건 조합" value={backtestSettings.entryMode || 'all'} onChange={event => update({entryMode:event.target.value})}><option value="all">모두 충족 (AND)</option><option value="any">하나 이상 충족 (OR)</option></select></label>
+          <p>익절 <strong>{backtestSettings.takeProfitPct === '' || backtestSettings.takeProfitPct == null ? '미설정' : `${backtestSettings.takeProfitPct}%`}</strong> · 손절 <strong>{backtestSettings.stopLossPct === '' || backtestSettings.stopLossPct == null ? '미설정' : `${backtestSettings.stopLossPct}%`}</strong></p>
+          {issues.length ? <><p><strong>부분 전략 · 실행 전 보완 필요</strong></p><ul className="strategy-readiness-list">{issues.map((issue,index) => <li key={index}>{issue}</li>)}</ul></> : <p><strong>전략 조건 준비됨</strong> · 종목·기간·수량을 확인한 뒤 실험실에서 검증하세요.</p>}
+          {strategyStorage.compatibilityNotice && <p className="strategy-feedback warning">{strategyStorage.compatibilityNotice}</p>}
+        </div>
+        {indicatorConfigs.map(config => <IndicatorConfigCard key={config.id} config={config} conditions={conditions.filter(condition => condition.indicatorId === config.id && condition.enabled).map(condition => describeEntryCondition(condition,indicatorConfigs))} onOpenHelp={setHelpIndicatorId} onOpenCondition={setConditionId} onChange={onUpdateIndicator} onRemove={onRemoveIndicator}/>)}
+        {indicatorConfigs.length === 0 && <div className="indicator-empty">지표 추가에서 보조지표를 선택하세요.</div>}
       </div>
       <div className="strategy-actions-area">
-        <p className="strategy-storage-notice">{strategyStorage.authenticated ? '지표·매매 조건·비용 설정을 저장합니다. 종목과 조회 기간은 각 화면에서 유지됩니다.' : '로그인하면 전략을 저장하고 두 탭에서 불러올 수 있습니다.'}</p>
-        {strategyStorage.stale && <p className="strategy-feedback warning" role="status">다른 탭에서 변경되었거나 삭제된 전략입니다. 다시 불러오거나 이름을 바꿔 복사 저장하세요.</p>}
+        <p className="strategy-storage-notice">{strategyStorage.authenticated ? '지표·진입 조건·익절·손절을 저장합니다. 종목·기간·수량·운용 방식은 저장하지 않습니다.' : '로그인하면 부분 전략도 저장하고 두 탭에서 불러올 수 있습니다.'}</p>
+        {strategyStorage.stale && <p className="strategy-feedback warning" role="status">다른 탭에서 변경되었거나 삭제된 전략입니다. 목록에서 다시 선택하거나 이름을 바꿔 복사 저장하세요.</p>}
         {(strategyStorage.draftError || strategyStorage.error) && <p className="strategy-feedback error" role="alert">{strategyStorage.draftError || strategyStorage.error}</p>}
         <p className="strategy-action-message" role="status">{strategyStorage.busy ? '처리 중…' : strategyStorage.message || (strategyStorage.dirty ? '저장하지 않은 변경 내용이 있습니다.' : '')}</p>
-        <div className="strategy-actions"><button onClick={onResetIndicators} disabled={strategyStorage.busy || indicatorConfigs.length === 0}>초기화</button><button onClick={onDeleteIndicators} disabled={strategyStorage.busy || (!strategyStorage.selectedId && indicatorConfigs.length === 0 && !strategyName)}>{strategyStorage.selectedId ? '삭제' : '비우기'}</button><button className="save" onClick={() => strategyStorage.onSave()} disabled={!strategyStorage.authenticated || strategyStorage.busy || !indicatorConfigs.length || !strategyName.trim() || !!strategyStorage.stale}>저장</button></div>
-        {strategyStorage.selectedId && <button className="strategy-copy" onClick={() => strategyStorage.onSave(true)} disabled={!strategyStorage.authenticated || strategyStorage.busy || !indicatorConfigs.length || !strategyName.trim()}>다른 이름으로 복사 저장</button>}
+        <div className="strategy-actions"><button type="button" onClick={onResetIndicators} disabled={strategyStorage.busy || indicatorConfigs.length === 0}>지표 기본값</button><button type="button" onClick={onDeleteIndicators} disabled={strategyStorage.busy || (!strategyStorage.selectedId && !hasDefinition && !strategyName)}>{strategyStorage.selectedId ? '삭제' : '비우기'}</button><button type="button" className="save" onClick={() => strategyStorage.onSave()} disabled={!strategyStorage.authenticated || strategyStorage.busy || Boolean(saveError) || Boolean(strategyStorage.stale)} title={saveError || undefined}>저장</button></div>
+        {strategyStorage.selectedId && <button type="button" className="strategy-copy" onClick={() => strategyStorage.onSave(true)} disabled={!strategyStorage.authenticated || strategyStorage.busy || Boolean(saveError)}>다른 이름으로 복사 저장</button>}
       </div>
-      {helpIndicatorId && <IndicatorHelpModal item={INDICATOR_CATALOG.find((item) => item.id === helpIndicatorId)} onClose={() => setHelpIndicatorId(null)}/>} 
+      {helpIndicatorId && <IndicatorHelpModal item={INDICATOR_CATALOG.find(item => item.id === helpIndicatorId)} onClose={() => setHelpIndicatorId(null)}/>}
+      {pickerOpen && <IndicatorPickerDialog configs={indicatorConfigs} onAdd={onAddIndicator} onRemove={onRemoveIndicator} onClose={() => setPickerOpen(false)}/>}
+      {conditionId && indicatorConfigs.find(config => config.id === conditionId) && <EntryConditionDialog config={indicatorConfigs.find(config => config.id === conditionId)} indicators={indicatorConfigs} settings={backtestSettings} onApply={entryConditions => update({entryConditions})} onClose={() => setConditionId(null)}/>}
+      {riskOpen && <RiskSettingsDialog settings={backtestSettings} onApply={update} onClose={() => setRiskOpen(false)}/>}
     </div>
   )
 }
 
-export default function OrderEntryPanel({ stock, userId, credentialVersion, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, onAccountChange, accountId = '', accountOptions = [], accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, strategyStorage }) {
+export default function OrderEntryPanel({ stock, userId, credentialVersion, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, onAccountChange, accountId = '', accountOptions = [], accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, onNewStrategy, strategyStorage }) {
   const [mainTab, setMainTab] = useState('order')
   const [mode, setMode] = useState('general')
   const brokerConfigured = isBrokerConfigured(integrationStatus, broker)
@@ -376,7 +361,7 @@ export default function OrderEntryPanel({ stock, userId, credentialVersion, auth
       <div className={`order-main-tabs${indicatorsOnly ? ' indicators-only' : ''}`}>{!indicatorsOnly && <button className={mainTab === 'order' ? 'active' : ''} onClick={() => setMainTab('order')}>주문</button>}<button className={indicatorsOnly || mainTab === 'indicator' ? 'active' : ''} onClick={() => setMainTab('indicator')}>지표 설정</button></div>
       {!indicatorsOnly && <div className="broker-select-tabs" aria-label="주문 증권사 선택">{BROKERS.map(item => <button key={item.id} className={broker === item.id ? `active ${item.id}` : ''} onClick={() => onBrokerChange?.(item.id)}><span>{item.name}</span><small>{authenticated && isBrokerConfigured(integrationStatus, item.id) ? '내 API' : '차트 전용'}</small></button>)}</div>}
       {!indicatorsOnly && broker === 'nh' && authenticated && brokerConfigured && accountOptions.length > 0 && <label className="broker-account-select">주문 계좌<select value={accountId || (accountOptions.length === 1 ? accountOptions[0].id : '')} onChange={event => onAccountChange?.(event.target.value)} disabled={accountLoading}><option value="" disabled>계좌 선택</option>{accountOptions.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}</select></label>}
-      {indicatorsOnly || mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} strategyStorage={strategyStorage}/> : <>
+      {indicatorsOnly || mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} backtestSettings={backtestSettings} onBacktestSettingsChange={onBacktestSettingsChange} onNewStrategy={onNewStrategy} strategyStorage={strategyStorage}/> : <>
         <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
         {mode === 'general' ? <GeneralOrder key={broker} userId={userId} credentialVersion={credentialVersion} accountRef={accountId} onAccountChange={onAccountChange} stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <div className="order-body-scroll" tabIndex={0} role="region" aria-label="자동매매 본문"><AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/></div>}
       </>}
