@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, Bell, Bot, Building2, ChevronDown, CircleDollarSign, FlaskConical, LayoutDashboard, LineChart,
+  Activity, Bell, Bot, Building2, ChevronDown, FlaskConical, LayoutDashboard, LineChart,
   LogIn, LogOut, Menu, Newspaper, PanelLeftClose, PanelLeftOpen,
   WalletCards, X, Filter,
 } from 'lucide-react'
@@ -421,7 +421,6 @@ function App() {
           <p>MARKET</p>
           <button type="button" className={`nav-link ${activePage === 'news' ? 'active' : ''}`} aria-label="주요 뉴스 · 공시" aria-current={activePage === 'news' ? 'page' : undefined} title="주요 뉴스 · 공시" onClick={() => openPage('news')}><Newspaper/><span>주요 뉴스 · 공시</span></button>
           <button type="button" className={`nav-link ${activePage === 'company' ? 'active' : ''}`} aria-label="기업 분석" aria-current={activePage === 'company' ? 'page' : undefined} title="기업 분석" onClick={() => { openPage('company'); window.scrollTo(0, 0) }}><Building2 aria-hidden="true"/><span>기업 분석</span></button>
-          <a><CircleDollarSign/><span>시세 분석</span></a>
         </nav>
         <SidebarFooter user={currentUser} nickname={nickname} connections={brokerConnections.connections} onProfileClick={openProfileOrLogin} onSessionClick={openLoginOrLogoutConfirm}/>
       </aside>
