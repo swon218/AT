@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { requestKiwoomWithCredentials, getKiwoomRealtimeAuth } from './kiwoomClient.js'
+import { kiwoomFlow } from './kiwoomFlow.js'
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -101,4 +102,54 @@ test('실시간 인증이 REST 토큰을 재사용하고 이전 연결의 무효
   first.invalidate()
   assert.equal((await getKiwoomRealtimeAuth(credentials)).token, second.token)
   assert.equal(tokenRequests, 2)
+})
+
+test('자동 주문 fence는 토큰·유량 대기 후 실제 fetch 직전에 정확히 한 번 실행된다', async t => {
+  const previousFetch = globalThis.fetch, previousWait = kiwoomFlow.wait, events = []
+  t.after(() => { globalThis.fetch = previousFetch; kiwoomFlow.wait = previousWait })
+  globalThis.fetch = async url => {
+    if (String(url).endsWith('/oauth2/token')) { events.push('token'); return jsonResponse({ token: 'fixture-fenced-token', expires_dt: '20991231235959' }) }
+    events.push('order-http'); return jsonResponse({ return_code: 0, ord_no: '0000101', dmst_stex_tp: 'KRX' })
+  }
+  kiwoomFlow.wait = async () => { events.push('flow-start'); await Promise.resolve(); events.push('flow-complete') }
+  const result = await requestKiwoomWithCredentials({ appKey: 'fixture-fenced-order-key', secretKey: 'fixture-fenced-order-secret', apiId: 'kt10000', endpoint: '/api/dostk/ordr', body: {}, retry: false,
+    beforeWrite: async () => { events.push('fenced-permit'); assert.equal(events.at(-2), 'flow-complete'); return true } })
+  assert.equal(result.ord_no, '0000101')
+  assert.deepEqual(events, ['token', 'flow-start', 'flow-complete', 'fenced-permit', 'order-http'])
+})
+
+test('유량 대기 중 정지·권한 만료 시 broker fetch는 없으며 오류 원문 없이 불명확 여부를 보존한다', async t => {
+  const previousFetch = globalThis.fetch, previousWait = kiwoomFlow.wait
+  t.after(() => { globalThis.fetch = previousFetch; kiwoomFlow.wait = previousWait })
+  let orders = 0, flowComplete = false, guards = 0
+  globalThis.fetch = async url => {
+    if (String(url).endsWith('/oauth2/token')) return jsonResponse({ token: 'fixture-stop-token', expires_dt: '20991231235959' })
+    orders++; assert.fail('blocked fence reached broker order HTTP')
+  }
+  kiwoomFlow.wait = async () => { await Promise.resolve(); flowComplete = true }
+  for (const [index, callback] of [async () => false, async () => { throw Object.assign(new Error('PRIVATE failed SQL original'), { writeGateUnknown: true }) }].entries()) {
+    await assert.rejects(requestKiwoomWithCredentials({ appKey: `fixture-stopped-key-${index}`, secretKey: `fixture-stopped-secret-${index}`, apiId: 'kt10003', endpoint: '/api/dostk/ordr', body: {}, retry: false,
+      beforeWrite: async () => { guards++; assert.equal(flowComplete, true); return callback() } }), error => {
+      assert.ok(!error.message.includes('PRIVATE'))
+      assert.equal(error.notTransmitted, index === 0)
+      assert.equal(error.writeGateUnknown, index === 1)
+      return true
+    })
+  }
+  assert.equal(orders, 0); assert.equal(guards, 2)
+})
+
+test('선택 fence를 제공하지 않은 기존 수동 주문과 읽기 요청의 동작은 유지한다', async t => {
+  const previousFetch = globalThis.fetch, previousWait = kiwoomFlow.wait
+  t.after(() => { globalThis.fetch = previousFetch; kiwoomFlow.wait = previousWait })
+  const paths = []
+  globalThis.fetch = async url => {
+    if (String(url).endsWith('/oauth2/token')) return jsonResponse({ token: 'fixture-manual-token', expires_dt: '20991231235959' })
+    paths.push(new URL(url).pathname); return jsonResponse({ return_code: 0, ord_no: '0000200' })
+  }
+  kiwoomFlow.wait = async () => {}
+  const credentials = { appKey: 'fixture-unmodified-manual-key', secretKey: 'fixture-unmodified-manual-secret' }
+  await requestKiwoomWithCredentials({ ...credentials, apiId: 'kt10000', endpoint: '/api/dostk/ordr', body: {} })
+  await requestKiwoomWithCredentials({ ...credentials, apiId: 'ka10001', endpoint: '/api/dostk/stkinfo', body: {}, beforeWrite: async () => assert.fail('read invoked an order fence') })
+  assert.deepEqual(paths, ['/api/dostk/ordr', '/api/dostk/stkinfo'])
 })

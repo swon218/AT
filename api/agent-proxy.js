@@ -1,7 +1,7 @@
 // A static Vercel Function plus vercel.json rewrite handles every allowed nesting depth.
 // This is a bounded same-origin proxy, never a user-selected upstream or arbitrary URL.
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-const ROUTE = new RegExp(`^(?:status|alerts|rooms(?:/${UUID}(?:/(?:messages|requests(?:/${UUID}/watchlist-confirmation)?))?)?|requests/${UUID}|admin/(?:status|catalog|workspace|questions/(?:selection|delete|${UUID}(?:/(?:execute|history))?)|cases(?:/${UUID})?|runs(?:/${UUID}(?:/cancel)?)?|items/${UUID}(?:/(?:review|note))?))$`)
+const ROUTE = new RegExp(`^(?:status|alerts|trading(?:/(?:connections|config|preview|start|stop|chart))?|rooms(?:/${UUID}(?:/(?:messages|requests(?:/${UUID}/watchlist-confirmation)?))?)?|requests/${UUID}|admin/(?:status|catalog|workspace|questions/(?:selection|delete|${UUID}(?:/(?:execute|history))?)|cases(?:/${UUID})?|runs(?:/${UUID}(?:/cancel)?)?|items/${UUID}(?:/(?:review|note))?))$`)
 const RESERVED = '__atlas_route'
 
 export function proxyTarget(requestUrl, parsedQuery = {}) {
@@ -35,7 +35,7 @@ export function proxyTarget(requestUrl, parsedQuery = {}) {
     url.searchParams.delete('atlas_route')
   }
   // Cursor/search are the only public query parameters. No unknown routing knobs pass upstream.
-  const permitted = route === 'rooms' ? ['search'] : route==='admin/workspace'?['view','page']:route.endsWith('/messages')||route.endsWith('/history') ? ['before'] : []
+  const permitted = route === 'trading/chart' ? ['sessionId','configId','interval'] : route === 'rooms' ? ['search'] : route==='admin/workspace'?['view','page']:route.endsWith('/messages')||route.endsWith('/history') ? ['before'] : []
   for (const key of url.searchParams.keys()) {
     if (!permitted.includes(key) || url.searchParams.getAll(key).length !== 1) return null
   }
@@ -62,12 +62,13 @@ export default async function handler(req, res) {
     if (body !== undefined) headers['Content-Type'] = 'application/json'
     if (body && Buffer.byteLength(body) > 30000) return res.status(413).end()
     const target = new URL(path, origin)
-    const timeout = path === '/api/agent/alerts' && req.method === 'POST' ? 40_000 : 10_000
+    const timeout = path.startsWith('/api/agent/trading') || path === '/api/agent/alerts' && req.method === 'POST' ? 40_000 : 10_000
     const response = await fetch(target, { method: req.method, headers, body, redirect: 'error', signal: AbortSignal.timeout(timeout) })
     const cookie = response.headers.get('set-cookie')
     if (cookie) res.setHeader('Set-Cookie', cookie)
     const output = await response.text()
-    if (Buffer.byteLength(output) > 256000) return res.status(502).json({ error: 'proxy_response_too_large' })
+    const responseLimit = path.startsWith('/api/agent/trading') ? 2 * 1024 * 1024 : 256000
+    if (Buffer.byteLength(output) > responseLimit) return res.status(502).json({ error: 'proxy_response_too_large' })
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
     return res.status(response.status).send(output)
   } catch { return res.status(502).json({ error: 'agent_proxy_unavailable' }) }

@@ -33,7 +33,7 @@ export function registerLabRoutes(app, read = readLabData) {
 
 const cache = new Map()
 const pending = new Map()
-async function readLabData(code = '') {
+export async function readLabData(code = '') {
   const previous = cache.get(code)
   if (previous && previous.expires > Date.now()) return previous.value
   if (pending.has(code)) return pending.get(code)

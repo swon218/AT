@@ -1,0 +1,24 @@
+[Unit]
+Description=ATLAS deterministic trading V1 worker (explicit activation required)
+After=network-online.target atlas-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=atlas-trading
+Group=atlas-trading
+WorkingDirectory=/opt/atlas
+EnvironmentFile=/etc/atlas/trading.env
+ExecStart=/usr/bin/node /opt/atlas/server/tradingWorker.js --loop
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=210
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

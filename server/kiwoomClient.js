@@ -88,7 +88,7 @@ export async function getKiwoomRealtimeAuth({ appKey = config.kiwoomAppKey, secr
   return { token, invalidate: () => { if (tokenCache.get(cacheKey)?.token === token) tokenCache.delete(cacheKey) } }
 }
 
-export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false, timeoutMs, signal, rateRetry = true }) {
+export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, endpoint, body, retry = true, contYn = 'N', nextKey = '', returnPage = false, timeoutMs, signal, rateRetry = true, beforeWrite }) {
   signal=signal&&timeoutMs?AbortSignal.any([signal,AbortSignal.timeout(timeoutMs)]):signal||AbortSignal.timeout(timeoutMs||20000)
   const write=endpoint==='/api/dostk/ordr'||endpoint==='/api/dostk/crdordr'
   const pendingToken=getAccessToken({appKey,secretKey})
@@ -101,6 +101,20 @@ export async function requestKiwoomWithCredentials({ appKey, secretKey, apiId, e
   signal?.throwIfAborted()
   await kiwoomFlow.wait({appKey,secretKey},apiId,signal)
   try {
+    // Optional automatic-execution fence. Manual callers do not provide it.
+    // Run only after token acquisition and shared flow waiting, with no awaited
+    // operation between its final authorization and the actual order fetch.
+    if (write && beforeWrite !== undefined) {
+      try {
+        if (typeof beforeWrite !== 'function' || await beforeWrite() !== true) throw Object.assign(new Error(), { notTransmitted: true })
+      } catch (error) {
+        throw Object.assign(new Error('주문 전송 직전 실행 권한을 확인하지 못했습니다.'), {
+          code: error?.writeGateUnknown ? 'trading_write_gate_unknown' : 'trading_write_gate_rejected',
+          notTransmitted: error?.notTransmitted === true, writeGateUnknown: error?.writeGateUnknown === true,
+        })
+      }
+    }
+    signal?.throwIfAborted()
     const response = await fetch(`${config.kiwoomHost}${endpoint}`, {
       method: 'POST',
       signal: signal && timeoutMs ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : signal || (timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined),

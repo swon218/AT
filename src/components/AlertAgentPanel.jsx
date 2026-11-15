@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Bot, ChartNoAxesCombined, CircleAlert, CircleCheck, Info, LockKeyhole } from 'lucide-react'
+import { Bell, Bot, ChartNoAxesCombined, CircleAlert, CircleCheck, Info } from 'lucide-react'
 import { ALERT_KINDS, ALERT_RULES_PER_SYMBOL, addAlertDays, alertCondition, alertExpiry, alertFrequencyLabel, alertSessionLabel, alertThreshold, koreanAlertDay, legacyAlertKind } from '../../shared/alertRules'
 import { agentApi } from '../services/agentApi'
 import { displayAlertStatus, reasons, stateLabels } from '../utils/alertPresentation'
@@ -27,15 +27,6 @@ export function AgentModeTabs({ mode, onChange }) {
         buttons.current[next]?.focus()
       }}><Icon size={17} aria-hidden="true"/>{label}</button>)}
   </div>
-}
-
-export function TradingAgentPanel() {
-  return <section className="agent-mode-card agent-trading-placeholder">
-    <LockKeyhole size={26} aria-hidden="true"/>
-    <h2>매매 에이전트</h2>
-    <p>주문 자동화 기능을 준비 중입니다.</p>
-    <div className="alert-actions"><button type="button" disabled>매매 설정</button><button type="button" disabled>실행</button></div>
-  </section>
 }
 
 const kakaoStates = {

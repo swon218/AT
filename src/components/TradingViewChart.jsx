@@ -13,6 +13,7 @@ import { normalizeChartCandles } from '../utils/chartCandles'
 import { formatChartTime, formatChartTick } from '../utils/chartTime'
 import { backtestChartMarkers, backtestEventLabel } from '../utils/backtestPresentation'
 import { createPurchasePriceLine, purchasePriceLabel } from '../utils/purchasePriceLine'
+import { executionChartMarkers } from '../utils/tradingPresentation'
 import './PurchasePriceChart.css'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(Math.round(value))
@@ -21,7 +22,7 @@ const formatVolume = value => Number.isFinite(value) ? volumeFormatter.format(va
 const EMPTY = []
 const advancedValid = config => Object.hasOwn(ADVANCED_BY_ID, config.id) && validAdvancedConfig(config)
 
-export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange, backtestEvents = EMPTY, averagePurchasePrice = null }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange, backtestEvents = EMPTY, executionTrades = EMPTY, averagePurchasePrice = null }) {
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
@@ -29,6 +30,8 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
   const paneLayoutsRef = useRef({})
   const rightScaleWidthRef = useRef(72)
   const backtestEventsRef = useRef(backtestEvents)
+  const executionTradesRef = useRef(executionTrades)
+  executionTradesRef.current = executionTrades
   const backtestRuntimeRef = useRef(null)
   const purchaseRuntimeRef = useRef(null)
   const purchasePriceRef = useRef(averagePurchasePrice)
@@ -162,7 +165,8 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     const purchaseRuntime = { sourceKey, chart, line: purchaseLine }
     purchaseRuntimeRef.current = purchaseRuntime
     purchaseLine.setPrice(purchasePriceRef.current)
-    const eventMarkers = createSeriesMarkers(candleSeries, backtestChartMarkers(backtestEventsRef.current, palette))
+    const allMarkers = palette => [...backtestChartMarkers(backtestEventsRef.current, palette),...executionChartMarkers(executionTradesRef.current,data,palette)].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0)
+    const eventMarkers = createSeriesMarkers(candleSeries, allMarkers(palette))
     const backtestRuntime = { markers: eventMarkers }
     backtestRuntimeRef.current = backtestRuntime
 
@@ -333,7 +337,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       candleSeries.applyOptions({ upColor: palette.up, downColor: palette.down, wickUpColor: palette.wickUp, wickDownColor: palette.wickDown,
         borderUpColor: palette.up, borderDownColor: palette.down, priceLineColor: palette.price })
       themedPriceLines.forEach(line => line.applyOptions({ axisLabelColor: palette.background }))
-      eventMarkers.setMarkers(backtestChartMarkers(backtestEventsRef.current, palette))
+      eventMarkers.setMarkers(allMarkers(palette))
       purchaseLine.setPalette(palette)
     })
     const volumeLegendElement = document.createElement('div')
@@ -425,8 +429,8 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
   }, [data, period, indicatorKey])
 
   useEffect(() => {
-    backtestRuntimeRef.current?.markers.setMarkers(backtestChartMarkers(backtestEvents, chartPalette()))
-  }, [backtestEvents, data, indicatorKey])
+    backtestRuntimeRef.current?.markers.setMarkers([...backtestChartMarkers(backtestEvents, chartPalette()),...executionChartMarkers(executionTrades,data,chartPalette())].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0))
+  }, [backtestEvents, executionTrades, data, indicatorKey])
 
   useLayoutEffect(() => {
     const runtime = purchaseRuntimeRef.current

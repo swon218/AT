@@ -190,3 +190,11 @@ export async function getAuthenticatedCredentials(request, { client = adminClien
   })
   return { user, credentials, status: configuredStatus(data) }
 }
+
+// Server worker only. The owner is obtained from a service-only leased session,
+// never from a browser-supplied user id. Re-read the encrypted store on every tick.
+export async function getStoredTradingAccount(userId, { client = adminClient } = {}) {
+  if (!/^[0-9a-f-]{36}$/i.test(userId || '') || !client) throw settingsError('settings_unavailable', '보안 저장소를 확인할 수 없습니다.', 503)
+  const user = { id: userId }, { row, credentials } = await readStored(user, client)
+  return { user, credentials, status: configuredStatus(row), tradingCredentialEpoch: row?.settings_version ?? null }
+}

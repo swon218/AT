@@ -34,7 +34,8 @@ import useIndicatorDraft from './hooks/useIndicatorDraft'
 import useStrategies from './hooks/useStrategies'
 import useAgentWorkspace from './hooks/useAgentWorkspace'
 import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
-import AlertAgentPanel, { AgentModeTabs, TradingAgentPanel } from './components/AlertAgentPanel'
+import AlertAgentPanel, { AgentModeTabs } from './components/AlertAgentPanel'
+import TradingAgentPanel from './components/TradingAgentPanel'
 import useAgentAlertDrafts from './hooks/useAgentAlertDrafts'
 import SidebarFooter from './components/SidebarFooter'
 import ThemeSwitch from './components/ThemeSwitch'
@@ -417,7 +418,7 @@ function App() {
               {agentMode === 'alerts' ? <AlertAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} watchlist={watchlist}
                 drafts={alertDrafts} roomId={agent.active.id} notice={alertNotice}
                 onLogin={() => setAuthModalOpen(true)} onKakao={() => setAccountSettingsOpen(true)} settingsOpen={accountSettingsOpen}/>
-                : agentMode === 'trading' ? <TradingAgentPanel/>
+                : agentMode === 'trading' ? <TradingAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} onLogin={() => setAuthModalOpen(true)}/>
                   : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }}
                     onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); setAgentMode('alerts') }}/>}
             </div>
