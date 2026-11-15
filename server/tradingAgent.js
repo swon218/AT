@@ -15,7 +15,7 @@ const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const fail = (code, statusCode = 400) => { throw Object.assign(new Error(code), { code, statusCode }) }
 export const tradingFlags = () => ({ workerEnabled: process.env.ATLAS_TRADING_WORKER_ENABLED === 'true', liveEnabled: process.env.ATLAS_TRADING_LIVE_ENABLED === 'true', paperEnabled: false })
 const productionGateway = () => createTradingBrokerGateway({loadAccount:getStoredTradingAccount,settings:{liveEnabled:()=>tradingFlags().liveEnabled,workerEnabled:()=>tradingFlags().workerEnabled,kiwoomOrdersEnabled:()=>config.kiwoomOrdersEnabled}})
-const safeKeys = ['phase','reason','checkedAt','lastCheckedAt','position','closedTrades','signalDay','missedSignalDay','markPrice','markAt','cycle','entryCount','lastClosedAt','unmanagedQuantity']
+const safeKeys = ['phase','reason','checkedAt','lastCheckedAt','position','closedTrades','signalDay','missedSignalDay','markPrice','markAt','cycle','entryCount','lastClosedAt','unmanagedQuantity','priority']
 const safePosition = value => value && Object.fromEntries(Object.entries(value).filter(([key]) => ['quantity','averagePrice','costMicros','entryAt','adoptedAt','entryQuantity','initialCostMicros','adopted','soldQuantity','proceedsMicros'].includes(key)))
 const safeStrategy = row => row && ({id:row.id,name:row.name,revision:row.revision,schema_version:row.schema_version,indicators:row.indicators,backtest_settings:row.backtest_settings})
 function safeState(state = {}) {

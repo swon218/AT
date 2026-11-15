@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {executionChartMarkers,tradingConnectionStage} from '../src/utils/tradingPresentation.js'
+import {executionChartMarkers,tradingConnectionStage,orderTradingConfigs} from '../src/utils/tradingPresentation.js'
+
+test('execution rows follow current watchlist order and retain removed active targets after them',()=>{
+ const input=[{code:'999999'},{code:'000660'},{code:'005930'}]
+ assert.deepEqual(orderTradingConfigs(input,[{code:'005930'},{code:'000660'}]).map(row=>row.code),['005930','000660','999999'])
+ assert.equal(input[0].code,'999999')
+})
 
 test('display proof expires and cannot overrule the shared connection invalidation on key deletion',()=>{
  const proof={connected:true,status:'connected',expiresAt:200}

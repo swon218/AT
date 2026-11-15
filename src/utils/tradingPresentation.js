@@ -8,6 +8,10 @@ export function tradingConnectionStage(row,evidence,now=Date.now()) {
   if(evidence===false)return 'checking'
   return row.connected?'connected':'failed'
 }
+export function orderTradingConfigs(configs,watchlist) {
+  const rank=new Map(watchlist.map((row,index)=>[row.code,index]))
+  return [...configs].sort((a,b)=>(rank.get(a.code)??Infinity)-(rank.get(b.code)??Infinity)||a.code.localeCompare(b.code))
+}
 
 const seoulDate=seconds=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(seconds*1000))
 // Mark the bar containing the actual fill; never add OHLC or a fabricated fill.
