@@ -7,7 +7,7 @@ import { createTradingBrokerGateway, tradingCredentialVersion as credentialVersi
 import { createTradingEngine, initialTradingState } from './tradingEngine.js'
 import { createAgentBridge } from './agent.js'
 import { readLabData } from './lab.js'
-import { validateTradingSpec } from '../shared/tradingV1.js'
+import { validateTradingSpec, tradingPerformance } from '../shared/tradingV1.js'
 import { config } from './config.js'
 
 const brokers = ['kiwoom', 'toss', 'nh', 'kb']
@@ -31,7 +31,7 @@ export function tradingDisplay(context, flags, capabilities) {
     strategies: (context.strategies || []).map(safeStrategy),
     configs: (context.configs || []).map(row => ({ id:row.id,code:row.code,revision:row.revision,spec:row.spec,updated_at:row.updated_at })),
     sessions: (context.sessions || []).map(row => ({ id:row.id,config_id:row.config_id,code:row.code,broker:row.broker,account_ref:row.account_ref,mode:row.mode,status:row.status,revision:row.revision,
-      snapshot:{spec:row.snapshot?.spec,strategy:safeStrategy(row.snapshot?.strategy)},state:safeState(row.state),stop_requested:row.stop_requested,abandon_requested:row.abandon_requested,created_at:row.created_at,updated_at:row.updated_at })),
+      snapshot:{spec:row.snapshot?.spec,strategy:safeStrategy(row.snapshot?.strategy)},state:safeState(row.state),performance:tradingPerformance(row.state),stop_requested:row.stop_requested,abandon_requested:row.abandon_requested,created_at:row.created_at,updated_at:row.updated_at })),
     intents: (context.intents || []).map(row => ({ id:row.id,session_id:row.session_id,side:row.side,quantity:row.quantity,price:row.price,status:row.status,filled_quantity:row.filled_quantity,cumulative_quantity:row.cumulative_quantity,cumulative_notional:row.cumulative_notional,created_at:row.created_at,updated_at:row.updated_at })),
     events: (context.events || []).map(row => ({ id:row.id,session_id:row.session_id,kind:row.kind,code:row.code,created_at:row.created_at })),
   }

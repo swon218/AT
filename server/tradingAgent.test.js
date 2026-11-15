@@ -9,6 +9,13 @@ import { tradingCredentialVersion } from './tradingBrokerGateway.js'
 import { proxyTarget } from '../api/agent-proxy.js'
 
 const origin = 'https://atlas.example'
+test('bounded marker history never truncates the execution performance totals',()=>{
+  const closedTrades=Array.from({length:201},(_,i)=>({id:String(i),pnl:10,reason:'take_profit'}))
+  const dto=tradingDisplay({sessions:[{state:{entryCount:201,closedTrades}}]}, {}, {})
+  assert.equal(dto.sessions[0].state.closedTrades.length,200)
+  assert.equal(dto.sessions[0].performance.closedTrades,201)
+  assert.equal(dto.sessions[0].performance.realizedPnl,2010)
+})
 function controllerFixture() {
   const owner = randomUUID(), outsider = randomUUID(), strategyId = randomUUID(), configId = randomUUID(), previewId = randomUUID(), sessionId = randomUUID()
   const account = { user: { id: owner }, credentials: { kiwoomAppKey: 'fixture-personal-key', kiwoomSecretKey: 'fixture-personal-secret' }, status: { kiwoomConfigured: true } }

@@ -44,7 +44,7 @@ function RunDetails({session,intents,events}) {
   const s=session.state||{},p=s.position,average=p?.averagePrice??(p?.quantity>0?Number(p.costMicros)/1e6/p.quantity:null)
   const quantity=p?.quantity||0,risk=session.snapshot?.strategy?.backtest_settings||{},thresholds=quantity?tradingThresholds(p,risk):null
   const freshMark=Number.isFinite(Date.parse(s.markAt))&&Date.now()-Date.parse(s.markAt)<=30000&&!['connection_required','reconciliation_required','unknown'].includes(session.status)
-  const perf=tradingPerformance(s,freshMark?s.markPrice:null)
+  const perf={...(session.performance||tradingPerformance(s)),unrealizedPnl:tradingPerformance(s,freshMark?s.markPrice:null).unrealizedPnl}
   return <div className="trading-details"><h3>{phases[phase(session)]||phase(session)||'저장됨'} <small>{session.mode}</small></h3><p>{names[session.broker]} · 본인 API 연결 계좌 · {session.snapshot?.strategy?.name} v{session.snapshot?.strategy?.revision}</p>
     <p>최근 확인 {when(s.checkedAt||session.updated_at)} {s.reason&&<span className="trading-reason">{tradingReason[s.reason]||(s.reason==='order_rejected'?'주문이 거부되었습니다. 자동 재시도하지 않습니다. 계좌와 설정을 확인해 주세요.':s.reason)}</span>}</p>
     <dl><div><dt>보유수량</dt><dd>{quantity}주</dd></div><div><dt>평균 진입가</dt><dd>{money(average)}원</dd></div><div><dt>익절 기준</dt><dd>{money(thresholds?.takeProfitPrice)}원</dd></div><div><dt>손절 기준</dt><dd>{money(thresholds?.stopLossPrice)}원</dd></div><div><dt>진입 / 완료</dt><dd>{perf.entries} / {perf.closedTrades}</dd></div><div><dt>실현손익</dt><dd>{money(perf.realizedPnl)}원</dd></div><div><dt>미실현손익</dt><dd>{money(perf.unrealizedPnl)}원</dd></div><div><dt>익절 / 손절</dt><dd>{perf.takeProfits} / {perf.stopLosses}</dd></div></dl>
