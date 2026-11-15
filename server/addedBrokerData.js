@@ -35,8 +35,19 @@ function abortable(read, signal) {
 }
 const object = value => value && !Array.isArray(value) && typeof value === 'object' ? value : null
 const cashHolding = label => !/신용|융자|대주|대출/.test(String(label || ''))
+const holdingNumber = value => typeof value === 'string' || typeof value === 'number' ? numeric(value) : null
 
-export function createAddedBrokerData({ nh = nhClient, kb = kbClient, now = Date.now, chartTimeoutMs = 20_000 } = {}) {
+// SSQM2952 names hld_q "owned quantity" and ec_q "settlement quantity".
+// Their intraday relationship is undocumented. Only the settled intersection
+// is safe for the optional price overlay; keep legacy asset/order quantity intact.
+export function kbPurchasePriceQuantity(row) {
+  const owned = holdingNumber(row.hld_q), settlement = holdingNumber(row.ec_q)
+  const verified = owned !== null && owned >= 0 && settlement !== null && settlement >= 0 && owned === settlement &&
+    holdingNumber(row.nstmt_b_q) === 0 && holdingNumber(row.nstmt_s_q) === 0
+  return { purchasePriceQuantity: verified ? owned : null, purchasePriceQuantityStatus: verified ? 'verified' : 'unconfirmed' }
+}
+
+export function createAddedBrokerData({ nh = nhClient, kb = kbClient, now = Date.now, chartTimeoutMs = 20_000, accountTimeoutMs = 20_000 } = {}) {
   const cache = new Map(), inFlight = new Map()
   async function candleResponse(broker, symbol, interval, limit, auth, options = {}) {
     if (!['nh', 'kb'].includes(broker) || !validSymbol(symbol) || !intervals.has(interval)) throw httpError('종목코드 또는 차트 주기를 확인해 주세요.', 400)
@@ -166,14 +177,26 @@ export function createAddedBrokerData({ nh = nhClient, kb = kbClient, now = Date
 
   async function summary(broker, auth, symbol, accountId = '') {
     if (symbol && !validSymbol(symbol)) throw httpError('국내주식 종목코드를 확인해 주세요.', 400)
+    const signal = AbortSignal.timeout(accountTimeoutMs)
+    const readNh = (path, input, options) => abortable(() => nh.request(auth, path, input, { ...options, signal }), signal)
+    const readKb = (code, input) => abortable(() => kb.request(auth, code, input, { signal }), signal)
     if (broker === 'nh') {
-      const accounts = await nhAccounts(auth), selectedAccountId = selectAccount(accounts, accountId)
+      const accounts = await abortable(() => nhAccounts(auth, signal), signal), selectedAccountId = selectAccount(accounts, accountId)
       if (!selectedAccountId) return { broker, accounts, selectedAccountId: '', accountRequired: true, holdings: [] }
       let cts = '', total = null, rows = []
       const seen = new Set()
       for (let page = 0; page < 50; page++) {
-        const result = await nh.request(auth, '/krstock/inquiry/v1/balance', { act_no: selectedAccountId, bnc_bse_cd: '1', ltg_aot_dit_cd: '9', aet_bse: '1', qut_dit_cd: 'KRX', aly_qut_cd: '1' }, { cts })
-        rows.push(...(Array.isArray(result.Output_1) ? result.Output_1 : []))
+        const result = await readNh('/krstock/inquiry/v1/balance', { act_no: selectedAccountId, bnc_bse_cd: '1', ltg_aot_dit_cd: '9', aet_bse: '1', qut_dit_cd: 'KRX', aly_qut_cd: '1' }, { cts })
+        const finalPage = !result.hasMore && !['00165', '00218'].includes(result.rsp_cd)
+        const pageTotal = object(result.Output_0)
+        // NH omits data blocks without rows. A valid final zero total (or an
+        // already-read list followed by final totals) distinguishes this from
+        // a malformed/partial response; missing blocks alone are not evidence.
+        const totalsPresent = pageTotal && numeric(pageTotal.tot_byn_amt) !== null && numeric(pageTotal.tot_eal_amt) !== null
+        const omittedRows = result.Output_1 === undefined && finalPage && totalsPresent &&
+          (rows.length > 0 || (numeric(pageTotal.tot_byn_amt) === 0 && numeric(pageTotal.tot_eal_amt) === 0))
+        if (!Array.isArray(result.Output_1) && !omittedRows) throw httpError('NH 보유정보 응답을 확인할 수 없습니다.')
+        rows.push(...(result.Output_1 || []))
         total = object(result.Output_0) || total
         // NH sends the totals only on the final balance page.
         if (!result.hasMore && !['00165', '00218'].includes(result.rsp_cd)) break
@@ -182,22 +205,24 @@ export function createAddedBrokerData({ nh = nhClient, kb = kbClient, now = Date
         seen.add(cts)
       }
       if (!total) throw httpError('NH 잔고 합계를 확인할 수 없습니다.')
-      const power = symbol ? await nh.request(auth, '/krstock/inquiry/v1/buyableQuantity', { ost_dit_cd: '1', act_no: selectedAccountId, iem_cd: symbol, nmn_pr_tp_cd: '05', orr_pr: 0, cfd_lon_cd: '', lon_dt: '' }) : null
-      const sellable = symbol ? await nh.request(auth, '/krstock/inquiry/v1/sellableQuantity', { act_no: selectedAccountId, iem_cd: symbol, lon_dt: '', cfd_lon_cd: '00' }) : null
+      const power = symbol ? await readNh('/krstock/inquiry/v1/buyableQuantity', { ost_dit_cd: '1', act_no: selectedAccountId, iem_cd: symbol, nmn_pr_tp_cd: '05', orr_pr: 0, cfd_lon_cd: '', lon_dt: '' }) : null
+      const sellable = symbol ? await readNh('/krstock/inquiry/v1/sellableQuantity', { act_no: selectedAccountId, iem_cd: symbol, lon_dt: '', cfd_lon_cd: '00' }) : null
       const holdings = rows.filter(row => cashHolding(row.tp_cd_nm)).map(row => {
-        const quantity = numeric(row.itg_bnc_qty), averagePrice = numeric(row.phs_pr), code = stockCode(row.iem_cd)
+        const quantity = holdingNumber(row.itg_bnc_qty), averagePrice = holdingNumber(row.phs_pr), code = stockCode(row.iem_cd)
         return { code, name: String(row.iem_nm || '').trim(), quantity, averagePrice, currentPrice: numeric(row.now_pr), purchaseAmount: quantity !== null && averagePrice !== null ? quantity * averagePrice : null, evaluationAmount: numeric(row.eal_amt), evaluationProfit: numeric(row.eal_pls_amt), profitRate: numeric(row.pft_rt), tradableQuantity: code === symbol ? numeric(sellable?.Output_0?.sll_pbl_qty) : null }
       })
       return { broker, accounts, selectedAccountId, accountRequired: false, holdings, cash: numeric(total.dca), orderableAmount: numeric(power?.Output_0?.csh_orr_pbl_amt), withdrawableAmount: numeric(total.drn_pbl_amt), totalPurchaseAmount: numeric(total.tot_byn_amt), totalEvaluationAmount: numeric(total.tot_eal_amt), totalEvaluationProfit: numeric(total.tot_eal_pls), totalProfitRate: numeric(total.pft_rt), estimatedAssets: numeric(total.nas_amt), updatedAt: new Date().toISOString() }
     }
-    const total = await kb.request(auth, 'ssqm2952', { excg_mktpr_ccd: 'K' })
-    const power = await kb.request(auth, 'ssqm1802', { is_no: symbol })
-    const rows = Array.isArray(total.Record1) ? total.Record1 : []
+    const total = await readKb('ssqm2952', { excg_mktpr_ccd: 'K' })
+    const power = await readKb('ssqm1802', { is_no: symbol })
+    const noHoldings = total.Record1 === undefined && numeric(total.tl_data_cnt) === 0 && numeric(total.dy_tfnd) !== null
+    if (!Array.isArray(total.Record1) && !noHoldings) throw httpError('KB 보유정보 응답을 확인할 수 없습니다.')
+    const rows = total.Record1 || []
     if (numeric(total.tl_data_cnt) > rows.length) throw httpError('KB 잔고 전체를 확인하지 못했습니다. 증권사에서 잔고를 확인해 주세요.')
     let sellable = [], nextKey = ''
     const seen = new Set()
     for (let page = 0; symbol && page < 50; page++) {
-      const result = await kb.request(auth, 'ssqm1801', { inq_clsf: '0', is_no: symbol, mkt_tm_ccd: '1', nxt_key: nextKey })
+      const result = await readKb('ssqm1801', { inq_clsf: '0', is_no: symbol, mkt_tm_ccd: '1', nxt_key: nextKey })
       sellable.push(...(Array.isArray(result.Record1) ? result.Record1 : []))
       const next = String(result.nxt_key || '').trim()
       if (!next) break
@@ -207,7 +232,7 @@ export function createAddedBrokerData({ nh = nhClient, kb = kbClient, now = Date
     }
     const holdings = rows.filter(row => cashHolding(row.clsf)).map(row => {
       const code = stockCode(row.is_cd), sell = sellable.find(item => stockCode(item.is_no) === code)
-      return { code, name: String(row.is_nm || '').trim(), quantity: numeric(row.ec_q), averagePrice: numeric(row.byng_avr_prc), currentPrice: numeric(row.now_prc), purchaseAmount: numeric(row.byng_amt), evaluationAmount: numeric(row.val_amt), evaluationProfit: numeric(row.val_pl), profitRate: numeric(row.val_yld), tradableQuantity: numeric(sell?.ordr_psbl_q ?? row.ordr_psbl_q) }
+      return { code, name: String(row.is_nm || '').trim(), quantity: numeric(row.ec_q), ...kbPurchasePriceQuantity(row), averagePrice: holdingNumber(row.byng_avr_prc), currentPrice: numeric(row.now_prc), purchaseAmount: numeric(row.byng_amt), evaluationAmount: numeric(row.val_amt), evaluationProfit: numeric(row.val_pl), profitRate: numeric(row.val_yld), tradableQuantity: numeric(sell?.ordr_psbl_q ?? row.ordr_psbl_q) }
     })
     return { broker, holdings, accountRequired: false, orderableAmount: numeric(power.pcnt100_ordr_psbl_amt), cash: numeric(total.dy_tfnd), withdrawableAmount: numeric(power.do_psbl_csh), totalPurchaseAmount: numeric(total.byng_amt_sum), totalEvaluationAmount: numeric(total.val_amt_sum), totalEvaluationProfit: numeric(total.val_pl_sum), totalProfitRate: numeric(total.val_yld_sum), estimatedAssets: numeric(total.nt_asts_val_amt), updatedAt: new Date().toISOString() }
   }

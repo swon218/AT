@@ -89,12 +89,13 @@ export async function requestTossWithCredentials({ apiKey, secretKey, path, meth
   return readJson(response, `토스 ${method} ${path}`)
 }
 
-export async function getTossBrokerageAccount({ apiKey, secretKey }) {
+export async function getTossBrokerageAccount({ apiKey, secretKey }, { signal } = {}) {
+  signal?.throwIfAborted()
   const key = credentialKey(apiKey, secretKey)
   const cached = accountCache.get(key)
   if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.account
 
-  const payload = await requestTossWithCredentials({ apiKey, secretKey, path: '/api/v1/accounts' })
+  const payload = await requestTossWithCredentials({ apiKey, secretKey, path: '/api/v1/accounts', signal })
   const accounts = Array.isArray(payload.result) ? payload.result : []
   const account = accounts.find((item) => item.accountType === 'BROKERAGE') || accounts[0]
   if (account?.accountSeq === undefined || account?.accountSeq === null) {

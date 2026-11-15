@@ -1,5 +1,5 @@
-import { AlertTriangle, CheckCircle2, Info, KeyRound, LogIn, Minus, Plus, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, Check, CheckCircle2, KeyRound, LogIn, Minus, Plus, X } from 'lucide-react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { INDICATOR_CATALOG } from '../utils/indicators'
 import { validAdvancedConfig } from '../utils/advancedIndicatorCatalog'
@@ -31,7 +31,7 @@ function StepInput({ value, onChange, placeholder, unit }) {
 function OrderAccessNotice({ authenticated, broker, brokerConfigured }) {
   const brokerName = getBroker(broker).name
   if (!authenticated) return <p className="order-login-warning"><LogIn/>로그인 후 본인의 {brokerName} API 키를 등록하면 주문할 수 있습니다.</p>
-  if (!brokerConfigured) return <p className="order-login-warning"><KeyRound/>{broker === 'kb' ? '개인 API 등록 전에는 공용 시세로 차트를 표시합니다.' : `운영자 ${brokerName} API로 차트만 표시됩니다.`} 개인 설정에서 {brokerName} API를 저장하면 계좌 조회와 주문을 이용할 수 있습니다.</p>
+  if (!brokerConfigured) return <p className="order-login-warning"><KeyRound/>개인 API 등록 전에는 계좌 조회와 주문을 사용할 수 없습니다. 차트는 시세 조회에 성공한 경우에만 표시됩니다. 개인 설정에서 {brokerName} API를 등록해 주세요.</p>
   return <p className="order-login-warning ready"><CheckCircle2/>사용자 {brokerName} API가 저장되어 있습니다. 실제 주문 전 종목, 가격, 수량을 반드시 확인하세요.</p>
 }
 
@@ -202,26 +202,6 @@ function SellAccountPreview({ ready, loading, holding, error }) {
   )
 }
 
-function AutoTrade({ authenticated, brokerConfigured, accountSummary, accountLoading }) {
-  const [quantity, setQuantity] = useState('')
-  return (
-    <>
-      <div className="trade-form auto-trade-form">
-        <FieldRow label="저장 전략"><select className="trade-input"><option>전략 선택</option></select></FieldRow>
-        <FieldRow label="주문가능금액"><div className="trade-input readonly"><span>{!authenticated || !brokerConfigured ? 'API 연결 필요' : accountLoading ? '조회 중...' : accountSummary?.orderableAmount != null ? `${Number(accountSummary.orderableAmount).toLocaleString('ko-KR')}원` : '조회 필요'}</span></div></FieldRow>
-        <FieldRow label="주문수량"><StepInput value={quantity} onChange={setQuantity} placeholder="수량 입력" unit="주"/></FieldRow>
-        <FieldRow label="매수 상한가"><div className="trade-input"><input inputMode="numeric" placeholder="상한가 입력"/></div></FieldRow>
-        <FieldRow label="매수 하한가"><div className="trade-input"><input inputMode="numeric" placeholder="하한가 입력"/></div></FieldRow>
-      </div>
-      <p className="telegram-hint"><i/><span>로그인 후 텔레그램 연동을 사용할 수 있습니다.</span><Info/></p>
-      <label className="trade-check"><input type="checkbox"/>매수 상한가와 매수 하한가 둘 다 입력하거나 하나만 입력해도 됩니다.</label>
-      <label className="trade-check"><input type="checkbox"/>주문가능금액이 매수 상한가와 매수 하한가 사이에 있고 전략에 도달해야 자동매수가 시작됩니다.</label>
-      <button className="order-execute auto" disabled>자동매매 감시 시작</button>
-      <p className="order-login-warning"><Info/>자동매매는 아직 주문 감시 서버와 연결되지 않았습니다. 현재는 일반주문만 이용할 수 있습니다.</p>
-    </>
-  )
-}
-
 function NumberSetting({ label, value, onChange, min = 1, max = 500, step = 1 }) {
   return <label className="indicator-config-field"><span>{label}</span><input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))}/></label>
 }
@@ -352,9 +332,9 @@ function IndicatorSettings({ indicatorConfigs, strategyName, onStrategyNameChang
   )
 }
 
-export default function OrderEntryPanel({ stock, userId, credentialVersion, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, onAccountChange, accountId = '', accountOptions = [], accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, onNewStrategy, strategyStorage }) {
+export default function OrderEntryPanel({ stock, userId, credentialVersion, authenticated = false, integrationStatus = {}, broker = 'kiwoom', onBrokerChange, onAccountChange, accountId = '', accountOptions = [], accountSummary = null, accountLoading = false, accountError = '', onAccountRefresh, purchasePriceControl = {}, indicatorsOnly = false, indicatorConfigs = [], strategyName = '', onStrategyNameChange, onAddIndicator, onUpdateIndicator, onRemoveIndicator, onResetIndicators, onDeleteIndicators, backtestSettings, onBacktestSettingsChange, onNewStrategy, strategyStorage }) {
   const [mainTab, setMainTab] = useState('order')
-  const [mode, setMode] = useState('general')
+  const purchasePriceDescription = useId()
   const brokerConfigured = isBrokerConfigured(integrationStatus, broker)
   return (
     <section className="atlas-order-entry" aria-label={indicatorsOnly ? '실험실 지표 설정' : '주식 주문 입력'}>
@@ -362,8 +342,19 @@ export default function OrderEntryPanel({ stock, userId, credentialVersion, auth
       {!indicatorsOnly && <div className="broker-select-tabs" aria-label="주문 증권사 선택">{BROKERS.map(item => <button key={item.id} className={broker === item.id ? `active ${item.id}` : ''} onClick={() => onBrokerChange?.(item.id)}><span>{item.name}</span><small>{authenticated && isBrokerConfigured(integrationStatus, item.id) ? '내 API' : '차트 전용'}</small></button>)}</div>}
       {!indicatorsOnly && broker === 'nh' && authenticated && brokerConfigured && accountOptions.length > 0 && <label className="broker-account-select">주문 계좌<select value={accountId || (accountOptions.length === 1 ? accountOptions[0].id : '')} onChange={event => onAccountChange?.(event.target.value)} disabled={accountLoading}><option value="" disabled>계좌 선택</option>{accountOptions.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}</select></label>}
       {indicatorsOnly || mainTab === 'indicator' ? <IndicatorSettings indicatorConfigs={indicatorConfigs} strategyName={strategyName} onStrategyNameChange={onStrategyNameChange} onAddIndicator={onAddIndicator} onUpdateIndicator={onUpdateIndicator} onRemoveIndicator={onRemoveIndicator} onResetIndicators={onResetIndicators} onDeleteIndicators={onDeleteIndicators} backtestSettings={backtestSettings} onBacktestSettingsChange={onBacktestSettingsChange} onNewStrategy={onNewStrategy} strategyStorage={strategyStorage}/> : <>
-        <div className="order-mode-tabs"><button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>일반주문</button><button className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>자동매매</button></div>
-        {mode === 'general' ? <GeneralOrder key={broker} userId={userId} credentialVersion={credentialVersion} accountRef={accountId} onAccountChange={onAccountChange} stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/> : <div className="order-body-scroll" tabIndex={0} role="region" aria-label="자동매매 본문"><AutoTrade authenticated={authenticated} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading}/></div>}
+        <div className="order-display-controls">
+          <div className="order-mode-tabs">
+            <button type="button" className="active" aria-pressed="true">일반주문</button>
+            <button type="button" className="purchase-price-toggle" aria-pressed={!!purchasePriceControl.enabled} aria-describedby={purchasePriceDescription} disabled={!purchasePriceControl.enabled && !purchasePriceControl.available} onClick={() => purchasePriceControl.onToggle?.()}>
+              <span className="purchase-price-check" aria-hidden="true">{purchasePriceControl.enabled && <Check/>}</span>내 매입가 표시
+            </button>
+          </div>
+          <div className="purchase-price-status" data-state={purchasePriceControl.status}>
+            <p id={purchasePriceDescription} role="status">{purchasePriceControl.message || '보유정보를 확인한 후 사용할 수 있습니다.'}</p>
+            {purchasePriceControl.onRetry && <button type="button" disabled={purchasePriceControl.status === 'loading'} onClick={purchasePriceControl.onRetry}>보유정보 다시 확인</button>}
+          </div>
+        </div>
+        <GeneralOrder key={broker} userId={userId} credentialVersion={credentialVersion} accountRef={accountId} onAccountChange={onAccountChange} stock={stock} authenticated={authenticated} broker={broker} brokerConfigured={brokerConfigured} accountSummary={accountSummary} accountLoading={accountLoading} accountError={accountError} onAccountRefresh={onAccountRefresh}/>
       </>}
     </section>
   )

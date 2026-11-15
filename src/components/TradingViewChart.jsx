@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   CandlestickSeries, CrosshairMode, HistogramSeries, LineSeries, createChart, createSeriesMarkers,
 } from 'lightweight-charts'
@@ -12,6 +12,8 @@ import { bindChartTheme, chartPalette, chartThemeOptions } from '../utils/chartT
 import { normalizeChartCandles } from '../utils/chartCandles'
 import { formatChartTime, formatChartTick } from '../utils/chartTime'
 import { backtestChartMarkers, backtestEventLabel } from '../utils/backtestPresentation'
+import { createPurchasePriceLine, purchasePriceLabel } from '../utils/purchasePriceLine'
+import './PurchasePriceChart.css'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(Math.round(value))
 const volumeFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
@@ -19,7 +21,7 @@ const formatVolume = value => Number.isFinite(value) ? volumeFormatter.format(va
 const EMPTY = []
 const advancedValid = config => Object.hasOwn(ADVANCED_BY_ID, config.id) && validAdvancedConfig(config)
 
-export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange, backtestEvents = EMPTY }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange, backtestEvents = EMPTY, averagePurchasePrice = null }) {
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
@@ -28,6 +30,9 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
   const rightScaleWidthRef = useRef(72)
   const backtestEventsRef = useRef(backtestEvents)
   const backtestRuntimeRef = useRef(null)
+  const purchaseRuntimeRef = useRef(null)
+  const purchasePriceRef = useRef(averagePurchasePrice)
+  purchasePriceRef.current = averagePurchasePrice
   const [eventInspection, setEventInspection] = useState(null)
   backtestEventsRef.current = backtestEvents
   const inspectedEvents = eventInspection?.source === backtestEvents ? eventInspection.events : EMPTY
@@ -131,6 +136,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       rightPriceScale: { ...colors.rightPriceScale, visible: true, scaleMargins: { top: 0.08, bottom: 0.06 } },
       timeScale: {
         ...colors.timeScale, timeVisible: period.endsWith('분'),
+        lockVisibleTimeRangeOnResize: Number.isFinite(purchasePriceRef.current) && purchasePriceRef.current > 0,
         secondsVisible: false, rightOffset: 5, barSpacing: period === '월' ? 8 : 6,
         tickMarkFormatter:(time,type)=>formatChartTick(time,type,period.endsWith('분')),
       },
@@ -152,6 +158,10 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     // Keep reported suspension closes in indicator calculations, matching the
     // backtest, but draw whitespace for candles without a valid OHLC range.
     candleSeries.setData(data.map(({ volume, ...candle }) => candle.open > 0 && candle.high > 0 && candle.low > 0 ? candle : { time: candle.time }))
+    const purchaseLine = createPurchasePriceLine(candleSeries, palette)
+    const purchaseRuntime = { sourceKey, chart, line: purchaseLine }
+    purchaseRuntimeRef.current = purchaseRuntime
+    purchaseLine.setPrice(purchasePriceRef.current)
     const eventMarkers = createSeriesMarkers(candleSeries, backtestChartMarkers(backtestEventsRef.current, palette))
     const backtestRuntime = { markers: eventMarkers }
     backtestRuntimeRef.current = backtestRuntime
@@ -324,6 +334,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
         borderUpColor: palette.up, borderDownColor: palette.down, priceLineColor: palette.price })
       themedPriceLines.forEach(line => line.applyOptions({ axisLabelColor: palette.background }))
       eventMarkers.setMarkers(backtestChartMarkers(backtestEventsRef.current, palette))
+      purchaseLine.setPalette(palette)
     })
     const volumeLegendElement = document.createElement('div')
     const volumeLegendValue = document.createElement('b')
@@ -406,6 +417,8 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       chart.unsubscribeClick(moveCrosshair)
       eventMarkers.detach()
       if (backtestRuntimeRef.current === backtestRuntime) backtestRuntimeRef.current = null
+      purchaseLine.dispose()
+      if (purchaseRuntimeRef.current === purchaseRuntime) purchaseRuntimeRef.current = null
       trendMarkers?.detach()
       chart.remove()
     }
@@ -415,12 +428,25 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     backtestRuntimeRef.current?.markers.setMarkers(backtestChartMarkers(backtestEvents, chartPalette()))
   }, [backtestEvents, data, indicatorKey])
 
+  useLayoutEffect(() => {
+    const runtime = purchaseRuntimeRef.current
+    // A wider price-axis label must not change the user's horizontal viewport.
+    if (runtime && Number.isFinite(averagePurchasePrice) && averagePurchasePrice > 0) runtime.chart.applyOptions({ timeScale: { lockVisibleTimeRangeOnResize: true } })
+    runtime?.line.setPrice(runtime.sourceKey === sourceKey ? averagePurchasePrice : null)
+  }, [averagePurchasePrice, sourceKey])
+
   if (!stock) return <div className="chart-empty"/>
   if (loading) return <div className="chart-empty"><span className="loading-ring"/></div>
   if (error) return <div className="chart-empty data-message error" role="alert">{error}</div>
   if (data.length === 0) return <div className="chart-empty data-message" role="status">제공된 캔들이 없습니다.</div>
 
   return (
+    <div className="tv-chart-frame">
+      {Number.isFinite(averagePurchasePrice) && averagePurchasePrice > 0 && <div className="tv-purchase-price-tools">
+        <span role="status">{purchasePriceLabel(averagePurchasePrice)}</span>
+        <button type="button" onClick={() => purchaseRuntimeRef.current?.line.reveal()}>매입가 위치 보기</button>
+        <small>현재 보유분 기준 · 과거 수정주가와 기준이 다를 수 있습니다.</small>
+      </div>}
     <div className="tv-chart-root" onKeyDown={event => { if (event.key === 'Escape') setEventInspection(null) }} onWheelCapture={(event) => {
       const root = event.currentTarget
       const bounds = root.getBoundingClientRect()
@@ -443,6 +469,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
           setManualExtraHeight((current) => Math.min(900, Math.max(0, (current ?? defaultExtraHeight) + (event.key === 'ArrowDown' ? 20 : -20))))
         }} tabIndex={0}><span/></div>}
       </div>
+    </div>
     </div>
   )
 }
