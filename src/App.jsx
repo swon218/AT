@@ -418,7 +418,7 @@ function App() {
               {agentMode === 'alerts' ? <AlertAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} watchlist={watchlist}
                 drafts={alertDrafts} roomId={agent.active.id} notice={alertNotice}
                 onLogin={() => setAuthModalOpen(true)} onKakao={() => setAccountSettingsOpen(true)} settingsOpen={accountSettingsOpen}/>
-                : agentMode === 'trading' ? <TradingAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} onLogin={() => setAuthModalOpen(true)}/>
+                : agentMode === 'trading' ? <TradingAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} credentialRevision={integrationVersion} connectionEvidence={brokerConnections.connections} onLogin={() => setAuthModalOpen(true)}/>
                   : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }}
                     onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); setAgentMode('alerts') }}/>}
             </div>

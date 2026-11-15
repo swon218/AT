@@ -3,6 +3,7 @@ import { Play, Square, RefreshCw, ShieldAlert } from 'lucide-react'
 import { tradingApi } from '../services/tradingApi'
 import { tradingReadiness, tradingPerformance, tradingThresholds, tradingReason } from '../../shared/tradingV1.js'
 import TradingViewChart from './TradingViewChart'
+import {tradingConnectionStage} from '../utils/tradingPresentation'
 import './TradingAgentPanel.css'
 
 const names={kiwoom:'키움',toss:'토스',nh:'NH',kb:'KB'},brokers=Object.keys(names)
@@ -53,41 +54,43 @@ function RunDetails({session,intents,events}) {
   </div>
 }
 
-function RunChart({session,data,userId,api}) {
+function RunChart({session,data,userId,api,credentialRevision}) {
   const [period,setPeriod]=useState('일'),[history,setHistory]=useState(false),[focusedTrade,setFocusedTrade]=useState(null),[chart,setChart]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(false)
   useEffect(()=>{setHistory(false)},[session.id])
   useEffect(()=>{
     const controller=new AbortController();setChart(null);setError('');setLoading(true)
     api(`/chart?${session.configOnly?'configId':'sessionId'}=${session.id}&interval=${encodeURIComponent(period)}`,{userId,signal:controller.signal}).then(setChart).catch(e=>{if(!controller.signal.aborted)setError(e.message)}).finally(()=>{if(!controller.signal.aborted)setLoading(false)})
     return()=>controller.abort()
-  },[session.id,period,userId,api])
+  },[session.id,period,userId,api,credentialRevision])
   const p=session.state?.position,avg=p?.quantity>0?(p.averagePrice??Number(p.costMicros)/1e6/p.quantity):null
   const closed=session.state?.closedTrades||session.state?.trades||[]
   const show=history||Boolean(focusedTrade)||['closed','completed','stopped'].includes(session.status)
   const codeName=data.watchlist.find(row=>row.code===session.code)?.name||session.code
   return <section className="trading-run-chart"><div className="trading-actions"><strong>{codeName} · {session.code}</strong><select aria-label="실행 차트 주기" value={period} onChange={e=>setPeriod(e.target.value)}>{['1분','5분','10분','15분','30분','60분','일','주','월'].map(p=><option key={p}>{p}</option>)}</select><span>{names[session.broker]} 개인 시세 · 한국 시간</span></div>
     <label><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>거래 이력 표시</label>
-    {loading?<p role="status">개인 API 차트 조회 중</p>:error?<p role="alert">{error} · 주문 가능 여부와 차트 제공 여부는 별개입니다.</p>:chart?.candles?.length?<div className="trading-chart-host"><TradingViewChart stock={{code:session.code,name:codeName}} period={period} broker={session.broker} credentialScope={`trading:${userId}:${session.id}`} candles={chart.candles} indicators={session.snapshot?.strategy?.indicators||[]} averagePurchasePrice={avg} executionTrades={show?(focusedTrade?closed.filter(t=>t.id===focusedTrade):closed):[]}/></div>:<p>선택 증권사의 개인 차트 데이터가 없습니다. 대체 시세를 사용하지 않습니다.</p>}
+    {loading?<p role="status">개인 API 차트 조회 중</p>:error?<p role="alert">{error} · 주문 가능 여부와 차트 제공 여부는 별개입니다.</p>:chart?.candles?.length?<div className="trading-chart-host"><TradingViewChart stock={{code:session.code,name:codeName}} period={period} broker={session.broker} credentialScope={`trading:${userId}:${session.id}:${credentialRevision}`} candles={chart.candles} indicators={session.snapshot?.strategy?.indicators||[]} averagePurchasePrice={avg} executionTrades={show?(focusedTrade?closed.filter(t=>t.id===focusedTrade):closed):[]}/></div>:<p>선택 증권사의 개인 차트 데이터가 없습니다. 대체 시세를 사용하지 않습니다.</p>}
     {show&&closed.length>0&&<div className="trading-table-scroll"><table><caption>확인된 완료 거래 · 판단 시각과 체결 시각</caption><thead><tr><th>진입 체결</th><th>청산 판단</th><th>청산 체결</th><th>가격·수량</th></tr></thead><tbody>{closed.map((t,i)=><tr key={t.id||i}><td><button type="button" onClick={()=>setFocusedTrade(t.id)}>거래 #{i+1} 보기</button> {t.adopted?'기존 보유분 · 매입 시각 미확인':when(t.entryAt||t.entryTime||t.openedAt)}</td><td>{when(t.decisionAt||t.decisionTime)}</td><td>{when(t.exitAt||t.exitTime||t.closedAt)}</td><td>{money(t.entryPrice)} → {money(t.exitPrice)}원 · {t.quantity}주 · {t.reason==='take_profit'?'익절':t.reason==='stop_loss'?'손절':t.reason}</td></tr>)}</tbody></table></div>}
     {session.configOnly?<p>저장된 설정 · 아직 시작하지 않았습니다.</p>:<RunDetails session={session} intents={data.intents.filter(row=>row.session_id===session.id)} events={data.events.filter(row=>row.session_id===session.id)}/>}
   </section>
 }
 
-export default function TradingAgentPanel({userId,onLogin,api=tradingApi}) {
+export default function TradingAgentPanel({userId,onLogin,credentialRevision=0,connectionEvidence,api=tradingApi}) {
   const [view,setView]=useState('settings'),[data,setData]=useState(null),[connections,setConnections]=useState(null),[drafts,setDrafts]=useState({}),[checked,setChecked]=useState([]),[runChecked,setRunChecked]=useState([]),[selected,setSelected]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[messages,setMessages]=useState({}),[confirmation,setConfirmation]=useState(null),[mode,setMode]=useState('LIVE')
-  const epoch=useRef(0),pending=useRef(false),tabs=useRef([])
+  const epoch=useRef(0),pending=useRef(false),tabs=useRef([]),owner=useRef(null)
   useEffect(()=>{
-    const seq=++epoch.current,controller=new AbortController();setData(null);setConnections(null);setDrafts({});setSelected(null);setChecked([]);setRunChecked([]);setError('')
+    const seq=++epoch.current,controller=new AbortController();setConnections(null);setError('');if(owner.current!==userId){owner.current=userId;setData(null);setDrafts({});setSelected(null);setChecked([]);setRunChecked([])}
     if(!userId)return
     const load=()=>api('',{userId,signal:controller.signal}).then(value=>{if(epoch.current===seq)setData(value)}).catch(e=>{if(epoch.current===seq&&!controller.signal.aborted)setError(e.message)})
-    const verify=()=>{setConnections(null);api('/connections',{userId,signal:controller.signal}).then(value=>{if(epoch.current===seq)setConnections(value)}).catch(e=>{if(epoch.current===seq&&!controller.signal.aborted)setError(e.message)})}
-    load();verify();const timer=setInterval(load,10000),proof=setInterval(verify,60000)
-    return()=>{++epoch.current;controller.abort();clearInterval(timer);clearInterval(proof)}
-  },[userId,api])
+    const verify=()=>{setConnections(old=>old&&Object.fromEntries(Object.entries(old).map(([b,row])=>[b,tradingConnectionStage(row,undefined)==='expired'?{...row,status:'expired',connected:false}:row])));api('/connections',{userId,signal:controller.signal}).then(value=>{if(epoch.current===seq)setConnections(value)}).catch(e=>{if(epoch.current===seq&&!controller.signal.aborted)setError(e.message)})}
+    load();verify();window.addEventListener('focus',verify);const timer=setInterval(load,10000),proof=setInterval(verify,60000)
+    return()=>{++epoch.current;controller.abort();window.removeEventListener('focus',verify);clearInterval(timer);clearInterval(proof)}
+  },[userId,api,credentialRevision])
   const refresh=async()=>{const seq=epoch.current;try{const value=await api('',{userId});if(seq===epoch.current){setData(value);setError('')}}catch(e){if(seq===epoch.current)setError(e.message)}}
   const run=async fn=>{if(pending.current)return;pending.current=true;setBusy(true);setError('');try{await fn()}catch(e){setError(e.message)}finally{pending.current=false;setBusy(false)}}
   const update=(code,patch)=>setDrafts(old=>({...old,[code]:{...(old[code]||savedFor(data,code)?.spec||initial(code)),...patch}}))
   const toggle=(value,list,set)=>set(list.includes(value)?list.filter(x=>x!==value):[...list,value])
+  const proofState=b=>tradingConnectionStage(connections?.[b],connectionEvidence?.[b])
+  const proofLabel=b=>({checking:'연결 확인 중',unconfigured:'미등록',failed:'연결 실패',expired:'검증 만료',connected:'연결 확인'})[proofState(b)]
   const byCode=Object.fromEntries((data?.watchlist||[]).map(row=>[row.code,row.name]))
   if(!userId)return <section className="agent-mode-card trading-agent"><h2>매매 에이전트</h2><p>로그인 후 관심종목별 매매 설정과 실행 기록을 확인할 수 있습니다.</p><button type="button" onClick={onLogin}>로그인</button></section>
   const save=()=>run(async()=>{
@@ -118,7 +121,7 @@ export default function TradingAgentPanel({userId,onLogin,api=tradingApi}) {
       {view==='settings'?<><div className="trading-actions"><label><input type="checkbox" checked={data.watchlist.length>0&&checked.length===data.watchlist.length} onChange={event=>setChecked(event.target.checked?data.watchlist.map(x=>x.code):[])}/>전체 선택</label><button type="button" disabled={busy||!checked.length} onClick={save}>선택 항목 저장</button><span>저장은 시작이 아닙니다.</span></div>
         {!data.watchlist.length?<p>관심종목을 먼저 등록해 주세요. 최대 20개 종목을 설정할 수 있습니다.</p>:data.watchlist.map((stock,index)=>{const config=savedFor(data,stock.code),spec=drafts[stock.code]||config?.spec||initial(stock.code),strategy=data.strategies.find(s=>s.id===spec.strategyId),ready=strategy?tradingReadiness(strategy,spec.entryAction):null,session=sessionFor(data,stock.code)
           return <article className="trading-config" key={stock.code}><div className="trading-config-head"><label><input type="checkbox" checked={checked.includes(stock.code)} onChange={()=>toggle(stock.code,checked,setChecked)} disabled={busy}/><strong>{stock.name}</strong> {stock.code}</label><span>{drafts[stock.code]?'변경사항 미저장':config?'저장됨':'미저장'} · 처리 순서 {index+1}</span></div><div className="trading-fields">
-            <label>증권사<select aria-label={`${stock.name} 증권사`} value={spec.broker} disabled={busy||active(session)} onChange={e=>update(stock.code,{broker:e.target.value,accountRef:connections?.[e.target.value]?.accounts?.[0]?.ref||''})}><option value="">증권사 선택</option>{brokers.map(b=><option key={b} value={b} disabled={!connections?.[b]?.connected||!data.capabilities[b]?.supported}>{names[b]} · {!connections?'연결 확인 중':!connections[b]?.connected?connections[b]?.status==='unconfigured'?'미등록':'연결 실패':!data.capabilities[b]?.supported?'V1 미지원':'연결 확인'}</option>)}</select></label>
+            <label>증권사<select aria-label={`${stock.name} 증권사`} value={spec.broker} disabled={busy||active(session)} onChange={e=>update(stock.code,{broker:e.target.value,accountRef:connections?.[e.target.value]?.accounts?.[0]?.ref||''})}><option value="">증권사 선택</option>{brokers.map(b=><option key={b} value={b} disabled={proofState(b)!=='connected'||!data.capabilities[b]?.supported}>{names[b]} · {proofState(b)==='connected'&&!data.capabilities[b]?.supported?'V1 미지원':proofLabel(b)}</option>)}</select></label>
             <label>계좌<select aria-label={`${stock.name} 계좌`} value={spec.accountRef} disabled={!spec.broker||busy||active(session)} onChange={e=>update(stock.code,{accountRef:e.target.value})}><option value="">계좌 선택</option>{connections?.[spec.broker]?.accounts?.map(a=><option key={a.ref} value={a.ref}>{a.label}</option>)}</select></label>
             <label>저장 전략<select aria-label={`${stock.name} 전략`} value={spec.strategyId} disabled={busy||active(session)} onChange={e=>{const s=data.strategies.find(s=>s.id===e.target.value);update(stock.code,{strategyId:s?.id||'',strategyRevision:s?.revision||0,entryAction:''})}}><option value="">전략 선택</option>{data.strategies.map(s=>{const r=tradingReadiness(s,(s.backtest_settings?.entryConditions||[]).some(c=>c.enabled)?'signal':'once');return <option key={s.id} value={s.id} disabled={!r.ready}>{s.name} v{s.revision}</option>})}</select></label>
             <label>수량 운용<select value={spec.quantityMode} disabled={busy||active(session)} onChange={e=>update(stock.code,{quantityMode:e.target.value})}><option value="fixed">고정 수량</option><option value="all_cash">주문가능 현금 전체 사용</option></select></label>
@@ -126,10 +129,10 @@ export default function TradingAgentPanel({userId,onLogin,api=tradingApi}) {
             <label>최초 실행 방식<select value={spec.entryAction} disabled={!strategy||busy||active(session)} onChange={e=>update(stock.code,{entryAction:e.target.value})}><option value="">실행 방식 선택</option>{ready?.hasEntry?<option value="signal">확정 일봉 신호 반복</option>:<><option value="once">신규 1회 진입 후 관리</option><option value="manage">기존 보유분 관리 · 신규 매수 없음</option></>}</select></label>
             {spec.entryAction==='manage'&&<label>관리할 기존 보유수량 · 주<input type="number" min="1" step="1" value={spec.manageQuantity} disabled={busy||active(session)} onChange={e=>update(stock.code,{manageQuantity:e.target.value})}/></label>}
           </div>{spec.quantityMode==='all_cash'&&<small>수수료·가격 여유와 예약금을 제외합니다. 앞선 종목이 현금을 사용하면 나머지는 자금 부족 대기합니다.</small>}{spec.broker&&data.capabilities[spec.broker]?.ordersEnabled===false&&<p className="trading-reason">증권사 주문 기능 비활성 · 설정 저장 가능, 실행 불가</p>}{ready&&!ready.ready&&<p className="trading-reason">{ready.issues.join(' ')}</p>}{messages[stock.code]&&<p role="status">{messages[stock.code]}</p>}</article>})}
-        <details className="trading-support"><summary>증권사 지원·실행 제한</summary>{brokers.map(b=><p key={b}>{names[b]}: {data.capabilities[b]?.reason||'KRX 현금 주문·취소·체결 확인 지원'} · {!connections?'연결 확인 중':connections[b]?.connected?'개인 계좌 수신 확인':connections[b]?.status==='unconfigured'?'개인 API 미등록':'연결 확인 실패'}</p>)}</details>
+        <details className="trading-support"><summary>증권사 지원·실행 제한</summary>{brokers.map(b=><p key={b}>{names[b]}: {data.capabilities[b]?.reason||'KRX 현금 주문·취소·체결 확인 지원'} · {proofLabel(b)}</p>)}</details>
       </>:view==='execution'?<><div className="trading-actions"><label><input type="checkbox" checked={data.configs.length>0&&runChecked.length===data.configs.length} onChange={e=>setRunChecked(e.target.checked?data.configs.map(x=>x.code):[])}/>전체 선택</label><select aria-label="실행 환경" value={mode} onChange={e=>setMode(e.target.value)}><option value="LIVE">LIVE · 실제 주문</option><option value="PAPER" disabled>PAPER · V1 실행 미지원</option></select><button type="button" disabled={busy||!runChecked.length||!data.flags.workerEnabled||!(mode==='LIVE'?data.flags.liveEnabled:data.flags.paperEnabled)} onClick={()=>preview(runChecked)}>선택 항목 실행</button></div>
         <div className="trading-execution"><div className="trading-run-list">{!data.configs.length&&<p>설정에서 실행 대상을 먼저 저장해 주세요.</p>}{data.configs.map(config=>{const s=sessionFor(data,config.code),running=active(s);return <article key={config.id} className={selected===s?.id?'selected':''}><label><input type="checkbox" checked={runChecked.includes(config.code)} onChange={()=>toggle(config.code,runChecked,setRunChecked)}/>{byCode[config.code]||config.code}</label><button type="button" className="trading-run-select" onClick={()=>setSelected(s?.id||`config:${config.id}`)}><strong>{names[config.spec.broker]} · 본인 API 연결 계좌</strong><small>{running?s.snapshot?.strategy?.name:data.strategies.find(x=>x.id===config.spec.strategyId)?.name||s?.snapshot?.strategy?.name} v{running?s.snapshot?.strategy?.revision:config.spec.strategyRevision}</small><span>{s?phases[phase(s)]||phase(s):'저장됨 · 시작 전'}</span></button><div className="trading-actions"><button type="button" aria-label={`${byCode[config.code]||config.code} 실행`} disabled={busy||running||!data.flags.workerEnabled||!(mode==='LIVE'?data.flags.liveEnabled:data.flags.paperEnabled)} onClick={()=>preview([config.code])}><Play size={14}/>시작</button><button type="button" aria-label={`${byCode[config.code]||config.code} 정지`} disabled={busy||!running} onClick={()=>stop(s)}><Square size={14}/>정지</button></div>{messages[config.code]&&<p role="status">{messages[config.code]}</p>}</article>})}</div>
-        {selectedRun(data,selected)?<RunChart key={selected} session={selectedRun(data,selected)} data={data} userId={userId} api={api}/>:<div className="trading-chart-empty">종목을 선택하면 해당 실행의 개인 API 차트와 기록을 표시합니다.</div>}</div>
+        {selectedRun(data,selected)?<RunChart key={selected} session={selectedRun(data,selected)} data={data} userId={userId} api={api} credentialRevision={credentialRevision}/>:<div className="trading-chart-empty">종목을 선택하면 해당 실행의 개인 API 차트와 기록을 표시합니다.</div>}</div>
       </>:<div className="trading-progress">{!data.sessions.length?<p>시작한 실행이 없습니다.</p>:data.sessions.map(s=><article key={s.id}><h3>{byCode[s.code]||s.code} · {s.mode}</h3><RunDetails session={s} intents={data.intents.filter(row=>row.session_id===s.id)} events={data.events.filter(row=>row.session_id===s.id)}/></article>)}</div>}
     </div>}{confirmation&&<Confirmation value={confirmation} busy={busy} onClose={()=>setConfirmation(null)} onConfirm={confirm}/>}</section>
 }

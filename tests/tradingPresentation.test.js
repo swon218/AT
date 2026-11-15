@@ -1,6 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {executionChartMarkers} from '../src/utils/tradingPresentation.js'
+import {executionChartMarkers,tradingConnectionStage} from '../src/utils/tradingPresentation.js'
+
+test('display proof expires and cannot overrule the shared connection invalidation on key deletion',()=>{
+ const proof={connected:true,status:'connected',expiresAt:200}
+ assert.equal(tradingConnectionStage(null,undefined,100),'checking')
+ assert.equal(tradingConnectionStage({status:'unconfigured'},false,100),'unconfigured')
+ assert.equal(tradingConnectionStage({status:'failed'},false,100),'failed')
+ assert.equal(tradingConnectionStage(proof,true,100),'connected')
+ assert.equal(tradingConnectionStage(proof,true,200),'expired')
+ assert.equal(tradingConnectionStage(proof,false,100),'checking')
+})
 
 test('only closed actual trades create labeled markers on existing bars; KST dates and intraday alignment preserve candles',()=>{
  const candles=[{time:Date.parse('2026-11-13T08:30:00+09:00')/1000},{time:Date.parse('2026-11-13T08:35:00+09:00')/1000}]

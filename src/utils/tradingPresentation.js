@@ -1,5 +1,14 @@
 import { seoulTimestamp } from './chartTime.js'
 
+export function tradingConnectionStage(row,evidence,now=Date.now()) {
+  if(!row)return 'checking'
+  if(row.status==='unconfigured')return 'unconfigured'
+  if(row.status==='failed')return 'failed'
+  if(row.status==='expired'||row.connected&&!(row.expiresAt>now))return 'expired'
+  if(evidence===false)return 'checking'
+  return row.connected?'connected':'failed'
+}
+
 const seoulDate=seconds=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(seconds*1000))
 // Mark the bar containing the actual fill; never add OHLC or a fabricated fill.
 // An execution outside the supplied chart remains in the execution table only.
