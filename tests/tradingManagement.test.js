@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {tradingConfigDirty,tradingExecutionBlock,tradingExecutionSnapshot,tradingSessionFilter,eligibleTradingSelection,selectTradingDetail} from '../src/utils/tradingManagement.js'
+import {tradingConfigDirty,tradingExecutionBlock,browserTradingExecutionBlock,tradingExecutionSnapshot,tradingSessionFilter,browserTradingProgressSessions,eligibleTradingSelection,selectTradingDetail} from '../src/utils/tradingManagement.js'
 const strategy={id:'s',name:'전략',revision:2,schema_version:2,indicators:[],backtest_settings:{takeProfitPct:5,stopLossPct:3,entryConditions:[],entryMode:'all'}}
 const config={code:'005930',spec:{code:'005930',broker:'toss',accountRef:'own',strategyId:'s',strategyRevision:2,quantity:3,quantityMode:'fixed',entryAction:'once'}}
 const base={config,sessions:[],strategies:[strategy],connection:{connected:true,status:'connected',expiresAt:200,accounts:[{ref:'own'}]},capability:{supported:true,ordersEnabled:true},flags:{workerEnabled:true,liveEnabled:true},now:100}
@@ -17,6 +17,16 @@ test('selection eligibility separates connection, adapter, account, dirty and ru
   assert.match(tradingExecutionBlock({...base,now:200}),/만료/)
   assert.deepEqual(eligibleTradingSelection(['old','one','two'],['two','three']),['two'])
 })
+test('browser execution admission is distinct from LIVE worker and broker authority',()=>{
+  const input={...base,config:{...config,mode:'BROWSER_SIMULATION'},flags:{workerEnabled:false,liveEnabled:false},connection:null,capability:{supported:true,ordersEnabled:false}}
+  assert.equal(browserTradingExecutionBlock(input),'')
+  assert.match(tradingExecutionBlock({...base,flags:input.flags}),/worker/)
+  assert.match(browserTradingExecutionBlock({...input,config:{...input.config,mode:'LIVE'}}),/실행 정보/)
+  assert.match(browserTradingExecutionBlock({...input,dirty:true}),/미저장/)
+  assert.match(browserTradingExecutionBlock({...input,strategies:[]}),/전략/)
+  assert.match(browserTradingExecutionBlock({...input,sessions:[{code:config.code,status:'holding'}]}),/실행 중/)
+  assert.match(browserTradingExecutionBlock({...input,capability:{supported:false,reason:'시세 미지원'}}),/시세 미지원/)
+})
 test('dirty comparisons normalize input numbers and active execution always presents its immutable snapshot',()=>{
   assert.equal(tradingConfigDirty({...config.spec,quantity:'3'},config),false)
   assert.equal(tradingConfigDirty({...config.spec,quantity:4},config),true)
@@ -32,6 +42,12 @@ test('progress filtering uses execution identities without conflating repeated r
   assert.deepEqual(tradingSessionFilter(rows,'stopped').map(r=>r.id),['b'])
   assert.deepEqual(tradingSessionFilter(rows,'completed').map(r=>r.id),['c'])
   assert.equal(tradingSessionFilter(rows,'all').length,3)
+})
+test('browser progress retains only the explicitly selected completed run across background evaluation',()=>{
+  const rows=[{id:'active',status:'holding'},{id:'selected',status:'completed'},{id:'other',status:'completed'}]
+  assert.deepEqual(browserTradingProgressSessions(rows,'active','selected').map(row=>row.id),['active','selected'])
+  assert.deepEqual(browserTradingProgressSessions(rows,'active',null).map(row=>row.id),['active'])
+  assert.deepEqual(browserTradingProgressSessions(rows,'completed',null).map(row=>row.id),['selected','other'])
 })
 test('progress state and records always come from one matching revision source',()=>{
   const session={id:'run',broker:'toss',account_ref:'account',revision:4,state:{position:{quantity:2}}}

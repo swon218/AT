@@ -8,7 +8,7 @@ const colors = palette => palette.background === '#ffffff'
 
 // Owns exactly one native price line on the candle series. Updating it never
 // changes candle data, the time scale, indicator panes, or network requests.
-export function createPurchasePriceLine(series, initialPalette) {
+export function createPurchasePriceLine(series, initialPalette, { label = purchasePriceLabel, id = 'atlas-personal-average-price' } = {}) {
   let line = null, price = null, palette = initialPalette, disposed = false, restoration = null
   function restoreScale() {
     if (!restoration) return
@@ -30,9 +30,9 @@ export function createPurchasePriceLine(series, initialPalette) {
       return
     }
     const options = {
-      id: 'atlas-personal-average-price', price, ...colors(palette),
+      id, price, ...colors(palette),
       lineWidth: 2, lineStyle: 2, lineVisible: true, axisLabelVisible: true,
-      title: purchasePriceLabel(price),
+      title: label(price),
     }
     if (line) line.applyOptions(options)
     else line = series.createPriceLine(options)

@@ -27,12 +27,31 @@ export function tradingExecutionBlock({config,sessions,strategies,connection,evi
   if(mode!=='LIVE'||!flags.liveEnabled)return 'LIVE 실행이 비활성입니다.'
   return ''
 }
+// Browser execution has its own admission rules. LIVE checks above remain
+// unconditional for the existing broker-backed path.
+export function browserTradingExecutionBlock({config,sessions,strategies,dirty,capability}) {
+  if(config.mode!=='BROWSER_SIMULATION')return '저장된 실행 정보를 확인해 주세요.'
+  if(tradingActive(latestTradingSession(sessions,config.code)))return '현재 실행 중입니다.'
+  if(dirty)return '변경사항 미저장 · 설정에서 저장한 뒤 실행해 주세요.'
+  if(!capability?.supported)return capability?.reason||'선택한 증권사의 시세를 사용할 수 없습니다.'
+  const strategy=strategies.find(row=>row.id===config.spec.strategyId&&Number(row.revision)===Number(config.spec.strategyRevision))
+  if(!strategy)return '저장 전략이 변경되거나 삭제되었습니다. 설정에서 다시 저장해 주세요.'
+  const readiness=tradingReadiness(strategy,config.spec.entryAction)
+  if(!readiness.ready)return readiness.issues.join(' ')
+  if(config.spec.entryAction==='manage')return '최초 실행 방식을 다시 선택해 주세요.'
+  return ''
+}
 export function tradingExecutionSnapshot(config,session,strategies) {
   if(tradingActive(session))return {spec:session.snapshot?.spec||config.spec,strategy:session.snapshot?.strategy,policy:session.snapshot?.executionPolicy,accountLabel:session.snapshot?.accountLabel,applied:true}
   return {spec:config.spec,strategy:config.strategySnapshot||strategies.find(row=>row.id===config.spec.strategyId&&Number(row.revision)===Number(config.spec.strategyRevision)),policy:config.executionPolicy,accountLabel:config.accountLabel,applied:false}
 }
 export function tradingSessionFilter(sessions,filter) {
   return sessions.filter(row=>filter==='all'||filter==='active'&&tradingActive(row)||filter==='stopped'&&row.status==='stopped'||filter==='completed'&&row.status==='completed')
+}
+export function browserTradingProgressSessions(sessions,filter,selectedId) {
+  const included=new Set(tradingSessionFilter(sessions,filter).map(row=>row.id))
+  // A completed selected run must not disappear while the user reads its result.
+  return sessions.filter(row=>included.has(row.id)||row.id===selectedId)
 }
 export function eligibleTradingSelection(selected,eligible) {
   const set=new Set(eligible)

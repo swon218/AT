@@ -35,7 +35,7 @@ import useStrategies from './hooks/useStrategies'
 import useAgentWorkspace from './hooks/useAgentWorkspace'
 import AgentWorkspace, { FloatingAgent } from './components/AgentWorkspace'
 import AlertAgentPanel, { AgentModeTabs } from './components/AlertAgentPanel'
-import TradingAgentPanel from './components/TradingAgentPanel'
+import BrowserTradingAgentPanel from './components/BrowserTradingAgentPanel'
 import useAgentAlertDrafts from './hooks/useAgentAlertDrafts'
 import SidebarFooter from './components/SidebarFooter'
 import ThemeSwitch from './components/ThemeSwitch'
@@ -415,7 +415,7 @@ function App() {
           {activePage === 'admin' ? (isAdmin && <AdminEvalPanel key={currentUser.id} userId={currentUser.id}/>) : activePage === 'company' ? <CompanyAnalysisPage stock={analysisStock ?? (selectionRevision > 0 ? selected : null)}/> : activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <>
             <AgentModeTabs mode={agentMode} onChange={chooseAgentMode}/>
             <div role="tabpanel" id="agent-mode-panel" aria-labelledby={`agent-tab-${agentMode}`}>
-              {agentMode === 'trading' ? <TradingAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} credentialRevision={integrationVersion} connectionEvidence={brokerConnections.connections} onLogin={() => setAuthModalOpen(true)}/>
+              {agentMode === 'trading' ? <BrowserTradingAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} credentialRevision={integrationVersion} watchlist={watchlist} strategies={strategies} onLogin={() => setAuthModalOpen(true)}/>
                   : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }}
                     onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('alerts') }}/>}
             </div>
@@ -443,7 +443,7 @@ function App() {
       </main>
       <FloatingAgent agent={{ ...agent, openScreen }} visible={(activePage !== 'agent' || agentMode !== 'analysis') && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen}
         onExpand={() => openPage('agent', null, 'analysis')}
-        context={activePage === 'alerts' ? '종목 알림' : activePage === 'agent' ? '매매 에이전트' : activePage === 'company' ? '기업 분석' : activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
+        context={activePage === 'alerts' ? '종목 알림' : activePage === 'agent' ? '자동매매 에이전트' : activePage === 'company' ? '기업 분석' : activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal} recovery={passwordRecovery} onRecoveryFinished={finishPasswordRecovery}/>
       <AccountSettingsModal key={currentUser?.id || 'guest'} open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange} onIntegrationMutation={brokerConnections.mutation}/>

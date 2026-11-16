@@ -10,7 +10,7 @@ import './AlertAgentPanel.css'
 
 export const agentModes = [
   ['analysis', '분석 에이전트', Bot],
-  ['trading', '매매 에이전트', ChartNoAxesCombined],
+  ['trading', '자동매매 에이전트', ChartNoAxesCombined],
 ]
 
 export function AgentModeTabs({ mode, onChange }) {

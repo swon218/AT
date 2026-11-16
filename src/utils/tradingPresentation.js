@@ -16,7 +16,7 @@ export function orderTradingConfigs(configs,watchlist) {
 const seoulDate=seconds=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(seconds*1000))
 // Mark the bar containing the actual fill; never add OHLC or a fabricated fill.
 // An execution outside the supplied chart remains in the execution table only.
-export function executionChartMarkers(trades,candles,palette={}) {
+export function executionChartMarkers(trades,candles,palette={}, {executionMode='LIVE'}={}) {
   if(!candles.length)return []
   const intraday=typeof candles[0].time==='number'
   const timeFor=value=>{
@@ -31,11 +31,11 @@ export function executionChartMarkers(trades,candles,palette={}) {
     if(!next&&seconds>last.time+3600)return null
     return last.time
   }
-  const markers=[]
+  const markers=[],prefix=executionMode==='BROWSER_SIMULATION'?'':'실제 '
   for(const [i,t] of trades.entries()) {
     const entry=timeFor(t.entryAt),exit=timeFor(t.exitAt)
-    if(entry!==null)markers.push({id:`execution-entry-${t.id||i}`,time:entry,position:'belowBar',shape:'arrowUp',color:palette.price||'#6266df',text:`실제 진입 #${i+1}`})
-    if(exit!==null)markers.push({id:`execution-exit-${t.id||i}`,time:exit,position:'aboveBar',shape:t.reason==='stop_loss'?'square':'arrowDown',color:t.reason==='stop_loss'?(palette.down||'#3879d6'):(palette.up||'#d63e53'),text:`실제 ${t.reason==='take_profit'?'익절':t.reason==='stop_loss'?'손절':'청산'} #${i+1}`})
+    if(entry!==null)markers.push({id:`execution-entry-${t.id||i}`,time:entry,position:'belowBar',shape:'arrowUp',color:palette.price||'#6266df',text:`${prefix}진입 #${i+1}`})
+    if(exit!==null)markers.push({id:`execution-exit-${t.id||i}`,time:exit,position:'aboveBar',shape:t.reason==='stop_loss'?'square':'arrowDown',color:t.reason==='stop_loss'?(palette.down||'#3879d6'):(palette.up||'#d63e53'),text:`${prefix}${t.reason==='take_profit'?'익절':t.reason==='stop_loss'?'손절':'청산'} #${i+1}`})
   }
   return markers.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0)
 }

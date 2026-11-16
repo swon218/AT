@@ -28,3 +28,10 @@ test('only closed actual trades create labeled markers on existing bars; KST dat
  assert.deepEqual(executionChartMarkers([trade],[{time:'2026-11-12'}]),[])
  assert.deepEqual(executionChartMarkers([],candles),[])
 })
+
+test('browser simulation markers never claim an actual brokerage fill',()=>{
+ const trade={id:'browser-trade',entryAt:'2026-11-13T09:00:00+09:00',exitAt:'2026-11-13T09:20:00+09:00',reason:'take_profit'}
+ const markers=executionChartMarkers([trade],[{time:'2026-11-13'}],{}, {executionMode:'BROWSER_SIMULATION'})
+ assert.deepEqual(markers.map(row=>row.text),['진입 #1','익절 #1'])
+ assert.match(executionChartMarkers([trade],[{time:'2026-11-13'}])[0].text,/실제 진입/)
+})

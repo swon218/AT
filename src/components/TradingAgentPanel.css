@@ -68,5 +68,16 @@
 .trading-confirm .trading-actions { justify-content:flex-end; }
 .trading-abandon { display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);padding:12px;border-radius:8px; }
 .trading-confirm :is(button,input):focus-visible { outline:2px solid var(--blue);outline-offset:3px; }
+.browser-trading .trading-tabs,.browser-trading .trading-heading,.browser-trading .trading-actions { flex-shrink:0; }
+.browser-trading .trading-actions>label { flex-wrap:wrap;white-space:nowrap; }
+.browser-trading .trading-actions>label>select { width:auto; }
+.browser-trading .trading-progress-layout { height:clamp(340px,calc(100dvh - 285px),900px);min-height:0;align-items:stretch; }
+.browser-trading .trading-run-list { min-width:0;min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain; }
+.browser-trading .trading-progress-detail { min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable; }
+.browser-trading .trading-results-scroll { max-height:none;overflow:visible; }
+.browser-trading .trading-capital { display:flex;flex-direction:column;justify-content:center;gap:6px;font-size:12px;color:var(--text-secondary); }
+.browser-trading .trading-capital strong { font-size:13px;font-weight:500;color:var(--text-primary); }
+.trading-chart-received { font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere; }
 @media(max-width:1000px) { .trading-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }.trading-progress-layout { grid-template-columns:1fr; }.trading-run-list { max-height:340px; }.trading-results-scroll { max-height:none;overflow-y:visible; } }
+@media(max-width:1000px) { .browser-trading .trading-progress-layout { height:auto; }.browser-trading .trading-run-list { max-height:280px; }.browser-trading .trading-progress-detail { overflow:visible;scrollbar-gutter:auto; } }
 @media(max-width:540px) { .trading-agent { padding:12px; }.trading-fields { grid-template-columns:1fr; }.trading-config-head { align-items:flex-start;flex-direction:column; }.trading-chart-host { height:400px; }.trading-confirm { padding:16px; } }

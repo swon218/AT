@@ -22,7 +22,10 @@ const formatVolume = value => Number.isFinite(value) ? volumeFormatter.format(va
 const EMPTY = []
 const advancedValid = config => Object.hasOwn(ADVANCED_BY_ID, config.id) && validAdvancedConfig(config)
 
-export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange, backtestEvents = EMPTY, executionTrades = EMPTY, averagePurchasePrice = null }) {
+export default function TradingViewChart({ stock, period, indicators = [], credentialScope = 'guest', broker = 'kiwoom', candles: suppliedCandles, onSourceChange, onMetadataChange, backtestEvents = EMPTY, executionTrades = EMPTY, averagePurchasePrice = null, executionMode = 'LIVE', preserveDataViewport = false }) {
+  const simulation = executionMode === 'BROWSER_SIMULATION'
+  const averageLabel = price => simulation ? `평균 진입가 ${new Intl.NumberFormat('ko-KR',{maximumFractionDigits:6}).format(price)}원` : purchasePriceLabel(price)
+  const viewportRef = useRef(null)
   const containerRef = useRef(null)
   const scrollContentRef = useRef(null)
   const manualBottomResizeRef = useRef(false)
@@ -161,11 +164,11 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     // Keep reported suspension closes in indicator calculations, matching the
     // backtest, but draw whitespace for candles without a valid OHLC range.
     candleSeries.setData(data.map(({ volume, ...candle }) => candle.open > 0 && candle.high > 0 && candle.low > 0 ? candle : { time: candle.time }))
-    const purchaseLine = createPurchasePriceLine(candleSeries, palette)
+    const purchaseLine = createPurchasePriceLine(candleSeries, palette, simulation ? {label:averageLabel,id:'atlas-browser-average-price'} : undefined)
     const purchaseRuntime = { sourceKey, chart, line: purchaseLine }
     purchaseRuntimeRef.current = purchaseRuntime
     purchaseLine.setPrice(purchasePriceRef.current)
-    const allMarkers = palette => [...backtestChartMarkers(backtestEventsRef.current, palette),...executionChartMarkers(executionTradesRef.current,data,palette)].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0)
+    const allMarkers = palette => [...backtestChartMarkers(backtestEventsRef.current, palette),...executionChartMarkers(executionTradesRef.current,data,palette,{executionMode})].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0)
     const eventMarkers = createSeriesMarkers(candleSeries, allMarkers(palette))
     const backtestRuntime = { markers: eventMarkers }
     backtestRuntimeRef.current = backtestRuntime
@@ -345,7 +348,10 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     volumeLegendElement.className = 'tv-volume-legend'
     volumeLegendElement.append('거래량 ', volumeLegendValue)
     volumeLegendValue.textContent = isQuarantined(data.at(-1)) ? '—' : formatVolume(data.at(-1)?.volume)
-    chart.timeScale().fitContent()
+    const priorViewport = viewportRef.current
+    if(preserveDataViewport && priorViewport?.sourceKey === sourceKey && priorViewport.indicatorKey === indicatorKey && priorViewport.range) {
+      try { chart.timeScale().setVisibleRange(priorViewport.range) } catch { chart.timeScale().fitContent() }
+    } else chart.timeScale().fitContent()
     const scaleWidthFrame = requestAnimationFrame(() => {
       rightScaleWidthRef.current = Math.max(56, chart.priceScale('right', 0).width())
     })
@@ -407,6 +413,7 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
     document.addEventListener('pointerup', capturePaneLayouts)
 
     return () => {
+      if(preserveDataViewport)viewportRef.current={sourceKey,indicatorKey,range:chart.timeScale().getVisibleRange()}
       unbindTheme()
       capturePaneLayouts()
       cancelAnimationFrame(captureFrame)
@@ -426,11 +433,11 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
       trendMarkers?.detach()
       chart.remove()
     }
-  }, [data, period, indicatorKey])
+  }, [data, period, indicatorKey, executionMode, preserveDataViewport])
 
   useEffect(() => {
-    backtestRuntimeRef.current?.markers.setMarkers([...backtestChartMarkers(backtestEvents, chartPalette()),...executionChartMarkers(executionTrades,data,chartPalette())].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0))
-  }, [backtestEvents, executionTrades, data, indicatorKey])
+    backtestRuntimeRef.current?.markers.setMarkers([...backtestChartMarkers(backtestEvents, chartPalette()),...executionChartMarkers(executionTrades,data,chartPalette(),{executionMode})].sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0))
+  }, [backtestEvents, executionTrades, data, indicatorKey, executionMode])
 
   useLayoutEffect(() => {
     const runtime = purchaseRuntimeRef.current
@@ -447,9 +454,9 @@ export default function TradingViewChart({ stock, period, indicators = [], crede
   return (
     <div className="tv-chart-frame">
       {Number.isFinite(averagePurchasePrice) && averagePurchasePrice > 0 && <div className="tv-purchase-price-tools">
-        <span role="status">{purchasePriceLabel(averagePurchasePrice)}</span>
+        <span role="status">{averageLabel(averagePurchasePrice)}</span>
         <button type="button" onClick={() => purchaseRuntimeRef.current?.line.reveal()}>매입가 위치 보기</button>
-        <small>현재 보유분 기준 · 과거 수정주가와 기준이 다를 수 있습니다.</small>
+        <small>{simulation?'현재 진입분 기준':'현재 보유분 기준 · 과거 수정주가와 기준이 다를 수 있습니다.'}</small>
       </div>}
     <div className="tv-chart-root" onKeyDown={event => { if (event.key === 'Escape') setEventInspection(null) }} onWheelCapture={(event) => {
       const root = event.currentTarget
