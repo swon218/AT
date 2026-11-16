@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Bot, ChartNoAxesCombined, CircleAlert, CircleCheck, Info } from 'lucide-react'
+import { Bot, ChartNoAxesCombined, CircleAlert, CircleCheck, Info } from 'lucide-react'
 import { ALERT_KINDS, ALERT_RULES_PER_SYMBOL, addAlertDays, alertCondition, alertExpiry, alertFrequencyLabel, alertSessionLabel, alertThreshold, koreanAlertDay, legacyAlertKind } from '../../shared/alertRules'
 import { agentApi } from '../services/agentApi'
 import { displayAlertStatus, reasons, stateLabels } from '../utils/alertPresentation'
@@ -10,7 +10,6 @@ import './AlertAgentPanel.css'
 
 export const agentModes = [
   ['analysis', '분석 에이전트', Bot],
-  ['alerts', '알림 에이전트', Bell],
   ['trading', '매매 에이전트', ChartNoAxesCombined],
 ]
 
@@ -20,7 +19,8 @@ export function AgentModeTabs({ mode, onChange }) {
     {agentModes.map(([key, label, Icon], i) => <button key={key} type="button" role="tab" id={`agent-tab-${key}`}
       ref={el => { buttons.current[i] = el }} aria-selected={mode === key} aria-controls="agent-mode-panel"
       tabIndex={mode === key ? 0 : -1} onClick={() => onChange(key)} onKeyDown={event => {
-        const next = { ArrowRight: (i + 1) % 3, ArrowLeft: (i + 2) % 3, Home: 0, End: 2 }[event.key]
+        const count = agentModes.length
+        const next = { ArrowRight: (i + 1) % count, ArrowLeft: (i + count - 1) % count, Home: 0, End: count - 1 }[event.key]
         if (next === undefined) return
         event.preventDefault()
         onChange(agentModes[next][0])
@@ -40,7 +40,7 @@ const toTime = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateSt
 const editable = row => ({ kind: '', threshold: '', expires_on: '', frequency: 'once', ...row,
   ...(legacyAlertKind(row?.kind) ? { kind: 'price_touch' } : {}) })
 
-export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, notice, onLogin, onKakao, settingsOpen }) {
+export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, notice, onLogin, onKakao, settingsOpen, historyTarget = window.location.hash }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -63,8 +63,8 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
     return () => { mounted.current = false }
   }, [])
   useEffect(() => {
-    if (userId && !loading && window.location.hash === '#alert-history') history.current?.scrollIntoView()
-  }, [userId, loading])
+    if (userId && !loading && historyTarget === '#alert-history') history.current?.scrollIntoView()
+  }, [userId, loading, historyTarget])
   useEffect(() => {
     if (!userId || settingsOpen) return
     const controller = new AbortController()
@@ -151,10 +151,10 @@ export default function AlertAgentPanel({ userId, watchlist, drafts, roomId, not
     setMutationMessage({ ...result, message: result.ok ? '새 알림 조건을 저장했습니다.' : result.message })
   }
 
-  return <section className="agent-mode-card alert-agent" aria-label="관심종목 알림 설정">
+  return <section className="agent-mode-card alert-agent" aria-label="종목 알림 설정">
     <div className="alert-heading">
-      <div className="alert-title"><h2 ref={title} tabIndex={-1}>관심종목 알림</h2>
-        <AlertHelp {...help} label="관심종목 알림 안내">최초 1회 또는 만료일까지 반복을 선택할 수 있습니다. 반복 알림은 조건에 다시 진입할 때 발송합니다. 만료일은 한국 시간이며 해당 날짜의 마지막 지원 세션까지만 감시합니다.</AlertHelp>
+      <div className="alert-title"><h2 ref={title} tabIndex={-1}>종목 알림</h2>
+        <AlertHelp {...help} label="종목 알림 안내">최초 1회 또는 만료일까지 반복을 선택할 수 있습니다. 반복 알림은 조건에 다시 진입할 때 발송합니다. 만료일은 한국 시간이며 해당 날짜의 마지막 지원 세션까지만 감시합니다.</AlertHelp>
       </div>
       <div className="alert-channel">
         <div className="alert-channel-actions">

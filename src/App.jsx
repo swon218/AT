@@ -50,6 +50,7 @@ import useLabWorkspace from './hooks/useLabWorkspace'
 import { describeQuery } from './utils/screener'
 import useAdminAccess from './hooks/useAdminAccess'
 import AdminEvalPanel from './components/AdminEvalPanel'
+import useAppNavigation from './hooks/useAppNavigation'
 
 const won = (value) => new Intl.NumberFormat('ko-KR').format(value)
 const defaultStock = {
@@ -115,11 +116,10 @@ export function ChartWorkspace({ selected, period, onPeriodChange, currentUser, 
 }
 
 function App() {
-  const [activePage, setActivePage] = useState(() => new URLSearchParams(window.location.search).get('page') === 'admin' ? 'admin' : new URLSearchParams(window.location.search).get('agent') === 'alerts' ? 'agent' : 'dashboard')
-  const [agentMode, setAgentMode] = useState(() => new URLSearchParams(window.location.search).get('agent') === 'alerts' ? 'alerts' : 'analysis')
+  const { activePage, agentMode, pageHash, navigate, chooseAgentMode } = useAppNavigation()
   const [alertNotice, setAlertNotice] = useState('')
   const [newsCategory, setNewsCategory] = useState('all')
-  const brokerageDataEnabled = !['lab', 'screen', 'agent', 'news', 'company', 'admin'].includes(activePage)
+  const brokerageDataEnabled = !['lab', 'screen', 'alerts', 'agent', 'news', 'company', 'admin'].includes(activePage)
   const showStockSearch = brokerageDataEnabled || activePage === 'company'
   const labWorkspace = useLabWorkspace(activePage === 'lab')
   const [selected, setSelected] = useState(defaultStock)
@@ -157,8 +157,7 @@ function App() {
         return false
       }
       setAlertNotice('')
-      openPage('agent')
-      setAgentMode('alerts')
+      openPage('alerts')
       agent.setUI({ robotVisible: true, miniOpen: true, position: { x: 1, y: 1 } })
       return true
     },
@@ -226,11 +225,12 @@ function App() {
     return()=>{active=false;controller?.abort();resume();if(integrationSync.current===sync)integrationSync.current=null;unsubscribe();window.removeEventListener('focus',focus)}
   },[currentUser?.id,brokerConnections.mutation])
 
-  const openPage = (page, historyTarget = null) => {
+  const openPage = (page, historyTarget = null, mode) => {
     setOrderHistoryTarget(historyTarget)
-    setActivePage(page)
+    navigate(page, mode)
     setMobileNav(false)
   }
+  useEffect(() => { setMobileNav(false) }, [activePage])
   const openStockOrder = (stock) => {
     selectionVersion.current += 1
     setSelectionRevision(selectionVersion.current)
@@ -246,8 +246,7 @@ function App() {
     const draft = [agent.active.draft, text].filter(Boolean).join('\n\n')
     if (draft.length > 6000) return false
     agent.setDraft(draft)
-    openPage('agent')
-    setAgentMode('analysis')
+    openPage('agent', null, 'analysis')
     return true
   }
 
@@ -389,6 +388,7 @@ function App() {
           <button className={`nav-link ${activePage === 'order' ? 'active' : ''}`} onClick={() => openPage('order')}><LineChart/><span>주식 주문</span></button>
           <button className={`nav-link ${activePage === 'lab' ? 'active' : ''}`} onClick={() => openPage('lab')}><FlaskConical/><span>실험실</span></button>
           <button className={`nav-link ${activePage === 'screen' ? 'active' : ''}`} onClick={() => openPage('screen')}><Filter/><span>조건 검색</span></button>
+          <button type="button" className={`nav-link ${activePage === 'alerts' ? 'active' : ''}`} aria-label="종목 알림" title="종목 알림" aria-current={activePage === 'alerts' ? 'page' : undefined} onClick={() => openPage('alerts')}><Bell aria-hidden="true"/><span>종목 알림</span></button>
           <button className={`nav-link ${activePage === 'agent' ? 'active' : ''}`} onClick={() => openPage('agent')}><Bot/><span>AI 에이전트</span></button>
           <button className={`nav-link ${activePage === 'assets' ? 'active' : ''}`} onClick={() => openPage('assets')}><WalletCards/><span>자산 현황</span></button>
           {isAdmin && <button className={`nav-link ${activePage === 'admin' ? 'active' : ''}`} onClick={() => openPage('admin')}><FlaskConical/><span>관리자</span></button>}
@@ -406,23 +406,23 @@ function App() {
             error={labWorkspace.catalogError || labWorkspace.catalogMessage}
             onRetry={labWorkspace.refresh} onSelect={labWorkspace.selectStock}/>
             : showStockSearch ? <GlobalStockSearch onSelect={activePage === 'company' ? setAnalysisStock : openStockOrder} credentialScope={searchCredentialScope}/>
-              : <div className="lab-workspace-title">{activePage === 'admin' ? <><FlaskConical/><span>관리자 · AI 품질 평가</span></> : activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : <><Filter/><span>조건 검색</span></>}</div>}
+              : <div className="lab-workspace-title">{activePage === 'admin' ? <><FlaskConical/><span>관리자 · AI 품질 평가</span></> : activePage === 'news' ? <><Newspaper/><span>주요 뉴스 · 공시</span></> : activePage === 'alerts' ? <><Bell aria-hidden="true"/><span>종목 알림</span></> : activePage === 'agent' ? <><Bot/><span>AI 에이전트</span></> : <><Filter/><span>조건 검색</span></>}</div>}
           <div className="header-actions"><ThemeSwitch/><button title="알림"><Bell/></button><button type="button" className="login-button" title={currentUser ? '로그아웃' : '로그인'} aria-label={currentUser ? '로그아웃' : '로그인'} onClick={openLoginOrLogoutConfirm}>{currentUser ? <LogOut/> : <LogIn/>}</button></div>
         </header>
 
-        <div className={`content guest-content ${activePage === 'agent' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
+        <div className={`content guest-content ${activePage === 'agent' || activePage === 'alerts' ? 'agent-content' : ''} ${activePage === 'dashboard' ? 'dashboard-content' : ''} ${activePage === 'order' || activePage === 'lab' ? 'order-content' : ''}`}>
           {activePage === 'admin' && !isAdmin && <section className="panel admin-eval" role="status">관리자 권한 확인이 필요합니다. 로그인한 계정의 권한을 확인해 주세요.</section>}
           {activePage === 'admin' ? (isAdmin && <AdminEvalPanel key={currentUser.id} userId={currentUser.id}/>) : activePage === 'company' ? <CompanyAnalysisPage stock={analysisStock ?? (selectionRevision > 0 ? selected : null)}/> : activePage === 'news' ? <NewsPage category={newsCategory} onCategoryChange={setNewsCategory}/> : activePage === 'screen' ? <ScreenerWorkspace screen={screen} agentReady={agent.ready} onOpenChart={row => openStockOrder({ code: row.code, name: row.name, market: row.market, price: null, change: null, volume: null })} onAskAgent={askScreenAgent}/> : activePage === 'agent' ? <>
-            <AgentModeTabs mode={agentMode} onChange={setAgentMode}/>
+            <AgentModeTabs mode={agentMode} onChange={chooseAgentMode}/>
             <div role="tabpanel" id="agent-mode-panel" aria-labelledby={`agent-tab-${agentMode}`}>
-              {agentMode === 'alerts' ? <AlertAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} watchlist={watchlist}
-                drafts={alertDrafts} roomId={agent.active.id} notice={alertNotice}
-                onLogin={() => setAuthModalOpen(true)} onKakao={() => setAccountSettingsOpen(true)} settingsOpen={accountSettingsOpen}/>
-                : agentMode === 'trading' ? <TradingAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} credentialRevision={integrationVersion} connectionEvidence={brokerConnections.connections} onLogin={() => setAuthModalOpen(true)}/>
+              {agentMode === 'trading' ? <TradingAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} credentialRevision={integrationVersion} connectionEvidence={brokerConnections.connections} onLogin={() => setAuthModalOpen(true)}/>
                   : <AgentWorkspace key={currentUser?.id || 'guest'} agent={{ ...agent, openScreen }}
-                    onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); setAgentMode('alerts') }}/>}
+                    onOpenMini={() => { agent.setUI({ robotVisible: true, miniOpen: true }); openPage('alerts') }}/>}
             </div>
-          </> : activePage === 'dashboard' ? <>
+          </> : activePage === 'alerts' ? <AlertAgentPanel key={currentUser?.id || 'guest'} userId={currentUser?.id} watchlist={watchlist}
+            drafts={alertDrafts} roomId={agent.active.id} notice={alertNotice} historyTarget={pageHash}
+            onLogin={() => setAuthModalOpen(true)} onKakao={() => setAccountSettingsOpen(true)} settingsOpen={accountSettingsOpen}/>
+          : activePage === 'dashboard' ? <>
           <DashboardWelcome/>
 
           <MarketSummary credentialScope={searchCredentialScope}/>
@@ -442,8 +442,8 @@ function App() {
         </div>
       </main>
       <FloatingAgent agent={{ ...agent, openScreen }} visible={(activePage !== 'agent' || agentMode !== 'analysis') && !mobileNav && !authModalOpen && !accountSettingsOpen && !logoutConfirmOpen}
-        onExpand={() => { openPage('agent'); setAgentMode('analysis') }}
-        context={activePage === 'agent' ? (agentMode === 'alerts' ? '알림 에이전트' : '매매 에이전트') : activePage === 'company' ? '기업 분석' : activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
+        onExpand={() => openPage('agent', null, 'analysis')}
+        context={activePage === 'alerts' ? '종목 알림' : activePage === 'agent' ? '매매 에이전트' : activePage === 'company' ? '기업 분석' : activePage === 'news' ? '주요 뉴스 · 공시' : activePage === 'order' ? `${selected?.name || '종목 미선택'} · ${orderPeriod}` : activePage === 'lab' ? '실험실' : activePage === 'screen' ? '조건 검색' : activePage === 'assets' ? '자산 현황' : '대시보드'}/>
       {mobileNav && <button className="overlay" onClick={() => setMobileNav(false)}/>} 
       <AuthModal open={authModalOpen} onClose={closeAuthModal} recovery={passwordRecovery} onRecoveryFinished={finishPasswordRecovery}/>
       <AccountSettingsModal key={currentUser?.id || 'guest'} open={accountSettingsOpen} user={currentUser} onClose={closeAccountSettings} onNicknameSaved={setNickname} onIntegrationStatusChange={onIntegrationStatusChange} onIntegrationMutation={brokerConnections.mutation}/>

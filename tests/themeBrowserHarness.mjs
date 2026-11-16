@@ -15,18 +15,20 @@ const news = { id: 'fixture-news', title: '테마 검증을 위한 시장 뉴스
 const ranked = [stock, { ...stock, code: '035420', name: '검증 NAVER' }]
 const watchlists = new Map()
 const faults = new Map()
-const alertRules = new Map(), alertMessages = new Map()
+const alertRules = new Map(), alertMessages = new Map(), delayedAlerts = new Set()
 const indicatorQa = process.env.ATLAS_INDICATOR_FIXTURE === '1'
-const supabase = `let id=sessionStorage.getItem('atlas.qa.user')||'';const listeners=new Set();const session=()=>id?{access_token:'fixture-'+id,user:{id,email:'theme@fixture.invalid'}}:null;
-export const setQaUser=value=>{id=value;sessionStorage.setItem('atlas.qa.user',id);for(const fn of listeners)fn(id?'SIGNED_IN':'SIGNED_OUT',session())};
+const supabase = `const qaAuth=globalThis[Symbol.for('atlas.qa.auth.v1')] ||= {id:sessionStorage.getItem('atlas.qa.user')||'',listeners:new Set()};
+const session=()=>qaAuth.id?{access_token:'fixture-'+qaAuth.id,user:{id:qaAuth.id,email:'theme@fixture.invalid'}}:null;
+export const setQaUser=value=>{qaAuth.id=value;sessionStorage.setItem('atlas.qa.user',value);for(const fn of qaAuth.listeners)fn(value?'SIGNED_IN':'SIGNED_OUT',session())};
 const request=(params,body)=>fetch('/__qa/watchlist?'+new URLSearchParams(params),body?{method:'POST',body:JSON.stringify(body)}:{}).then(res=>res.json());
-export const setQaWatchlistFault=fault=>request({user:id},{fault});
+export const setQaWatchlistFault=fault=>request({user:qaAuth.id},{fault});
+export const setQaAlertDelay=()=>fetch('/__qa/alert-delay',{method:'POST',body:JSON.stringify({user:qaAuth.id})});
 export const initialRecoveryRequest={requested:false,failed:false};export const isSupabaseConfigured=true;
 export const supabase={
-  auth:{initialize:async()=>({}),getSession:async()=>({data:{session:session()}}),onAuthStateChange:fn=>{listeners.add(fn);return{data:{subscription:{unsubscribe:()=>listeners.delete(fn)}}}},signOut:async()=>{setQaUser('');return{}}},
-  rpc:(_name,body)=>request({user:id},body),
+  auth:{initialize:async()=>({}),getSession:async()=>({data:{session:session()}}),onAuthStateChange:fn=>{qaAuth.listeners.add(fn);return{data:{subscription:{unsubscribe:()=>qaAuth.listeners.delete(fn)}}}},signOut:async()=>{setQaUser('');return{}}},
+  rpc:(_name,body)=>request({user:qaAuth.id},body),
   from:table=>{
-    let user=id;
+    let user=qaAuth.id;
     if(table==='strategies'){
       const key='atlas.qa.strategies:'+user;let mutation,where={};
       const finish=()=>{const rows=JSON.parse(sessionStorage.getItem(key)||'[]');if(!mutation)return {data:rows,error:null};
@@ -116,6 +118,8 @@ async function response(path, params, method, authorization, body) {
     const configured = !authorization?.endsWith('qa-other')
     return { kiwoomConfigured: configured, tossConfigured: configured, nhConfigured: configured, kbConfigured: configured }
   }
+  if (path === '/api/account/kakao' && method === 'GET') return { available: true, status: 'connected', maskedId: 'fixture-***',
+    linkedAt: '2026-11-07T09:00:00+09:00', verifiedAt: new Date().toISOString(), messageConsentAvailable: true, messageAuthorized: true }
   if (path.startsWith('/api/account/connections/')) return { connected: true, expiresAt: Date.now() + 60000 }
   if (/\/api\/account\/[^/]+\/summary/.test(path)) return accountSummary(path, params, authorization)
   if (path.startsWith('/api/account/orders/history')) {
@@ -149,7 +153,14 @@ async function response(path, params, method, authorization, body) {
       return { broker, status: 'ready', selectedAccountRef: accountRef }
     }) }
   }
-  if (path === '/api/agent/status') return { authenticated: Boolean(authorization), configured: true, alert_tools: true, provider: { state: 'ready' }, remaining: 2, used: 0, limit: 2 }
+  if (path === '/api/agent/status') return { authenticated: Boolean(authorization), enabled: true, configured: true, alert_tools: true, provider: { state: 'recent_success' }, remaining: 2, used: 0, limit: 2 }
+  if (path === '/api/agent/trading' && method === 'GET') return {
+    flags: { liveEnabled: false, workerEnabled: false, workerReady: false, storageV2: true },
+    capabilities: Object.fromEntries(['kiwoom','toss','nh','kb'].map(broker => [broker, { supported: false, ordersEnabled: false, reason: '격리 UI 검증 · 실행 비활성' }])),
+    watchlist: (await watchlistResponse(authorization?.slice('Bearer fixture-'.length))).data || [],
+    configs: [], sessions: [], intents: [], events: [], strategies: [],
+  }
+  if (path === '/api/agent/trading/connections' && method === 'GET') return Object.fromEntries(['kiwoom','toss','nh','kb'].map(broker => [broker, { connected: false, status: 'unconfigured', accounts: [] }]))
   if (path === '/api/agent/alerts') {
     const user = authorization?.slice('Bearer fixture-'.length)
     if (!user) return { error: 'invalid_authentication' }
@@ -173,7 +184,9 @@ async function response(path, params, method, authorization, body) {
         Object.assign(rule, body.rule, { version: randomUUID(), status: body.action === 'cancel' ? 'canceled' : 'active' })
       }
     }
-    return { watchlist, rules, history, kakao: 'ready', enabled: true, consentAvailable: true, ruleManagement: true, conditionVersion: 3 }
+    const result = structuredClone({ watchlist, rules, history, kakao: 'ready', enabled: true, consentAvailable: true, ruleManagement: true, conditionVersion: 3 })
+    if (method === 'GET' && delayedAlerts.delete(user)) await delay(3500)
+    return result
   }
   if (path === '/api/agent/rooms/1/requests' && method === 'POST') {
     const user = authorization?.slice('Bearer fixture-'.length)
@@ -254,9 +267,21 @@ const server = await createServer({ configFile: false, envDir: false, define: { 
     transform(code, id) { if (/\/(TradingViewChart|MarketIndexChart)\.jsx$/.test(id.replaceAll('\\', '/'))) return code.replace("from 'lightweight-charts'", "from '/tests/support/themeCharts.js'") },
     configureServer(vite) { vite.middlewares.use(async (req, res, next) => {
       if (req.url === '/__qa/metrics') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify(requests)) }
+      if (req.url === '/__qa/alert-delay' && req.method === 'POST') {
+        let text = ''; for await (const chunk of req) text += chunk
+        const user = JSON.parse(text).user
+        if (typeof user === 'string' && user) delayedAlerts.add(user)
+        res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ready:Boolean(user)}))
+      }
       if (!req.url.startsWith('/api/') && !req.url.startsWith('/__qa/watchlist?')) return next()
       const url = new URL(req.url, 'http://fixture.invalid'), path = url.pathname
       requests[path] = (requests[path] || 0) + 1
+      requests[`${req.method} ${path}`] = (requests[`${req.method} ${path}`] || 0) + 1
+      const fixtureUser = req.headers.authorization?.slice('Bearer fixture-'.length) || url.searchParams.get('user') || 'guest'
+      if (/^(?:qa-[a-z0-9-]+|guest)$/.test(fixtureUser)) {
+        const metric = `${req.method} ${path} [${fixtureUser}]`
+        requests[metric] = (requests[metric] || 0) + 1
+      }
       let text = ''; for await (const chunk of req) text += chunk
       const payload = path === '/__qa/watchlist'
         ? await watchlistResponse(url.searchParams.get('user'), text ? JSON.parse(text) : null)
