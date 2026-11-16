@@ -386,8 +386,8 @@ function App() {
           <p>WORKSPACE</p>
           <button className={`nav-link ${activePage === 'dashboard' ? 'active' : ''}`} onClick={() => openPage('dashboard')}><LayoutDashboard/><span>대시보드</span></button>
           <button className={`nav-link ${activePage === 'order' ? 'active' : ''}`} onClick={() => openPage('order')}><LineChart/><span>주식 주문</span></button>
-          <button className={`nav-link ${activePage === 'lab' ? 'active' : ''}`} onClick={() => openPage('lab')}><FlaskConical/><span>실험실</span></button>
           <button className={`nav-link ${activePage === 'screen' ? 'active' : ''}`} onClick={() => openPage('screen')}><Filter/><span>조건 검색</span></button>
+          <button className={`nav-link ${activePage === 'lab' ? 'active' : ''}`} onClick={() => openPage('lab')}><FlaskConical/><span>실험실</span></button>
           <button type="button" className={`nav-link ${activePage === 'alerts' ? 'active' : ''}`} aria-label="종목 알림" title="종목 알림" aria-current={activePage === 'alerts' ? 'page' : undefined} onClick={() => openPage('alerts')}><Bell aria-hidden="true"/><span>종목 알림</span></button>
           <button className={`nav-link ${activePage === 'agent' ? 'active' : ''}`} onClick={() => openPage('agent')}><Bot/><span>AI 에이전트</span></button>
           <button className={`nav-link ${activePage === 'assets' ? 'active' : ''}`} onClick={() => openPage('assets')}><WalletCards/><span>자산 현황</span></button>
