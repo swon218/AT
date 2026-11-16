@@ -7,6 +7,11 @@ import { createOpenOrderBrokers, publicOpenOrder } from './openOrderBrokers.js'
 import { normalizeKiwoomHoldings } from './kiwoomAccount.js'
 import { accountRef as makeAccountRef, credentialVersion, digest, personalAuth } from './personalBroker.js'
 import { koreanOrderDay } from '../src/utils/orderPeriod.js'
+import {tradingCredentialVersion} from './tradingBrokerCommon.js'
+import {createTradingTossGateway} from './tradingTossGateway.js'
+import {createTradingNhGateway} from './tradingNhGateway.js'
+import {tradingExecutionPolicy} from '../shared/tradingPolicies.js'
+export {tradingCredentialVersion} from './tradingBrokerCommon.js'
 
 export const TRADING_BROKER_SOURCES = Object.freeze({
   kiwoom: 'https://raw.githubusercontent.com/Kiwoom-Securities/Kiwoom-REST-API/main/kiwoom/_data/kiwoom_api_spec.json',
@@ -16,14 +21,14 @@ export const TRADING_BROKER_SOURCES = Object.freeze({
 })
 const LIMITS = Object.freeze({ quoteAgeMs: 15_000, maximumQuantity: 1_000_000, maximumPrice: 1_000_000_000, maximumPages: 50 })
 const disabled = {
-  toss: ['krx_routing_unverified', '토스 공식 주문 명세에 KRX 지정 라우팅 옵션이 없어 KRX 전용 자동매매를 지원하지 않습니다.'],
-  nh: ['original_market_order_id_unverified', 'NH 통합주문번호와 취소용 원시장주문번호의 매핑이 확인되지 않아 자동매매를 지원하지 않습니다.'],
+  nh: ['nh_recovery_contract_unverified', 'NH 시장주문번호와 체결 조회 통합주문번호의 연결 및 재시작 후 실제 체결시각 복원 계약이 확인되지 않았습니다. 조회만 지원합니다.'],
   kb: ['holdings_quote_reconciliation_unverified', 'KB의 현재 보유수량·개인 KRX 시세 시각·정확한 체결 대사 계약이 확인되지 않아 자동매매를 지원하지 않습니다.'],
 }
 export function tradingBrokerCapabilities(broker) {
   if (broker === 'kiwoom') return { broker, supported: true, exchange: 'KRX', entryType: 'limit', exitType: 'market', timeInForce: 'DAY', source: TRADING_BROKER_SOURCES.kiwoom }
+  if (broker === 'toss') return {broker,supported:true,exchange:'SOR',entryType:'limit',exitType:'market',timeInForce:'DAY',source:TRADING_BROKER_SOURCES.toss}
   const [code, reason] = disabled[broker] || ['broker_unsupported', '지원하지 않는 증권사입니다.']
-  return { broker, supported: false, code, reason, source: TRADING_BROKER_SOURCES[broker] || null }
+  return { broker, supported: false,readSupported:broker==='nh',code, reason, source: TRADING_BROKER_SOURCES[broker] || null }
 }
 const failure = (code, message, statusCode = 409) => Object.assign(new Error(message), { code, statusCode })
 const strictInteger = (value, { positive = false, absolute = false } = {}) => {
@@ -49,9 +54,6 @@ const stateBlocked = /거래정지|매매정지|정리매매|관리종목|투자
 
 // The private registration epoch also fences delete -> same-key registration.
 // It is not used by shared manual-order credentials/caches or returned raw.
-export const tradingCredentialVersion = (account, broker, auth = personalAuth(account, broker)) =>
-  digest([credentialVersion(account, broker, auth), account.tradingCredentialEpoch || null])
-
 export function parseTradingQuote(payload, symbol, currentTime, session) {
   assertSymbol(symbol)
   if (String(payload?.return_code) !== '0' || payload?.stk_cd !== symbol || !Array.isArray(payload.stk_tic_chart_qry)) throw failure('trading_quote_invalid', 'KRX 시세 응답을 확인할 수 없습니다.')
@@ -68,7 +70,7 @@ export function parseTradingQuote(payload, symbol, currentTime, session) {
   return { symbol, exchange: 'KRX', price, observedAt: new Date(observed).toISOString(), receivedAt: new Date(currentTime).toISOString(), fresh: true }
 }
 
-export function createTradingBrokerGateway({
+export function createKiwoomTradingGateway({
   settings = {}, request = requestKiwoomWithCredentials, now = Date.now, loadAccount,
   openOrders = createOpenOrderBrokers({ kiwoom: request, now }),
   history = createBrokerHistory({ kiwoom: definition => request({ ...definition, body: { ...definition.body, dmst_stex_tp: 'KRX' } }) }),
@@ -81,6 +83,7 @@ export function createTradingBrokerGateway({
       ...(!ordersEnabled && capability.supported ? { code: 'broker_orders_disabled', reason: 'VPS에서 키움 주문 기능이 활성화되지 않았습니다.' } : {}) }
   }
   function scope({ account, broker, accountRef = '', symbol, expectedCredentialVersion }) {
+    if(broker!=='kiwoom')throw failure('trading_broker_unsupported','키움 어댑터의 증권사 범위를 확인해 주세요.')
     const capability = tradingBrokerCapabilities(broker)
     if (!capability.supported) throw failure(`trading_${capability.code}`, capability.reason)
     let auth
@@ -241,6 +244,7 @@ export function createTradingBrokerGateway({
     const latest = await quote({ ...input, signal })
     if (intent.side === 'buy' && (price < latest.priceLimitDown || price > latest.priceLimitUp)) throw failure('trading_price_bound_invalid', '매수 지정가가 상하한가 범위를 벗어났습니다.')
     const inspected = await inspect({ ...input, price: price || latest.price, signal })
+    if (inspected.openOrders.some(order => !order.symbol || order.symbol === input.symbol)) throw failure('trading_external_order_conflict', '같은 종목의 미체결 주문이 있어 새 주문을 보내지 않았습니다.')
     if (intent.side === 'buy' && (quantity * price > inspected.cashAvailable || quantity > inspected.buyableQuantity)) throw failure('trading_cash_insufficient', '미수 없는 현금 주문가능금액이 부족합니다.')
     if (intent.side === 'sell' && (quantity > inspected.holdingQuantity || quantity > inspected.sellableQuantity)) throw failure('trading_sellable_insufficient', '현재 보유수량 또는 매도가능수량이 부족합니다.')
     // Recheck flags/calendar after potentially slow account reads. No retries on
@@ -328,4 +332,30 @@ export function createTradingBrokerGateway({
     })
   }
   return { capabilities, inspect, quote, candles, submit, cancel, reconcile }
+}
+
+// Shared orchestration never chooses a substitute broker. Each adapter retains
+// its own account, response, order identifier, transport and recovery contracts.
+export function createTradingBrokerGateway(options={}) {
+  const kiwoom=options.kiwoomAdapter||createKiwoomTradingGateway(options)
+  const toss=options.tossAdapter||createTradingTossGateway({settings:options.settings,now:options.now,loadAccount:options.loadAccount,...options.tossOptions})
+  const nh=options.nhAdapter||createTradingNhGateway({settings:options.settings,now:options.now,loadAccount:options.loadAccount,...options.nhOptions})
+  const adapters={kiwoom,toss,nh}
+  const select=broker=>{const adapter=adapters[broker];if(!adapter)throw failure('trading_broker_unsupported',tradingBrokerCapabilities(broker).reason);return adapter}
+  return {
+    capabilities(broker){const found=adapters[broker];return {...(found?found.capabilities(broker):tradingBrokerCapabilities(broker)),executionPolicy:tradingExecutionPolicy(broker)}},
+    async accounts(input){
+      if(input.broker==='kiwoom'){
+        const auth=personalAuth(input.account,'kiwoom')
+        return {accounts:[{ref:makeAccountRef(input.account,'kiwoom',auth,'linked'),label:'키움 API 연결 계좌'}],credentialVersion:tradingCredentialVersion(input.account,'kiwoom',auth)}
+      }
+      return select(input.broker).accounts(input)
+    },
+    async inspect(input){return select(input.broker).inspect(input)},
+    async quote(input){return {...await select(input.broker).quote(input),sourceBroker:input.broker}},
+    async candles(input){return select(input.broker).candles(input)},
+    async submit(input){return select(input.broker).submit(input)},
+    async cancel(input){return select(input.broker).cancel(input)},
+    async reconcile(input){return select(input.broker).reconcile(input)},
+  }
 }

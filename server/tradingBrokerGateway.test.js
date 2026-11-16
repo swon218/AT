@@ -48,10 +48,12 @@ function fixture(overrides = {}) {
   return { gateway, request, calls, changes, settings, position, replies, opens, historyReply, chartCalls }
 }
 
-test('only researched KRX execution adapter is enabled; unsupported brokers never fall back', async () => {
+test('Kiwoom KRX and Toss SOR policies are distinct; unavailable adapters never fall back', async () => {
   const f = fixture()
   assert.equal(tradingBrokerCapabilities('kiwoom').supported, true)
-  for (const broker of ['toss', 'nh', 'kb']) {
+  assert.equal(tradingBrokerCapabilities('toss').supported,true)
+  assert.equal(tradingBrokerCapabilities('toss').exchange,'SOR')
+  for (const broker of ['nh', 'kb']) {
     assert.equal(tradingBrokerCapabilities(broker).supported, false)
     assert.ok(tradingBrokerCapabilities(broker).reason)
     await assert.rejects(f.gateway.inspect({ ...input, broker }), error => error.code.startsWith('trading_'))
@@ -135,6 +137,20 @@ test('bounded cash DAY limit buy is a single nonretrying KRX request', async () 
   assert.deepEqual(writes[0].body, { dmst_stex_tp: 'KRX', stk_cd: '005930', ord_qty: '2', ord_uv: '100000', trde_tp: '0', cond_uv: '' })
   assert.equal(writes[0].retry, false); assert.equal(writes[0].rateRetry, false)
   await assert.rejects(f.gateway.submit({ ...input, intent: { ...intent, reservedCash: 1 } }), { code: 'trading_price_bound_invalid' })
+})
+
+test('final Kiwoom inspection rejects a newly appeared same-symbol or unidentified open order', async () => {
+  for (const symbol of [input.symbol, undefined, '000660']) {
+    const f = fixture({ request: async (definition, replies) => {
+      // A manual order appears while slow holdings/cash preflight is running.
+      if (definition.apiId === 'kt00018') f.opens.items = [{ accountRef: ref, orderNumber: 'manual-order', symbol }]
+      const body = structuredClone(replies[definition.apiId])
+      return definition.returnPage ? { body, contYn: 'N', nextKey: '' } : body
+    } })
+    if (symbol === '000660') assert.equal((await f.gateway.submit({ ...input, intent })).status, 'accepted')
+    else await assert.rejects(f.gateway.submit({ ...input, intent }), { code: 'trading_external_order_conflict' })
+    assert.equal(f.calls.filter(call => call.endpoint === '/api/dostk/ordr').length, symbol === '000660' ? 1 : 0)
+  }
 })
 
 test('unknown write results are never retried; rejection codes do not expose broker text', async () => {

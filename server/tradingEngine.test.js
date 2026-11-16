@@ -173,6 +173,26 @@ test('prepared-before-send crash recovers only that intent, with fresh scope; se
   assert.equal(f.session.status, 'buying')
   await f.tick(); assert.equal(f.submits.length, 1)
 })
+test('an external open order appearing during fresh inspection blocks initial and restart-prepared dispatch', async () => {
+  for (const restartPrepared of [false, true]) {
+    for (const symbol of [spec.code, undefined, '000660']) {
+      const f = fixture()
+      if (restartPrepared) f.intents.push({ id: 'prepared-intent', session_id: 'run', action_key: 'entry:once', kind: 'entry', side: 'buy', quantity: 2, price: 102, cash_reservation: 208, metadata: { signalDay: 'once' }, status: 'prepared', created_at: new Date(at).toISOString(), cumulative_quantity: 0, cumulative_notional: 0 })
+      let reads = 0
+      f.options.gateway.inspect = async () => ({ ...f.inspected, openOrders: ++reads === 1 ? [] : [{ orderNumber: 'manual-order', symbol }] })
+      await f.tick()
+      const conflict = symbol !== '000660'
+      assert.equal(f.submits.length, conflict ? 0 : 1)
+      assert.equal(f.calls.includes('dispatch_intent'), !conflict)
+      if (conflict) {
+        assert.equal(f.session.status, 'reconciliation_required')
+        assert.equal(f.session.state.reason, 'external_conflict')
+        assert.equal(f.intents.length, restartPrepared ? 1 : 0)
+        if (restartPrepared) assert.equal(f.intents[0].status, 'prepared')
+      }
+    }
+  }
+})
 test('credential deletion or server stop during reads is rechecked before first durable dispatch', async () => {
   const deleted = fixture(); let reads = 0
   deleted.options.loadAccount = async () => ({ version: ++reads > 1 ? 'deleted' : 'private-version' })

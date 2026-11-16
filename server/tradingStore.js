@@ -2,6 +2,8 @@ import {createClient} from '@supabase/supabase-js'
 import {config} from './config.js'
 
 const explanations={
+ trading_policy_mismatch:'실행 정책이 변경되어 다시 확인해야 합니다.',trading_schema_conflict:'자동매매 SQL 버전을 확인해 주세요.',
+ trading_invalid_account_label:'본인 계좌 표시 정보를 확인해 주세요.',trading_policy_unsupported:'지원하지 않는 거래소 실행 정책입니다.',
  trading_auth_required:'로그인 후 사용할 수 있습니다.',trading_not_found:'설정 또는 실행을 찾을 수 없습니다.',
  trading_watchlist_required:'관심종목에 등록한 종목만 설정하고 실행할 수 있습니다.',
  trading_revision_conflict:'다른 화면에서 변경되었습니다. 최신 상태를 다시 불러와 주세요.',

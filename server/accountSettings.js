@@ -72,7 +72,7 @@ async function readStored(user, client) {
   let result
   try {
     result = await client.from('user_integrations')
-      .select('credentials_ciphertext,credentials_iv,credentials_auth_tag,kiwoom_configured,toss_configured,nh_configured,kb_configured,telegram_configured,settings_version')
+      .select('credentials_ciphertext,credentials_iv,credentials_auth_tag,kiwoom_configured,toss_configured,nh_configured,kb_configured,telegram_configured,settings_version,trading_broker_versions')
       .eq('user_id', user.id).maybeSingle()
   } catch { throw settingsError('settings_unavailable','저장 상태를 확인하지 못했습니다. 다시 시도해 주세요.',503) }
   if (result.error) throw settingsError('settings_unavailable','저장 상태를 확인하지 못했습니다. 서버 업데이트 상태를 확인한 후 다시 시도해 주세요.',503)
@@ -196,5 +196,5 @@ export async function getAuthenticatedCredentials(request, { client = adminClien
 export async function getStoredTradingAccount(userId, { client = adminClient } = {}) {
   if (!/^[0-9a-f-]{36}$/i.test(userId || '') || !client) throw settingsError('settings_unavailable', '보안 저장소를 확인할 수 없습니다.', 503)
   const user = { id: userId }, { row, credentials } = await readStored(user, client)
-  return { user, credentials, status: configuredStatus(row), tradingCredentialEpoch: row?.settings_version ?? null }
+  return { user, credentials, status: configuredStatus(row), tradingCredentialEpoch: row?.settings_version ?? null,tradingCredentialEpochs:row?.trading_broker_versions??null }
 }

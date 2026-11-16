@@ -61,7 +61,7 @@ async function getAccessToken({ apiKey, secretKey, forceRefresh = false }) {
   }
 }
 
-export async function requestTossWithCredentials({ apiKey, secretKey, path, method = 'GET', query, body, accountSeq, retry = true, signal }) {
+export async function requestTossWithCredentials({ apiKey, secretKey, path, method = 'GET', query, body, accountSeq, retry = true, signal, beforeWrite }) {
   signal=signal||AbortSignal.timeout(20000)
   const { token, key } = await getAccessToken({ apiKey, secretKey }).catch(error => {
     error.tossStage = 'token'
@@ -75,6 +75,21 @@ export async function requestTossWithCredentials({ apiKey, secretKey, path, meth
   const headers = { Authorization: `Bearer ${token}` }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (accountSeq !== undefined && accountSeq !== null) headers['X-Tossinvest-Account'] = String(accountSeq)
+
+  // Automatic trading supplies a one-use fence. Existing manual calls omit it.
+  // Token acquisition has completed; no awaited operation follows authorization
+  // before the actual order HTTP request below.
+  if (method !== 'GET' && /^\/api\/v1\/orders(?:\/|$)/.test(path) && beforeWrite !== undefined) {
+    try {
+      if (typeof beforeWrite !== 'function' || await beforeWrite() !== true) throw Object.assign(new Error(), { notTransmitted: true })
+    } catch (error) {
+      throw Object.assign(new Error('주문 전송 직전 실행 권한을 확인하지 못했습니다.'), {
+        code: error?.writeGateUnknown ? 'trading_write_gate_unknown' : 'trading_write_gate_rejected',
+        notTransmitted: error?.notTransmitted === true, writeGateUnknown: error?.writeGateUnknown === true,
+      })
+    }
+  }
+  signal?.throwIfAborted()
 
   const response = await fetch(url, {
     method,

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { TRADING_POLICY, evaluateTradingSignal, moneyMicros, microsMoney, sizeTradingOrder, tradingExitReason, tradingLimitPrice, tradingTerminal } from '../shared/tradingV1.js'
-import { tradingCredentialVersion } from './tradingBrokerGateway.js'
+import { tradingCredentialVersion } from './tradingBrokerCommon.js'
+import {resolveTradingPolicy,tradingExecutionPolicy} from '../shared/tradingPolicies.js'
 
 const activeIntent = intent => !['filled', 'cancelled', 'rejected'].includes(intent.status)
 const textDate = now => new Date(now).toISOString()
@@ -8,6 +9,7 @@ const quantity = value => Number.isSafeInteger(Number(value)) && Number(value) >
 const safeEvent = (code, at, extra = {}) => ({ code, at: textDate(at), ...extra })
 const kstDay = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
 const storedFills = executions => (executions || []).map(fill => ({ key: fill.id, quantity: fill.quantity, price: fill.price, at: fill.time }))
+const referenceMetadata=result=>({...((result?.references&&typeof result.references==='object')?{references:result.references}:{}),...(result?.notTransmitted?{notTransmitted:true}:{})})
 
 export function initialTradingState({ adoptedQuantity = 0, averagePrice = null, totalHoldingQuantity = 0, now = Date.now() } = {}) {
   if (quantity(adoptedQuantity) === null || quantity(totalHoldingQuantity) === null || adoptedQuantity > totalHoldingQuantity) throw new Error('invalid_adopted_position')
@@ -63,12 +65,12 @@ export function verifiedTradingSession(calendar, at = Date.now()) {
   return { ...calendar, market: 'KRX', open, close, active: at >= open && at < close, opening: at >= open && at < open + TRADING_POLICY.openingWindowSeconds * 1000 }
 }
 
-export function verifyTradingQuote(quote, symbol, session, at = Date.now()) {
+export function verifyTradingQuote(quote, symbol, session, at = Date.now(), policy=tradingExecutionPolicy('kiwoom'), broker='kiwoom') {
   const observed = Date.parse(quote?.observedAt)
-  return Boolean(session?.active && quote?.symbol === symbol && quote.exchange === 'KRX' && quote.fresh === true && quote.halted === false && Number.isSafeInteger(quote.price) && quote.price > 0 && Number.isFinite(observed) && observed >= session.open && observed < session.close && observed <= at && at - observed <= TRADING_POLICY.quoteMaxAgeSeconds * 1000)
+  return Boolean(policy?.tradingWindow==='KRX_REGULAR' && session?.active && quote?.symbol === symbol && quote.exchange === policy.quoteMarket && (broker==='kiwoom'&&!quote.sourceBroker||quote.sourceBroker===broker) && quote.fresh === true && quote.halted === false && Number.isSafeInteger(quote.price) && quote.price > 0 && Number.isFinite(observed) && observed >= session.open && observed < session.close && observed <= at && at - observed <= TRADING_POLICY.quoteMaxAgeSeconds * 1000)
 }
 
-const publicIntent = row => ({ ...row, executionId: row.session_id, orderNumber: row.broker_order_id, actionKey: row.action_key, limitPrice: Number(row.price), date: kstDay(row.created_at), status: row.status, quantity: Number(row.quantity), reservedCash: Number(row.cash_reservation), metadata: row.metadata || {} })
+const publicIntent = row => ({ ...row, executionId: row.session_id, orderNumber: row.broker_order_id, actionKey: row.action_key, limitPrice: Number(row.price), date: kstDay(row.created_at), status: row.status, quantity: Number(row.quantity), reservedCash: Number(row.cash_reservation), references:row.metadata?.references, metadata: row.metadata || {} })
 
 export function createTradingEngine({ store, gateway, calendar, readDaily, loadAccount, credentialVersionFor = tradingCredentialVersion, flags = () => ({ workerEnabled: false, liveEnabled: false, paperEnabled: false }), now = Date.now, workerId = randomUUID() }) {
   if (!store?.call || !gateway || !calendar || !readDaily || !loadAccount) throw new Error('trading_dependencies_required')
@@ -127,7 +129,9 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
             if (!live || !currentFlags.liveEnabled || !currentFlags.workerEnabled) { await commit('paused', 'disabled'); continue }
             let account
             try { account = await loadAccount(original.owner_id) } catch { await commit('connection_required', 'credentials_changed'); continue }
-            const context = { account, broker: original.broker, accountRef: original.account_ref, symbol: original.code }
+            const executionPolicy=resolveTradingPolicy(original.snapshot,original.broker)
+            if(!executionPolicy){await commit('reconciliation_required','execution_policy_mismatch');continue}
+            const context = { account, broker: original.broker, accountRef: original.account_ref, symbol: original.code,executionPolicy }
             const refreshWriteScope = async () => {
               const activeFlags = typeof flags === 'function' ? flags() : flags
               if (!activeFlags.workerEnabled || !activeFlags.liveEnabled) return false
@@ -151,7 +155,7 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
               return (activeIntent(i) && i.status !== 'prepared') || Number(i.cumulative_quantity || 0) !== applied.quantity || moneyMicros(i.cumulative_notional || 0) !== BigInt(applied.notionalMicros) || (i.status === 'cancelled' && publicIntent(i).date === verified?.date)
             })
             if (live && needsRead.length) {
-              const recovered = await gateway.reconcile({ ...context, intents: needsRead.map(i => ({ ...publicIntent(i), accountRef: original.account_ref, symbol: original.code, credentialVersion: inspected.credentialVersion })) })
+              const recovered = await gateway.reconcile({ ...context, intents: needsRead.map(i => ({ ...publicIntent(i), accountRef: original.account_ref, symbol: original.code, credentialVersion: inspected.credentialVersion })),operations:mine.filter(i=>i.kind==='cancel').map(publicIntent) })
               for (const order of recovered.orders || []) {
                 const intent = orderIntents.find(i => i.id === order.intentId)
                 if (!intent) throw new Error('unowned_order_fact')
@@ -160,10 +164,16 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
                 const previousQty = Number(intent.cumulative_quantity || 0)
                 // Stale lower cumulative snapshots never regress durable facts.
                 if (Number(order.filledQuantity) < previousQty) continue
-                await call('settle_intent', { lease, intentId: intent.id, status: mapped, brokerOrderId: order.orderNumber, cumulativeQuantity: order.filledQuantity, cumulativeNotional: order.filledNotional, fills: storedFills(order.executions), metadata: {} })
+                await call('settle_intent', { lease, intentId: intent.id, status: mapped, brokerOrderId: order.orderNumber, cumulativeQuantity: order.filledQuantity, cumulativeNotional: order.filledNotional, fills: storedFills(order.executions), metadata: referenceMetadata(order) })
                 const reduced = applyTradingFills(state, intent, order, now())
                 state = reduced.state; events.push(...reduced.events)
-                intent.status = mapped; intent.broker_order_id = order.orderNumber || intent.broker_order_id; intent.cumulative_quantity = order.filledQuantity; intent.cumulative_notional = order.filledNotional
+                intent.status = mapped; intent.broker_order_id = order.orderNumber || intent.broker_order_id; intent.cumulative_quantity = order.filledQuantity; intent.cumulative_notional = order.filledNotional;intent.metadata={...intent.metadata,...referenceMetadata(order)}
+              }
+              for(const operation of recovered.operations||[]) {
+                const owned=mine.find(i=>i.id===operation.intentId&&i.kind==='cancel')
+                if(!owned||!['accepted','cancelled','rejected','unknown'].includes(operation.status))throw new Error('unowned_operation_fact')
+                await call('settle_intent',{lease,intentId:owned.id,status:operation.status,brokerOrderId:operation.orderNumber,cumulativeQuantity:0,cumulativeNotional:0,fills:[],metadata:referenceMetadata(operation)})
+                owned.status=operation.status;owned.metadata={...owned.metadata,...referenceMetadata(operation)}
               }
               if (!recovered.complete) { await commit('reconciliation_required', recovered.reason || 'order_unknown'); continue }
               holdings = recovered.holdingQuantity; openOrders = recovered.openOrders || []
@@ -181,7 +191,8 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
             if (unfinished.some(i => ['sending', 'unknown'].includes(i.status))) { await commit('unknown', 'order_unknown'); continue }
             if (quantity(holdings) === null || Number(holdings) !== Number(state.position?.quantity || 0) + Number(state.unmanagedQuantity || 0)) { await commit('reconciliation_required', 'external_conflict'); continue }
             const ownedNumbers = new Set(orderIntents.map(i => i.broker_order_id).filter(Boolean))
-            if (openOrders.some(o => !ownedNumbers.has(o.orderNumber ?? o.order_number ?? o.broker_order_id))) { await commit('reconciliation_required', 'external_conflict'); continue }
+            const hasUnownedOpenOrders = rows => !Array.isArray(rows) || rows.some(o => (!o.symbol || o.symbol === original.code) && !ownedNumbers.has(o.orderNumber ?? o.order_number ?? o.broker_order_id))
+            if (hasUnownedOpenOrders(openOrders)) { await commit('reconciliation_required', 'external_conflict'); continue }
             const stopped = Boolean(original.stop_requested), abandoned = Boolean(original.abandon_requested), removed = original.watchlisted === false
             // A definite rejection is not an unknown network result. Do not
             // quietly re-attempt the same entry forever; a user must inspect
@@ -203,9 +214,9 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
               }
               const quote = await gateway.quote({ ...context, session: { ...verified, open: textDate(verified.open), close: textDate(verified.close) } }).catch(() => null)
               const reason = !isEntry && state.position && quote?.price > 0 ? tradingExitReason(state.position, strategy.backtest_settings, quote.price) : null
-              if (!verifyTradingQuote(quote, original.code, verified, now()) || (!isEntry && reason !== pendingPrepared.kind)) { await commit(state.position ? 'holding' : 'waiting_signal', 'quote_unavailable'); continue }
+              if (!verifyTradingQuote(quote, original.code, verified, now(),executionPolicy,original.broker) || (!isEntry && reason !== pendingPrepared.kind)) { await commit(state.position ? 'holding' : 'waiting_signal', 'quote_unavailable'); continue }
               const fresh = await gateway.inspect(context)
-              if (!fresh.complete || !fresh.eligible || fresh.credentialVersion !== inspected.credentialVersion || fresh.holdingQuantity !== holdings || (isEntry && Number(pendingPrepared.cash_reservation) > fresh.cashAvailable)) { await commit('reconciliation_required', 'external_conflict'); continue }
+              if (!fresh.complete || !fresh.eligible || fresh.accountRef !== original.account_ref || fresh.credentialVersion !== inspected.credentialVersion || fresh.holdingQuantity !== holdings || hasUnownedOpenOrders(fresh.openOrders) || (isEntry && Number(pendingPrepared.cash_reservation) > fresh.cashAvailable)) { await commit('reconciliation_required', 'external_conflict'); continue }
               await renewLease()
               if (!await refreshWriteScope()) { await commit('connection_required', 'credentials_changed'); continue }
               const dispatch = await call('dispatch_intent', { lease, intentId: pendingPrepared.id })
@@ -213,7 +224,7 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
               let result
               try { result = await gateway.submit({ ...context, intent: { ...publicIntent(dispatch.intent), status: 'sending', credentialVersion: inspected.credentialVersion, accountRef: original.account_ref, symbol: original.code, maxPrice: Number(pendingPrepared.price), ownedQuantity: isEntry ? 0 : Number(state.position.quantity) }, session: { ...verified, open: textDate(verified.open), close: textDate(verified.close) }, beforeWrite: beforeWrite(pendingPrepared.id, original) }) } catch { result = { status: 'unknown' } }
               const accepted = result.status === 'accepted', rejected = result.status === 'rejected'
-              await call('settle_intent', { lease, intentId: pendingPrepared.id, status: accepted ? 'accepted' : rejected ? 'rejected' : 'unknown', brokerOrderId: result.orderNumber, cumulativeQuantity: 0, cumulativeNotional: 0, fills: [], metadata: { ...(result.notTransmitted ? { notTransmitted: true } : {}) } })
+              await call('settle_intent', { lease, intentId: pendingPrepared.id, status: accepted ? 'accepted' : rejected ? 'rejected' : 'unknown', brokerOrderId: result.orderNumber, cumulativeQuantity: 0, cumulativeNotional: 0, fills: [], metadata:referenceMetadata(result) })
               if (isEntry && accepted) state.signalDay = pendingPrepared.metadata?.signalDay
               if (accepted) report.submitted++; else if (!rejected) report.unknown++
               events.push(safeEvent(accepted ? 'order_accepted' : rejected ? 'order_rejected' : 'order_unknown', now(), { intentId: pendingPrepared.id, side: pendingPrepared.side }))
@@ -226,7 +237,7 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
               let riskTriggered = false
               if (state.position && verified?.active) {
                 const partialQuote = await gateway.quote({ ...context, session: { ...verified, open: textDate(verified.open), close: textDate(verified.close) } }).catch(() => null)
-                riskTriggered = verifyTradingQuote(partialQuote, original.code, verified, now()) && Boolean(tradingExitReason(state.position, strategy.backtest_settings, partialQuote.price))
+                riskTriggered = verifyTradingQuote(partialQuote, original.code, verified, now(),executionPolicy,original.broker) && Boolean(tradingExitReason(state.position, strategy.backtest_settings, partialQuote.price))
               }
               if (stopped || removed || riskTriggered || elapsed >= TRADING_POLICY.entryTimeoutSeconds * 1000) {
                 const cancel = mine.find(i => i.kind === 'cancel' && i.metadata?.parentIntentId === entry.id)
@@ -236,8 +247,8 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
                   if (!await refreshWriteScope()) { await commit('connection_required', 'credentials_changed'); continue }
                   const dispatch = await call('dispatch_intent', { lease, intentId: prepared.intent.id })
                   if (dispatch.dispatch) {
-                    const result = await gateway.cancel({ ...context, intent: { ...publicIntent(entry), date: verified.date, accountRef: original.account_ref, symbol: original.code, credentialVersion: inspected.credentialVersion }, cancelIntent: { ...publicIntent(dispatch.intent || prepared.intent), status: 'sending', date: verified.date, accountRef: original.account_ref, symbol: original.code, credentialVersion: inspected.credentialVersion }, session: { ...verified, open: textDate(verified.open), close: textDate(verified.close) }, beforeWrite: beforeWrite(prepared.intent.id, original) })
-                    await call('settle_intent', { lease, intentId: prepared.intent.id, status: ['accepted', 'pendingCancel'].includes(result.status) ? 'accepted' : result.status === 'rejected' ? 'rejected' : 'unknown', cumulativeQuantity: 0, cumulativeNotional: 0, fills: [], metadata: { parentIntentId: entry.id, ...(result.notTransmitted ? { notTransmitted: true } : {}) } })
+                    const result = await gateway.cancel({ ...context, intent: { ...publicIntent(entry), date: publicIntent(entry).date, accountRef: original.account_ref, symbol: original.code, credentialVersion: inspected.credentialVersion }, cancelIntent: { ...publicIntent(dispatch.intent || prepared.intent), status: 'sending', date: verified.date, accountRef: original.account_ref, symbol: original.code, credentialVersion: inspected.credentialVersion }, session: { ...verified, open: textDate(verified.open), close: textDate(verified.close) }, beforeWrite: beforeWrite(prepared.intent.id, original) })
+                    await call('settle_intent', { lease, intentId: prepared.intent.id, status: ['accepted', 'pendingCancel'].includes(result.status) ? 'accepted' : result.status === 'rejected' ? 'rejected' : 'unknown', brokerOrderId:result.orderNumber, cumulativeQuantity: 0, cumulativeNotional: 0, fills: [], metadata:{parentIntentId:entry.id,...referenceMetadata(result)} })
                     events.push(safeEvent('entry_cancel_requested', now(), { intentId: entry.id }))
                   }
                 }
@@ -250,7 +261,7 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
             if ((state.closedTrades?.length || 0) > priorClosedCount) { await commit('closed'); continue }
             if (!verified?.active) { await commit(stopped || removed ? 'stopping' : state.position ? 'holding' : 'waiting_signal', verified ? 'market_closed' : 'calendar_unavailable'); continue }
             const quote = await gateway.quote({ ...context, session: { ...verified, open: textDate(verified.open), close: textDate(verified.close) } }).catch(() => null)
-            if (!verifyTradingQuote(quote, original.code, verified, now())) { await commit(state.position ? 'holding' : 'waiting_signal', 'quote_unavailable'); continue }
+            if (!verifyTradingQuote(quote, original.code, verified, now(),executionPolicy,original.broker)) { await commit(state.position ? 'holding' : 'waiting_signal', 'quote_unavailable'); continue }
             state.markPrice = quote.price; state.markAt = quote.observedAt
             let action = null
             if (state.position) {
@@ -274,7 +285,7 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
               // Revalidate buying power under the same fenced account lease
               // immediately before the atomic DB reservation.
               const fresh = await gateway.inspect(context)
-              if (!fresh.complete || !fresh.eligible || fresh.credentialVersion !== inspected.credentialVersion || fresh.accountRef !== original.account_ref || fresh.holdingQuantity !== holdings) { await commit('reconciliation_required', 'external_conflict'); continue }
+              if (!fresh.complete || !fresh.eligible || fresh.credentialVersion !== inspected.credentialVersion || fresh.accountRef !== original.account_ref || fresh.holdingQuantity !== holdings || hasUnownedOpenOrders(fresh.openOrders)) { await commit('reconciliation_required', 'external_conflict'); continue }
               if (spec.entryAction === 'signal' && now() >= verified.open + TRADING_POLICY.openingWindowSeconds * 1000) { state.missedSignalDay = signalDay; await commit('waiting_signal', 'missed_open'); continue }
               const cash = fresh.cashAvailable
               const size = sizeTradingOrder({ quantityMode: spec.quantityMode, quantity: spec.quantity, cashAvailable: cash, reservedCash: lease.reservedCash || 0, price })
@@ -290,7 +301,7 @@ export function createTradingEngine({ store, gateway, calendar, readDaily, loadA
             let result
             try { result = await gateway.submit({ ...context, intent, session: { ...verified, open: textDate(verified.open), close: textDate(verified.close) }, beforeWrite: beforeWrite(intent.id, original) }) } catch { result = { status: 'unknown', code: 'order_unknown' } }
             const accepted = result.status === 'accepted', rejected = result.status === 'rejected'
-            await call('settle_intent', { lease, intentId: intent.id, status: accepted ? 'accepted' : rejected ? 'rejected' : 'unknown', brokerOrderId: result.orderNumber, cumulativeQuantity: 0, cumulativeNotional: 0, fills: [], metadata: { ...(result.notTransmitted ? { notTransmitted: true } : {}) } })
+            await call('settle_intent', { lease, intentId: intent.id, status: accepted ? 'accepted' : rejected ? 'rejected' : 'unknown', brokerOrderId: result.orderNumber, cumulativeQuantity: 0, cumulativeNotional: 0, fills: [], metadata:referenceMetadata(result) })
             if (action.side === 'buy' && accepted) state.signalDay = action.metadata.signalDay
             events.push(safeEvent(accepted ? 'order_accepted' : rejected ? 'order_rejected' : 'order_unknown', now(), { intentId: intent.id, side: action.side }))
             if (accepted) { report.submitted++; lease.reservedCash = Number(lease.reservedCash || 0) + action.reserveCash } else if (!rejected) report.unknown++

@@ -9,12 +9,14 @@ import { createAgentBridge } from './agent.js'
 import { readLabData } from './lab.js'
 import { validateTradingSpec, tradingPerformance } from '../shared/tradingV1.js'
 import { config } from './config.js'
+import {resolveTradingPolicy,tradingExecutionPolicy} from '../shared/tradingPolicies.js'
+import {tradingWorkerHealth} from './tradingWorkerHealth.js'
 
 const brokers = ['kiwoom', 'toss', 'nh', 'kb']
 const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value || '')
 const fail = (code, statusCode = 400) => { throw Object.assign(new Error(code), { code, statusCode }) }
-export const tradingFlags = () => ({ workerEnabled: process.env.ATLAS_TRADING_WORKER_ENABLED === 'true', liveEnabled: process.env.ATLAS_TRADING_LIVE_ENABLED === 'true', paperEnabled: false })
-const productionGateway = () => createTradingBrokerGateway({loadAccount:getStoredTradingAccount,settings:{liveEnabled:()=>tradingFlags().liveEnabled,workerEnabled:()=>tradingFlags().workerEnabled,kiwoomOrdersEnabled:()=>config.kiwoomOrdersEnabled}})
+export const tradingFlags = () => ({ workerEnabled: process.env.ATLAS_TRADING_WORKER_ENABLED === 'true',workerReady:tradingWorkerHealth.ready(),liveEnabled: process.env.ATLAS_TRADING_LIVE_ENABLED === 'true', paperEnabled: false })
+const productionGateway = () => createTradingBrokerGateway({loadAccount:getStoredTradingAccount,settings:{liveEnabled:()=>tradingFlags().liveEnabled,workerEnabled:()=>tradingFlags().workerEnabled,kiwoomOrdersEnabled:()=>config.kiwoomOrdersEnabled,tossOrdersEnabled:()=>config.tossOrdersEnabled&&process.env.ATLAS_TRADING_TOSS_ENABLED==='true',nhOrdersEnabled:()=>config.nhOrdersEnabled}})
 const safeKeys = ['phase','reason','checkedAt','lastCheckedAt','position','closedTrades','signalDay','missedSignalDay','markPrice','markAt','cycle','entryCount','lastClosedAt','unmanagedQuantity','priority']
 const safePosition = value => value && Object.fromEntries(Object.entries(value).filter(([key]) => ['quantity','averagePrice','costMicros','entryAt','adoptedAt','entryQuantity','initialCostMicros','adopted','soldQuantity','proceedsMicros'].includes(key)))
 const safeStrategy = row => row && ({id:row.id,name:row.name,revision:row.revision,schema_version:row.schema_version,indicators:row.indicators,backtest_settings:row.backtest_settings})
@@ -29,9 +31,9 @@ export function tradingDisplay(context, flags, capabilities) {
     flags, capabilities,
     watchlist: (context.watchlist || []).map(row => ({ code:row.code,name:row.name })),
     strategies: (context.strategies || []).map(safeStrategy),
-    configs: (context.configs || []).map(row => ({ id:row.id,code:row.code,revision:row.revision,spec:row.spec,updated_at:row.updated_at })),
+    configs: (context.configs || []).map(row => ({ id:row.id,code:row.code,revision:row.revision,spec:row.spec,accountLabel:row.account_label,strategySnapshot:safeStrategy(row.strategy_snapshot),updated_at:row.updated_at })),
     sessions: (context.sessions || []).map(row => ({ id:row.id,config_id:row.config_id,code:row.code,broker:row.broker,account_ref:row.account_ref,mode:row.mode,status:row.status,revision:row.revision,
-      snapshot:{spec:row.snapshot?.spec,strategy:safeStrategy(row.snapshot?.strategy)},state:safeState(row.state),performance:tradingPerformance(row.state),stop_requested:row.stop_requested,abandon_requested:row.abandon_requested,created_at:row.created_at,updated_at:row.updated_at })),
+      snapshot:{spec:row.snapshot?.spec,strategy:safeStrategy(row.snapshot?.strategy),accountLabel:row.snapshot?.accountLabel,executionPolicy:resolveTradingPolicy(row.snapshot,row.broker)},state:safeState(row.state),performance:tradingPerformance(row.state),stop_requested:row.stop_requested,abandon_requested:row.abandon_requested,created_at:row.created_at,updated_at:row.updated_at })),
     intents: (context.intents || []).map(row => ({ id:row.id,session_id:row.session_id,side:row.side,quantity:row.quantity,price:row.price,status:row.status,filled_quantity:row.filled_quantity,cumulative_quantity:row.cumulative_quantity,cumulative_notional:row.cumulative_notional,created_at:row.created_at,updated_at:row.updated_at })),
     events: (context.events || []).map(row => ({ id:row.id,session_id:row.session_id,kind:row.kind,code:row.code,created_at:row.created_at })),
   }
@@ -42,6 +44,7 @@ export function createTradingController({ store = createTradingStore(), loadAcco
   const connect = connection || createAccountConnectionHandler({authenticate:request => loadAccount(request.ownerId)})
   const capabilityList = () => Object.fromEntries(brokers.map(broker => [broker,gateway.capabilities(broker)]))
   const context = owner => store.call('context',owner,{})
+  const storageV2=async()=>{try{return(await store.call('marker',null,{}))?.version==='atlas-trading-v2'}catch{return false}}
   async function current(owner, spec, {requireOrders=true}={}) {
     const capability = gateway.capabilities(spec.broker)
     if (!capability?.supported || requireOrders&&capability.ordersEnabled === false) fail('trading_broker_orders_disabled',409)
@@ -52,14 +55,23 @@ export function createTradingController({ store = createTradingStore(), loadAcco
     const version = credentialVersion(account,spec.broker,auth)
     const latest = await loadAccount(owner)
     if (version !== credentialVersion(latest,spec.broker,personalAuth(latest,spec.broker))) fail('trading_credentials_changed',409)
-    return {account,inspected,version}
+    let accountLabel=inspected.accountLabel
+    if(!accountLabel&&gateway.accounts){const own=await gateway.accounts({account,broker:spec.broker,signal:AbortSignal.timeout(15000)});accountLabel=own.accounts?.find(a=>a.ref===inspected.accountRef)?.label}
+    return {account,inspected,version,accountLabel:accountLabel||`${{kiwoom:'키움',toss:'토스',nh:'NH'}[spec.broker]||''} API 계좌`}
   }
   const modeAllowed = mode => {
     const f = flags()
     if (mode !== 'LIVE' || !f.workerEnabled || !f.liveEnabled) fail('trading_disabled',409)
+    if(f.workerReady===false)fail('trading_worker_unavailable',409)
   }
   return {
-    async context(owner) { return tradingDisplay(await context(owner),flags(),capabilityList()) },
+    async context(owner) {const ctx=await context(owner);return tradingDisplay(ctx,{...flags(),storageV2:await storageV2()},capabilityList())},
+    async session(owner,{sessionId}) {
+      if(!uuid(sessionId))fail('trading_invalid_request')
+      const detail=await store.call('session',owner,{sessionId})
+      if(!detail?.session)fail('trading_not_found',404)
+      return tradingDisplay({sessions:[detail.session],intents:detail.intents,events:detail.events},flags(),capabilityList())
+    },
     async connections(owner) {
       const account = await loadAccount(owner)
       return Object.fromEntries(await Promise.all(brokers.map(async broker => {
@@ -67,11 +79,12 @@ export function createTradingController({ store = createTradingStore(), loadAcco
         if (!saved) return [broker,{status:'unconfigured',connected:false,expiresAt:now(),accounts:[]}]
         try {
           const result = await connect({ownerId:owner},broker)
+          const own=result.connected&&gateway.accounts&&(gateway.capabilities(broker).supported||gateway.capabilities(broker).readSupported)?await gateway.accounts({account,broker,signal:AbortSignal.timeout(18000)}):null
           const latest=await loadAccount(owner)
           const auth=personalAuth(latest,broker)
           const connected=result.connected&&credentialVersion(latest,broker,auth)===credentialVersion(account,broker,personalAuth(account,broker))
-          const accounts=connected&&broker==='kiwoom'?[{ref:makeAccountRef(latest,broker,auth,'linked'),label:'본인 API 연결 계좌'}]:[]
-          return [broker,{...result,connected,expiresAt:connected?result.expiresAt:now(),status:connected?'connected':'failed',accounts}]
+          const accounts=connected?(own?.accounts|| (broker==='kiwoom'?[{ref:makeAccountRef(latest,broker,auth,'linked'),label:'키움 API 연결 계좌'}]:[])):[]
+          return [broker,{...result,connected,expiresAt:connected?result.expiresAt:now(),status:connected?'connected':'failed',accountStatus:accounts.length>1?'required':accounts.length===1?'ready':'unavailable',accounts}]
         } catch { return [broker,{status:'failed',connected:false,expiresAt:now(),accounts:[]}] }
       })))
     },
@@ -84,8 +97,8 @@ export function createTradingController({ store = createTradingStore(), loadAcco
       try { checked = validateTradingSpec(spec,strategy) } catch { fail('trading_invalid_strategy') }
       const capability = gateway.capabilities(spec.broker)
       if (!capability?.supported) fail('trading_broker_unsupported',409)
-      await current(owner,checked.spec,{requireOrders:false})
-      await store.call('save_config',owner,{id:input.id,expectedRevision:input.expectedRevision,spec:checked.spec})
+      const {accountLabel}=await current(owner,checked.spec,{requireOrders:false})
+      await store.call('save_config',owner,{id:input.id,expectedRevision:input.expectedRevision,spec:checked.spec,accountLabel})
       return this.context(owner)
     },
     async preview(owner,input) {
@@ -95,16 +108,19 @@ export function createTradingController({ store = createTradingStore(), loadAcco
       if (!ctx.watchlist?.some(row => row.code === config.code)) fail('trading_watchlist_required',403)
       const strategy = ctx.strategies?.find(row => row.id === config.spec.strategyId && Number(row.revision) === Number(config.spec.strategyRevision))
       if (!strategy) fail('trading_strategy_changed',409)
-      const checked = validateTradingSpec(config.spec,strategy), {inspected,version} = await current(owner,checked.spec)
-      if (inspected.openOrders?.length) fail('trading_external_order_conflict',409)
+      if(config.spec.broker!=='kiwoom'&&!await storageV2())fail('trading_schema_upgrade_required',503)
+      const executionPolicy=tradingExecutionPolicy(config.spec.broker)
+      if(!executionPolicy)fail('trading_policy_unsupported',409)
+      const checked = validateTradingSpec(config.spec,strategy), {inspected,version,accountLabel} = await current(owner,checked.spec)
+      if (inspected.openOrders?.some(row=>!row.symbol||row.symbol===config.code)) fail('trading_external_order_conflict',409)
       const manage = checked.spec.entryAction === 'manage'
       if (!manage && inspected.holdingQuantity !== 0) fail('trading_external_holding_conflict',409)
       if (manage && (!(inspected.holdingQuantity >= checked.spec.manageQuantity) || !(inspected.sellableQuantity >= checked.spec.manageQuantity) || !(inspected.averagePrice > 0))) fail('trading_holding_invalid',409)
       const initialState = initialTradingState({adoptedQuantity:manage?checked.spec.manageQuantity:0,averagePrice:manage?inspected.averagePrice:null,totalHoldingQuantity:inspected.holdingQuantity,now:now()})
-      const preview = await store.call('preview_start',owner,{configId:config.id,configRevision:config.revision,mode:input.mode,credentialVersion:version,initialState,accountLabel:'본인 API 연결 계좌'})
-      return {id:preview.id,expiresAt:preview.expiresAt,summary:{code:config.code,broker:config.spec.broker,accountLabel:'본인 API 연결 계좌',strategy:checked.strategy,spec:checked.spec,mode:input.mode,
+      const preview = await store.call('preview_start',owner,{configId:config.id,configRevision:config.revision,mode:input.mode,credentialVersion:version,initialState,accountLabel,executionPolicy})
+      return {id:preview.id,expiresAt:preview.expiresAt,summary:{code:config.code,broker:config.spec.broker,accountLabel,strategy:checked.strategy,spec:checked.spec,mode:input.mode,executionPolicy,
         holding:manage?{quantity:checked.spec.manageQuantity,averagePrice:inspected.averagePrice}:null,
-        entryMethod:'KRX 현금 지정가 · 60초 후 미체결 취소 확인',exitMethod:'KRX 현금 시장가',session:'KRX 정규장',stopPolicy:'신규 진입 중단 · 체결 보유분 익절·손절 관리 유지'}}
+        entryMethod:executionPolicy.entryOrder,exitMethod:executionPolicy.exitOrder,session:'검증된 KRX 정규장 시간 안에서만 실행',stopPolicy:'신규 진입 중단 · 체결 보유분 익절·손절 관리 유지'}}
     },
     async start(owner,input) {
       if (!uuid(input.previewId) || !uuid(input.requestId) || input.confirmed !== true) fail('trading_confirmation_required')
@@ -112,8 +128,10 @@ export function createTradingController({ store = createTradingStore(), loadAcco
       // The one-use preview and its config/strategy revision are checked under the DB lock.
       const result = await store.call('preview_read',owner,{previewId:input.previewId})
       modeAllowed(result.mode)
+      if(!resolveTradingPolicy({executionPolicy:result.executionPolicy},result.spec.broker))fail('trading_policy_mismatch',409)
+      if(result.spec.broker!=='kiwoom'&&!await storageV2())fail('trading_schema_upgrade_required',503)
       const {inspected,version} = await current(owner,result.spec)
-      if (version !== result.credentialVersion || inspected.openOrders?.length) fail('trading_preview_changed',409)
+      if (version !== result.credentialVersion || inspected.openOrders?.some(row=>!row.symbol||row.symbol===result.spec.code)) fail('trading_preview_changed',409)
       if (result.spec.entryAction !== 'manage' && inspected.holdingQuantity !== 0) fail('trading_external_holding_conflict',409)
       if (result.spec.entryAction === 'manage' && (inspected.holdingQuantity !== result.initialState.unmanagedQuantity + result.spec.manageQuantity || inspected.averagePrice !== Number(result.initialState.position?.costMicros)/1e6/result.spec.manageQuantity || inspected.sellableQuantity<result.spec.manageQuantity)) fail('trading_preview_changed',409)
       modeAllowed(result.mode)
@@ -144,9 +162,10 @@ export function registerTradingRoutes(app,options = {}) {
   const controller = options.controller || createTradingController(options), authenticate = options.authenticate || authenticateAccountRequest
   const origin = options.origin ?? process.env.FRONTEND_ORIGIN ?? 'http://127.0.0.1:5173'
   const secret = options.secret ?? process.env.ATLAS_TRADING_INTERNAL_SECRET ?? ''
+  const health=options.health||tradingWorkerHealth
   const engine = options.engine || createTradingEngine({store:options.store || createTradingStore(),gateway:options.gateway || productionGateway(),loadAccount:options.loadAccount || getStoredTradingAccount,
     calendar:() => createAgentBridge().call('/calendar/alert-session'),readDaily:readLabData,flags:tradingFlags})
-  for (const [method,path,action] of [['GET','','context'],['GET','/connections','connections'],['POST','/config','save'],['POST','/preview','preview'],['POST','/start','start'],['POST','/stop','stop'],['GET','/chart','chart']]) {
+  for (const [method,path,action] of [['GET','','context'],['GET','/connections','connections'],['GET','/session','session'],['POST','/config','save'],['POST','/preview','preview'],['POST','/start','start'],['POST','/stop','stop'],['GET','/chart','chart']]) {
     app.route({method,url:`/api/agent/trading${path}`,logLevel:'silent',handler:async(request,reply) => {
       reply.header('Cache-Control','private, no-store')
       try {
@@ -163,6 +182,7 @@ export function registerTradingRoutes(app,options = {}) {
     reply.header('Cache-Control','no-store')
     const token = request.headers['x-atlas-trading'] || ''
     if (request.headers.origin || !['127.0.0.1','::1','::ffff:127.0.0.1'].includes(request.ip) || secret.length<32 || Buffer.byteLength(token)!==Buffer.byteLength(secret) || !timingSafeEqual(Buffer.from(token),Buffer.from(secret))) return reply.code(401).send({error:'unauthorized'})
-    try { return await engine.tick() } catch { return reply.code(503).send({error:'trading_tick_unavailable'}) }
+    health.seen()
+    try {const result=await engine.tick();health.settled(true);return result} catch {health.settled(false);return reply.code(503).send({error:'trading_tick_unavailable'}) }
   })
 }
