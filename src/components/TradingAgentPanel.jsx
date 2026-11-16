@@ -147,7 +147,10 @@ export default function TradingAgentPanel({userId,onLogin,credentialRevision=0,c
   },[userId,api,credentialRevision])
   const refresh=async()=>{const seq=epoch.current;try{const value=await api('',{userId});if(seq===epoch.current){setData(value);setError('')}}catch(e){if(seq===epoch.current)setError(e.message)}}
   const run=async fn=>{if(pending.current)return;pending.current=true;setBusy(true);setError('');try{await fn()}catch(e){setError(e.message)}finally{pending.current=false;setBusy(false)}}
-  const update=(code,patch)=>setDrafts(old=>({...old,[code]:{...(old[code]||savedFor(data,code)?.spec||initial(code)),...patch}}))
+  const update=(code,patch)=>{
+    setDrafts(old=>({...old,[code]:{...(old[code]||savedFor(data,code)?.spec||initial(code)),...patch}}))
+    if(simulated){setMessages(old=>({...old,[code]:''}));setError('')}
+  }
   const toggle=(value,list,set)=>set(list.includes(value)?list.filter(x=>x!==value):[...list,value])
   const proofState=b=>simulated?(data?.capabilities?.[b]?.supported&&connections?.[b]?.accounts?.length?'connected':'checking'):tradingConnectionStage(connections?.[b],connectionEvidence?.[b])
   const proofLabel=b=>simulated?(data?.capabilities?.[b]?.supported?'시세 조회':'시세 미지원'):({checking:'연결 확인 중',unconfigured:'개인 API 미등록',failed:'연결 확인 실패',expired:'연결 검증 만료',connected:'연결 확인'})[proofState(b)]
@@ -162,9 +165,14 @@ export default function TradingAgentPanel({userId,onLogin,credentialRevision=0,c
   const funds=data?.virtualFunds||data?.capital||{}
   if(!userId)return <section className="agent-mode-card trading-agent"><h2>자동매매 에이전트</h2><p>로그인 후 관심종목별 매매 설정과 실행 기록을 확인할 수 있습니다.</p><button type="button" onClick={onLogin}>로그인</button></section>
   const save=()=>run(async()=>{
-    const seq=epoch.current
+    const seq=epoch.current,saved=[],failed=[]
     for(const code of selectedSettings){const original=savedFor(data,code),spec=drafts[code]||original?.spec||initial(code)
-      try{const value=await api('/config',{userId,body:{id:original?.id,expectedRevision:original?.revision||0,spec}});if(seq!==epoch.current)return;setData(value);setDrafts(old=>{const out={...old};delete out[code];return out});setMessages(old=>({...old,[code]:'저장됨 · 실행은 별도 시작'}))}catch(e){if(seq!==epoch.current)return;setMessages(old=>({...old,[code]:e.message}))}}
+      try{const value=await api('/config',{userId,body:{id:original?.id,expectedRevision:original?.revision||0,spec}});if(seq!==epoch.current)return;saved.push(code);setData(value);setDrafts(old=>{const out={...old};delete out[code];return out});setMessages(old=>({...old,[code]:'저장됨 · 실행은 별도 시작'}))}catch(e){if(seq!==epoch.current)return;failed.push({code,message:e.message});setMessages(old=>({...old,[code]:e.message}))}}
+    if(simulated&&seq===epoch.current){
+      setChecked(old=>old.filter(code=>!saved.includes(code)))
+      if(failed.length)setError(`${failed.map(row=>`${byCode[row.code]||row.code}: ${row.message}`).join(' ')}${saved.length?' 나머지 항목은 저장했습니다. 실행 화면에서 별도로 시작할 수 있습니다.':''}`)
+      else if(saved.length){setRunChecked(saved);setView('execution');tabs.current[1]?.focus()}
+    }
   })
   const preview=codes=>run(async()=>{
     const previews=[],seq=epoch.current
@@ -173,7 +181,7 @@ export default function TradingAgentPanel({userId,onLogin,credentialRevision=0,c
     if(simulated){
       let first=null
       for(const item of previews){try{const value=await api('/start',{userId,body:{previewId:item.id,requestId:item.requestId,confirmed:true}});if(seq!==epoch.current)return;setData(value);first||=value.startedSessionId||value.sessions?.find(s=>s.code===item.summary.code&&active(s))?.id;setMessages(old=>({...old,[item.summary.code]:'실행 시작됨'}));setRunChecked(old=>old.filter(code=>code!==item.summary.code))}catch(e){if(seq!==epoch.current)return;setMessages(old=>({...old,[item.summary.code]:e.message}))}}
-      if(first){setSelected(first);setFilter('active')}
+      if(first){setSelected(first);setFilter('active');setView('progress');tabs.current[2]?.focus()}
     }else if(previews.length)setConfirmation({kind:'start',previews,mode,byCode})
   })
   const confirm=()=>run(async()=>{
